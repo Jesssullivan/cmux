@@ -27,27 +27,17 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
+          use-cache: false
 
       - name: Build GhosttyKit
         run: |
           cd ghostty
+          rm -rf zig-out
           zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
-          echo "=== zig-out contents ==="
-          find zig-out -name "*.xcframework" -o -name "*.a" 2>/dev/null | head -20
-          ls -laR zig-out/lib/ 2>/dev/null | head -30
+          ls -la zig-out/lib/GhosttyKit.xcframework/
 
       - name: Link GhosttyKit xcframework
-        run: |
-          # Find the xcframework wherever zig put it
-          XCFW=$(find ghostty/zig-out -name "GhosttyKit.xcframework" -type d | head -1)
-          if [ -z "$XCFW" ]; then
-            echo "ERROR: GhosttyKit.xcframework not found in ghostty/zig-out"
-            find ghostty/zig-out -type d | head -30
-            exit 1
-          fi
-          echo "Found xcframework at: $XCFW"
-          ln -sfn "$XCFW" GhosttyKit.xcframework
-          ls -la GhosttyKit.xcframework/
+        run: ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
 
       - name: Build cmux LAB (Release)
         run: |
