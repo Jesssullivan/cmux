@@ -76,6 +76,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     private var urlObservation: NSKeyValueObservation?
     private var childPopups: [BrowserPopupWindowController] = []
     private let popupUIDelegate: PopupUIDelegate
+    private var webAuthnCoordinator: WebAuthnCoordinator?
     private let popupNavigationDelegate: PopupNavigationDelegate
     private let downloadDelegate: BrowserDownloadDelegate
 
@@ -101,6 +102,12 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         }
         webView.customUserAgent = BrowserUserAgentSettings.safariUserAgent
         self.webView = webView
+
+        // Install WebAuthn/FIDO2 bridge on the popup's content controller so
+        // security key authentication works in popup-based OAuth flows.
+        let coordinator = WebAuthnCoordinator(webView: webView)
+        coordinator.install(on: configuration.userContentController)
+        self.webAuthnCoordinator = coordinator
 
         // --- Window sizing from WKWindowFeatures ---
         let defaultWidth: CGFloat = 800
@@ -269,6 +276,10 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         titleObservation = nil
         urlObservation?.invalidate()
         urlObservation = nil
+
+        // Cancel any pending WebAuthn ceremony
+        webAuthnCoordinator?.cancelPendingCeremony()
+        webAuthnCoordinator = nil
 
         // Tear down web view
         webView.stopLoading()

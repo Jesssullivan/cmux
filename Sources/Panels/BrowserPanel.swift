@@ -1869,6 +1869,9 @@ final class BrowserPanel: Panel, ObservableObject {
     private(set) var webView: WKWebView
     private var websiteDataStore: WKWebsiteDataStore
 
+    /// WebAuthn/FIDO2 coordinator for hardware security key and passkey support.
+    private var webAuthnCoordinator: WebAuthnCoordinator?
+
     /// Monotonic identity for the current WKWebView instance.
     /// Incremented whenever we replace the underlying WKWebView after a process crash.
     @Published private(set) var webViewInstanceID: UUID = UUID()
@@ -2504,6 +2507,13 @@ final class BrowserPanel: Panel, ObservableObject {
         webView.navigationDelegate = navigationDelegate
         webView.uiDelegate = uiDelegate
         setupObservers(for: webView)
+
+        // Cancel any previous WebAuthn ceremony and install a fresh coordinator
+        // on the new web view's content controller.
+        webAuthnCoordinator?.cancelPendingCeremony()
+        let coordinator = WebAuthnCoordinator(webView: webView)
+        coordinator.install(on: webView.configuration.userContentController)
+        webAuthnCoordinator = coordinator
     }
 
     private func configureNavigationDelegateCallbacks() {
