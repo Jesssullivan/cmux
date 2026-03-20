@@ -426,16 +426,8 @@ extension WebAuthnCoordinator: ASAuthorizationControllerDelegate {
                 errorName = "NotSupportedError"
             case .notInteractive:
                 errorName = "NotAllowedError"
-            case .unknown:
-                errorName = "UnknownError"
-            case .matchedExcludedCredential:
+            case .unknown, .matchedExcludedCredential:
                 errorName = "InvalidStateError"
-            case .credentialImport, .credentialExport:
-                errorName = "NotSupportedError"
-            case .preferSignInWithApple:
-                errorName = "NotAllowedError"
-            case .deviceNotConfiguredForPasskeyCreation:
-                errorName = "NotSupportedError"
             @unknown default:
                 errorName = "UnknownError"
             }
