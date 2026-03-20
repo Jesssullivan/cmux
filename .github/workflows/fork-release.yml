@@ -31,7 +31,7 @@ jobs:
       - name: Build GhosttyKit
         run: |
           cd ghostty
-          zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+          zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
 
       - name: Build cmux LAB (Release)
         run: |
