@@ -48,6 +48,7 @@ fi
 TAG="$1"
 SIGN_HASH="A050CC7E193C8221BDBA204E731B046CDCCC1B30"
 ENTITLEMENTS="cmux.entitlements"
+EMBEDDED_ENTITLEMENTS="cmux.embedded.entitlements"
 APP_PATH="build/Build/Products/Release/cmux.app"
 
 # --- Pre-flight ---
@@ -93,13 +94,16 @@ echo "Sparkle keys injected"
 # --- Codesign ---
 echo "Codesigning..."
 CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
+# Sign app bundle first (--deep signs all nested content with full entitlements),
+# then re-sign embedded binaries with narrower entitlements so they don't inherit
+# the restricted public-key-credential entitlement.
+/usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
 if [ -f "$CLI_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$EMBEDDED_ENTITLEMENTS" "$CLI_PATH"
 fi
 if [ -f "$HELPER_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$EMBEDDED_ENTITLEMENTS" "$HELPER_PATH"
 fi
-/usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 echo "Codesign verified"
 

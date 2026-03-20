@@ -2,6 +2,23 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "NSBluetoothAlwaysUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux uses Bluetooth to communicate with nearby security keys for passkey authentication."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux はパスキー認証のために近くのセキュリティキーと Bluetooth で通信します。"
+          }
+        }
+      }
+    },
     "NSCameraUsageDescription": {
       "extractionState": "manual",
       "localizations": {
