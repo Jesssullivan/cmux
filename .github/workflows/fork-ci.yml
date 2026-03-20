@@ -1,0 +1,88 @@
+name: Fork CI
+
+on:
+  push:
+    branches: [main, 'sid/**']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    name: Build macOS (LAB)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Cache GhosttyKit
+        id: cache-ghosttykit
+        uses: actions/cache@v4
+        with:
+          path: ghostty/zig-out/lib/GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('ghostty/.git/HEAD', 'ghostty/.git/refs/heads/**') }}
+
+      - name: Build GhosttyKit
+        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+        run: |
+          cd ghostty
+          zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+
+      - name: Build cmux LAB (Debug)
+        run: |
+          xcodebuild -project GhosttyTabs.xcodeproj \
+            -scheme cmux \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath /tmp/cmux-fork-ci \
+            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
+            PRODUCT_NAME="cmux LAB" \
+            build
+
+      - name: Build cmux LAB (Release)
+        run: |
+          xcodebuild -project GhosttyTabs.xcodeproj \
+            -scheme cmux \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
+            PRODUCT_NAME="cmux LAB" \
+            build
+
+  build-linux-daemon:
+    name: Build Linux daemon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build cmuxd (x86_64)
+        run: |
+          cd cmuxd
+          zig build -Doptimize=ReleaseFast
+
+  nix-check:
+    name: Nix flake check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - run: nix flake check
+      - run: nix develop --command echo "dev shell OK"
