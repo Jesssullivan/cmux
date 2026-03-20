@@ -34,7 +34,10 @@ jobs:
           zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
 
       - name: Link GhosttyKit xcframework
-        run: ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
+        run: |
+          ls -la ghostty/zig-out/lib/GhosttyKit.xcframework/ || echo "xcframework NOT found at expected path"
+          ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
+          ls -la GhosttyKit.xcframework/
 
       - name: Build cmux LAB (Release)
         run: |

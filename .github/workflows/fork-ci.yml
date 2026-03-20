@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ghostty/zig-out/lib/GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('ghostty/**/*.zig', 'ghostty/build.zig.zon') }}
+          key: ghosttykit-native-${{ hashFiles('ghostty/build.zig', 'ghostty/build.zig.zon') }}
 
       - name: Build GhosttyKit
         if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
@@ -38,7 +38,10 @@ jobs:
           zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
 
       - name: Link GhosttyKit xcframework
-        run: ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
+        run: |
+          ls -la ghostty/zig-out/lib/GhosttyKit.xcframework/ || echo "xcframework NOT found at expected path"
+          ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
+          ls -la GhosttyKit.xcframework/
 
       - name: Build cmux LAB (Debug)
         run: |
