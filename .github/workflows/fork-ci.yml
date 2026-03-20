@@ -37,6 +37,9 @@ jobs:
           cd ghostty
           zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
 
+      - name: Link GhosttyKit xcframework
+        run: ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
+
       - name: Build cmux LAB (Debug)
         run: |
           xcodebuild -project GhosttyTabs.xcodeproj \
