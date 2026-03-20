@@ -447,8 +447,15 @@ extension WebAuthnCoordinator: ASAuthorizationControllerDelegate {
 extension WebAuthnCoordinator: ASAuthorizationControllerPresentationContextProviding {
 
     nonisolated func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        // This delegate method is called on the main thread by AuthenticationServices.
-        DispatchQueue.main.sync {
+        // AuthenticationServices calls this on the main thread. Using DispatchQueue.main.sync
+        // from the main thread deadlocks (BUG IN CLIENT OF LIBDISPATCH). Use
+        // MainActor.assumeIsolated since we know we're already on main.
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+            }
+        }
+        return DispatchQueue.main.sync {
             webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
         }
     }
