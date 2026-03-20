@@ -2462,20 +2462,24 @@ final class BrowserPanel: Panel, ObservableObject {
         // Enable JavaScript
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         // Keep browser console/error/dialog telemetry active from document start on every navigation.
+        // Main frame only — injecting into cross-origin iframes (forMainFrameOnly: false)
+        // causes CAPTCHA providers (reCAPTCHA, hCaptcha, Cloudflare Turnstile) to detect
+        // the overridden console.* methods and __cmux* globals as environment tampering.
         config.userContentController.addUserScript(
             WKUserScript(
                 source: Self.telemetryHookBootstrapScriptSource,
                 injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
+                forMainFrameOnly: true
             )
         )
         // Track the last editable focused element continuously so omnibar exit can
         // restore page input focus even if capture runs after first-responder handoff.
+        // Main frame only — same CAPTCHA interference concern as telemetry hooks.
         config.userContentController.addUserScript(
             WKUserScript(
                 source: Self.addressBarFocusTrackingBootstrapScript,
                 injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
+                forMainFrameOnly: true
             )
         )
 

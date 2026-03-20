@@ -32,11 +32,14 @@ final class WebAuthnCoordinator: NSObject {
     /// user content controller. Call once during web view configuration, before
     /// the first navigation.
     func install(on controller: WKUserContentController) {
+        // Main frame only — WebAuthn is initiated by the top-level page, and injecting
+        // navigator.credentials overrides into cross-origin iframes triggers CAPTCHA
+        // providers' environment tampering detection.
         controller.addUserScript(
             WKUserScript(
                 source: WebAuthnBridgeJavaScript.bootstrapScriptSource,
                 injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
+                forMainFrameOnly: true
             )
         )
         controller.addScriptMessageHandler(
