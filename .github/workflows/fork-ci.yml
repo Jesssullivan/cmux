@@ -35,7 +35,7 @@ jobs:
         if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
         run: |
           cd ghostty
-          zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+          zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
 
       - name: Build cmux LAB (Debug)
         run: |
