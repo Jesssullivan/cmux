@@ -1,0 +1,196 @@
+name: Fork Release (LAB)
+
+on:
+  push:
+    tags:
+      - 'lab-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. lab-v0.62.1)'
+        required: true
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  build-macos:
+    name: Build macOS .app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build GhosttyKit
+        run: |
+          cd ghostty
+          zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+
+      - name: Build cmux LAB (Release)
+        run: |
+          xcodebuild -project GhosttyTabs.xcodeproj \
+            -scheme cmux \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
+            PRODUCT_NAME="cmux LAB" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.cmuxterm.app.lab \
+            build
+
+      - name: Package DMG
+        run: |
+          APP_PATH="build/Build/Products/Release/cmux LAB.app"
+          npx create-dmg@8.0.0 "$APP_PATH" . --overwrite || true
+          mv *.dmg cmux-lab-macos.dmg 2>/dev/null || mv "cmux LAB"*.dmg cmux-lab-macos.dmg
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-lab-macos
+          path: cmux-lab-macos.dmg
+
+  build-linux-daemon:
+    name: Build Linux daemon (cmuxd)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-linux
+            arch: amd64
+          - target: aarch64-linux
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build cmuxd
+        run: |
+          cd cmuxd
+          zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}-gnu
+          cp zig-out/bin/cmuxd ../cmuxd-${{ matrix.arch }}
+
+      - name: Create DEB package
+        run: |
+          ARCH=${{ matrix.arch }}
+          VERSION=${GITHUB_REF_NAME#lab-v}
+          [ -z "$VERSION" ] && VERSION="0.0.0"
+          PKG_DIR="cmux-lab_${VERSION}_${ARCH}"
+          mkdir -p "${PKG_DIR}/DEBIAN"
+          mkdir -p "${PKG_DIR}/usr/bin"
+          mkdir -p "${PKG_DIR}/usr/share/doc/cmux-lab"
+
+          cp cmuxd-${ARCH} "${PKG_DIR}/usr/bin/cmuxd-lab"
+          chmod 755 "${PKG_DIR}/usr/bin/cmuxd-lab"
+
+          cat > "${PKG_DIR}/DEBIAN/control" <<CTRL
+          Package: cmux-lab
+          Version: ${VERSION}
+          Architecture: ${ARCH}
+          Maintainer: Jess Sullivan <jess@jesssullivan.dev>
+          Description: cmux LAB remote daemon with FIDO2/WebAuthn support
+           Terminal multiplexer remote daemon for enterprise auth testing.
+          Homepage: https://github.com/Jesssullivan/cmux
+          CTRL
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' "${PKG_DIR}/DEBIAN/control"
+
+          dpkg-deb --build "${PKG_DIR}"
+          mv "${PKG_DIR}.deb" "cmux-lab_${VERSION}_${ARCH}.deb"
+
+      - name: Create RPM package
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get install -y rpm
+          VERSION=${GITHUB_REF_NAME#lab-v}
+          [ -z "$VERSION" ] && VERSION="0.0.0"
+
+          mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          cp cmuxd-amd64 rpmbuild/SOURCES/cmuxd-lab
+
+          cat > rpmbuild/SPECS/cmux-lab.spec <<'SPEC'
+          Name:           cmux-lab
+          Version:        %{version}
+          Release:        1%{?dist}
+          Summary:        cmux LAB remote daemon with FIDO2/WebAuthn support
+          License:        MIT
+          URL:            https://github.com/Jesssullivan/cmux
+
+          %description
+          Terminal multiplexer remote daemon for enterprise auth testing.
+
+          %install
+          mkdir -p %{buildroot}/usr/bin
+          cp %{_sourcedir}/cmuxd-lab %{buildroot}/usr/bin/cmuxd-lab
+          chmod 755 %{buildroot}/usr/bin/cmuxd-lab
+
+          %files
+          /usr/bin/cmuxd-lab
+          SPEC
+          sed -i 's/^          //' rpmbuild/SPECS/cmux-lab.spec
+          sed -i "s/%{version}/${VERSION}/" rpmbuild/SPECS/cmux-lab.spec
+
+          rpmbuild --define "_topdir $(pwd)/rpmbuild" -bb rpmbuild/SPECS/cmux-lab.spec || true
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-lab-linux-${{ matrix.arch }}
+          path: |
+            cmuxd-${{ matrix.arch }}
+            cmux-lab_*.deb
+            rpmbuild/RPMS/**/*.rpm
+
+  release:
+    name: Create GitHub Release
+    needs: [build-macos, build-linux-daemon]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          [ -z "$TAG" ] && TAG="${{ github.event.inputs.tag }}"
+
+          # Collect all release assets
+          ASSETS=()
+          for f in cmux-lab-macos/*.dmg cmux-lab-linux-*/*.deb cmux-lab-linux-*/cmuxd-* cmux-lab-linux-*/rpmbuild/RPMS/**/*.rpm; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "cmux LAB $TAG" \
+            --notes "Fork release with FIDO2/WebAuthn enterprise auth support.
+
+          ## Assets
+          - **cmux-lab-macos.dmg** — macOS .app bundle (trans-themed LAB branding)
+          - **cmuxd-amd64** / **cmuxd-arm64** — Linux remote daemon binaries
+          - **.deb** — Debian/Ubuntu packages
+          - **.rpm** — RHEL/Fedora packages (amd64)
+
+          ## Nix
+          \`\`\`bash
+          nix run github:Jesssullivan/cmux/$TAG
+          \`\`\`
+          " \
+            "${ASSETS[@]}"
