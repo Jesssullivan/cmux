@@ -43,7 +43,6 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath /tmp/cmux-fork-ci \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
-            PRODUCT_NAME=cmux-LAB \
             build
 
       - name: Build cmux LAB (Release)
@@ -54,7 +53,6 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath build \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
-            PRODUCT_NAME=cmux-LAB \
             build
 
   nix-check:
