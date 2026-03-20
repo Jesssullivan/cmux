@@ -23,21 +23,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
-
-      - name: Build GhosttyKit
+      - name: Download pre-built GhosttyKit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cd ghostty
-          rm -rf zig-out
-          zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=universal -Doptimize=ReleaseFast
-          ls -la zig-out/lib/GhosttyKit.xcframework/
-
-      - name: Link GhosttyKit xcframework
-        run: ln -sfn ghostty/zig-out/lib/GhosttyKit.xcframework GhosttyKit.xcframework
+          GHOSTTY_SHA=$(git -C ghostty rev-parse HEAD)
+          TAG="xcframework-${GHOSTTY_SHA}"
+          echo "Downloading GhosttyKit for ghostty commit ${GHOSTTY_SHA}"
+          gh release download "$TAG" --repo manaflow-ai/ghostty --pattern "GhosttyKit.xcframework.tar.gz"
+          tar xzf GhosttyKit.xcframework.tar.gz
+          ls -la GhosttyKit.xcframework/
 
       - name: Build cmux LAB (Release)
         run: |
