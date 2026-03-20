@@ -11,7 +11,7 @@ enum WebAuthnBridgeJavaScript {
     /// Message handler name shared between this JS and `WebAuthnCoordinator`.
     static let messageHandlerName = "cmuxWebAuthn"
 
-    /// Bootstrap script source. Inject as a `WKUserScript` at `.atDocumentStart`, `forMainFrameOnly: false`.
+    /// Bootstrap script source. Inject as a `WKUserScript` at `.atDocumentStart`, `forMainFrameOnly: true`.
     static let bootstrapScriptSource = """
     (() => {
       if (window.__cmuxWebAuthnBridgeInstalled) return true;
