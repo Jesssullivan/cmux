@@ -42,15 +42,15 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath build \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
-            PRODUCT_NAME="cmux LAB" \
+            PRODUCT_NAME=cmux-LAB \
             PRODUCT_BUNDLE_IDENTIFIER=com.cmuxterm.app.lab \
             build
 
       - name: Package DMG
         run: |
-          APP_PATH="build/Build/Products/Release/cmux LAB.app"
+          APP_PATH="build/Build/Products/Release/cmux-LAB.app"
           npx create-dmg@8.0.0 "$APP_PATH" . --overwrite || true
-          mv *.dmg cmux-lab-macos.dmg 2>/dev/null || mv "cmux LAB"*.dmg cmux-lab-macos.dmg
+          mv *.dmg cmux-lab-macos.dmg 2>/dev/null || mv cmux-LAB*.dmg cmux-lab-macos.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
