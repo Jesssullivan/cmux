@@ -33,7 +33,7 @@ jobs:
         run: |
           cd ghostty
           rm -rf zig-out
-          zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast
+          zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=universal -Doptimize=ReleaseFast
           ls -la zig-out/lib/GhosttyKit.xcframework/
 
       - name: Link GhosttyKit xcframework
