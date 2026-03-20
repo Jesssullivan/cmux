@@ -55,7 +55,12 @@ jobs:
         run: |
           APP_PATH="build/Build/Products/Release/cmux.app"
           npx create-dmg@8.0.0 "$APP_PATH" . --overwrite || true
-          mv *.dmg cmux-lab-macos.dmg 2>/dev/null || mv cmux*.dmg cmux-lab-macos.dmg
+          # Rename whatever DMG create-dmg produced
+          for f in *.dmg; do
+            [ -f "$f" ] && mv "$f" cmux-lab-macos.dmg && break
+          done
+          ls -lh cmux-lab-macos.dmg
+          file cmux-lab-macos.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -73,7 +78,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Create release
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -85,18 +90,30 @@ jobs:
             [ -f "$f" ] && ASSETS+=("$f")
           done
 
-          gh release upload "$TAG" "${ASSETS[@]}" --clobber 2>/dev/null || \
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "cmux LAB $TAG" \
-            --notes "Fork release with FIDO2/WebAuthn enterprise auth support.
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "ERROR: No DMG artifacts found"
+            ls -laR cmux-lab-macos/ || echo "artifact dir missing"
+            exit 1
+          fi
+
+          NOTES="Fork release with FIDO2/WebAuthn enterprise auth support.
 
           ## Assets
           - **cmux-lab-macos.dmg** — macOS .app bundle (trans-themed LAB branding)
 
           ## Nix
           \`\`\`bash
-          nix run github:Jesssullivan/cmux/$TAG
-          \`\`\`
-          " \
-            "${ASSETS[@]}"
+          nix run github:Jesssullivan/cmux/\${TAG}
+          \`\`\`"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists, uploading assets..."
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Creating release $TAG..."
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "cmux LAB $TAG" \
+              --notes "$NOTES" \
+              "${ASSETS[@]}"
+          fi
