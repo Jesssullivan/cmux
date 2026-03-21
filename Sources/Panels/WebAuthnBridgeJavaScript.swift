@@ -17,6 +17,8 @@ enum WebAuthnBridgeJavaScript {
       if (window.__cmuxWebAuthnBridgeInstalled) return true;
       window.__cmuxWebAuthnBridgeInstalled = true;
 
+      console.log('[cmux-webauthn] bridge installing on', window.location.origin);
+
       // --- Base64URL helpers ---
 
       function b64urlEncode(buffer) {
@@ -190,9 +192,15 @@ enum WebAuthnBridgeJavaScript {
 
       async function postToNative(payload) {
         if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.cmuxWebAuthn) {
+          console.error('[cmux-webauthn] native handler NOT FOUND. webkit:', !!window.webkit,
+            'messageHandlers:', !!(window.webkit && window.webkit.messageHandlers),
+            'cmuxWebAuthn:', !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cmuxWebAuthn));
           throw new DOMException('WebAuthn is not supported in this browser.', 'NotSupportedError');
         }
-        return window.webkit.messageHandlers.cmuxWebAuthn.postMessage(payload);
+        console.log('[cmux-webauthn] postToNative type=' + payload.type + ' origin=' + payload.origin);
+        const result = await window.webkit.messageHandlers.cmuxWebAuthn.postMessage(payload);
+        console.log('[cmux-webauthn] native replied:', JSON.stringify(result).substring(0, 200));
+        return result;
       }
 
       // --- Override navigator.credentials ---
@@ -210,18 +218,28 @@ enum WebAuthnBridgeJavaScript {
           throw new DOMException('PublicKeyCredential creation requires publicKey options.', 'NotSupportedError');
         }
 
-        const serialized = serializeCreateOptions(options.publicKey);
-        const origin = window.location.origin;
-        const challenge = serialized.challenge;
+        try {
+          console.log('[cmux-webauthn] credentials.create called rpId=' +
+            (options.publicKey.rp && options.publicKey.rp.id) + ' user=' +
+            (options.publicKey.user && options.publicKey.user.name));
+          const serialized = serializeCreateOptions(options.publicKey);
+          const origin = window.location.origin;
+          const challenge = serialized.challenge;
 
-        const result = await postToNative({
-          type: 'create',
-          options: serialized,
-          origin: origin
-        });
+          const result = await postToNative({
+            type: 'create',
+            options: serialized,
+            origin: origin
+          });
 
-        if (!result || result.error) throw mapNativeError(result);
-        return buildRegistrationResponse(result, challenge, origin);
+          if (!result || result.error) throw mapNativeError(result);
+          const response = buildRegistrationResponse(result, challenge, origin);
+          console.log('[cmux-webauthn] credentials.create SUCCESS credentialID=' + response.id);
+          return response;
+        } catch (e) {
+          console.error('[cmux-webauthn] credentials.create FAILED:', e.name, e.message);
+          throw e;
+        }
       };
 
       navigator.credentials.get = async function(options) {
@@ -230,18 +248,28 @@ enum WebAuthnBridgeJavaScript {
           throw new DOMException('PublicKeyCredential assertion requires publicKey options.', 'NotSupportedError');
         }
 
-        const serialized = serializeGetOptions(options.publicKey);
-        const origin = window.location.origin;
-        const challenge = serialized.challenge;
+        try {
+          console.log('[cmux-webauthn] credentials.get called rpId=' +
+            (options.publicKey.rpId) + ' allowCredentials=' +
+            (options.publicKey.allowCredentials ? options.publicKey.allowCredentials.length : 0));
+          const serialized = serializeGetOptions(options.publicKey);
+          const origin = window.location.origin;
+          const challenge = serialized.challenge;
 
-        const result = await postToNative({
-          type: 'get',
-          options: serialized,
-          origin: origin
-        });
+          const result = await postToNative({
+            type: 'get',
+            options: serialized,
+            origin: origin
+          });
 
-        if (!result || result.error) throw mapNativeError(result);
-        return buildAssertionResponse(result, challenge, origin);
+          if (!result || result.error) throw mapNativeError(result);
+          const response = buildAssertionResponse(result, challenge, origin);
+          console.log('[cmux-webauthn] credentials.get SUCCESS credentialID=' + response.id);
+          return response;
+        } catch (e) {
+          console.error('[cmux-webauthn] credentials.get FAILED:', e.name, e.message);
+          throw e;
+        }
       };
 
       // --- Override PublicKeyCredential static methods ---
@@ -264,6 +292,10 @@ enum WebAuthnBridgeJavaScript {
       // Ensure feature detection works: sites check `window.PublicKeyCredential` existence.
       // The override above ensures this is always defined.
 
+      console.log('[cmux-webauthn] bridge installed. PublicKeyCredential=' + (typeof PublicKeyCredential) +
+        ' credentials.create=' + (typeof navigator.credentials.create) +
+        ' credentials.get=' + (typeof navigator.credentials.get) +
+        ' nativeHandler=' + !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cmuxWebAuthn));
       return true;
     })()
     """

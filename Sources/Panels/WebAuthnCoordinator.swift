@@ -47,6 +47,9 @@ final class WebAuthnCoordinator: NSObject {
             contentWorld: .page,
             name: WebAuthnBridgeJavaScript.messageHandlerName
         )
+        #if DEBUG
+        dlog("webauthn.install handler=\(WebAuthnBridgeJavaScript.messageHandlerName) contentWorld=page forMainFrameOnly=true")
+        #endif
     }
 
     // MARK: - Cleanup
@@ -64,10 +67,19 @@ final class WebAuthnCoordinator: NSObject {
     // MARK: - Origin Validation
 
     private func validateOrigin(_ claimed: String) -> Bool {
-        guard let webViewURL = webView?.url else { return false }
+        guard let webViewURL = webView?.url else {
+            #if DEBUG
+            dlog("webauthn.validateOrigin FAIL webView.url=nil claimed=\(claimed)")
+            #endif
+            return false
+        }
         let webViewOrigin = "\(webViewURL.scheme ?? "https")://\(webViewURL.host ?? "")"
             + (webViewURL.port.map { ":\($0)" } ?? "")
-        return claimed == webViewOrigin
+        let match = claimed == webViewOrigin
+        #if DEBUG
+        dlog("webauthn.validateOrigin claimed=\(claimed) computed=\(webViewOrigin) match=\(match)")
+        #endif
+        return match
     }
 
     // MARK: - Registration (create)
@@ -99,6 +111,10 @@ final class WebAuthnCoordinator: NSObject {
         let userName = userDict?["name"] as? String ?? ""
         let displayName = userDict?["displayName"] as? String ?? userName
 
+        #if DEBUG
+        dlog("webauthn.create rpID=\(rpID) user=\(userName) challengeLen=\(challengeData.count)")
+        #endif
+
         var requests: [ASAuthorizationRequest] = []
 
         // Hardware security key (YubiKey, etc.)
@@ -121,6 +137,9 @@ final class WebAuthnCoordinator: NSObject {
         )
         requests.append(platformRequest)
 
+        #if DEBUG
+        dlog("webauthn.create requestCount=\(requests.count) (securityKey+platform)")
+        #endif
         performAuthorization(with: requests, replyHandler: replyHandler)
     }
 
@@ -140,6 +159,11 @@ final class WebAuthnCoordinator: NSObject {
         }
 
         let rpID = options["rpId"] as? String ?? webView?.url?.host ?? ""
+
+        #if DEBUG
+        let allowCount = (options["allowCredentials"] as? [[String: Any]])?.count ?? 0
+        dlog("webauthn.get rpID=\(rpID) challengeLen=\(challengeData.count) allowCredentials=\(allowCount)")
+        #endif
 
         var requests: [ASAuthorizationRequest] = []
 
@@ -162,6 +186,9 @@ final class WebAuthnCoordinator: NSObject {
         }
         requests.append(platformRequest)
 
+        #if DEBUG
+        dlog("webauthn.get requestCount=\(requests.count) (securityKey+platform)")
+        #endif
         performAuthorization(with: requests, replyHandler: replyHandler)
     }
 
@@ -240,6 +267,9 @@ final class WebAuthnCoordinator: NSObject {
         controller.presentationContextProvider = self
         self.authorizationController = controller
         self.state = .authenticating(replyHandler: replyHandler)
+        #if DEBUG
+        dlog("webauthn.performRequests state=authenticating requestTypes=\(requests.map { type(of: $0) })")
+        #endif
         controller.performRequests()
     }
 
@@ -310,9 +340,16 @@ extension WebAuthnCoordinator: WKScriptMessageHandlerWithReply {
               let options = body["options"] as? [String: Any],
               let origin = body["origin"] as? String
         else {
+            #if DEBUG
+            dlog("webauthn.message REJECT invalid format body=\(String(describing: message.body))")
+            #endif
             replyHandler(["error": "Invalid message format.", "name": "TypeError"], nil)
             return
         }
+
+        #if DEBUG
+        dlog("webauthn.message type=\(type) origin=\(origin) optionKeys=\(Array(options.keys).sorted())")
+        #endif
 
         guard validateOrigin(origin) else {
             replyHandler(["error": "Origin mismatch.", "name": "SecurityError"], nil)
@@ -320,6 +357,9 @@ extension WebAuthnCoordinator: WKScriptMessageHandlerWithReply {
         }
 
         guard case .idle = state else {
+            #if DEBUG
+            dlog("webauthn.message REJECT already authenticating")
+            #endif
             replyHandler(
                 ["error": "A credential operation is already in progress.", "name": "InvalidStateError"],
                 nil
@@ -333,6 +373,9 @@ extension WebAuthnCoordinator: WKScriptMessageHandlerWithReply {
         case "get":
             handleGet(options: options, origin: origin, replyHandler: replyHandler)
         default:
+            #if DEBUG
+            dlog("webauthn.message REJECT unknown type=\(type)")
+            #endif
             replyHandler(["error": "Unknown WebAuthn operation type.", "name": "NotSupportedError"], nil)
         }
     }
@@ -361,9 +404,17 @@ extension WebAuthnCoordinator: ASAuthorizationControllerDelegate {
     }
 
     private func handleAuthorizationCompletion(_ authorization: ASAuthorization) {
-        guard case .authenticating(let replyHandler) = state else { return }
+        guard case .authenticating(let replyHandler) = state else {
+            #if DEBUG
+            dlog("webauthn.authComplete IGNORED state=idle (no pending request)")
+            #endif
+            return
+        }
         state = .idle
         authorizationController = nil
+        #if DEBUG
+        dlog("webauthn.authComplete credentialType=\(type(of: authorization.credential))")
+        #endif
 
         switch authorization.credential {
         case let cred as ASAuthorizationSecurityKeyPublicKeyCredentialRegistration:
@@ -412,9 +463,17 @@ extension WebAuthnCoordinator: ASAuthorizationControllerDelegate {
     }
 
     private func handleAuthorizationError(_ error: Error) {
-        guard case .authenticating(let replyHandler) = state else { return }
+        guard case .authenticating(let replyHandler) = state else {
+            #if DEBUG
+            dlog("webauthn.authError IGNORED state=idle error=\(error)")
+            #endif
+            return
+        }
         state = .idle
         authorizationController = nil
+        #if DEBUG
+        dlog("webauthn.authError error=\(error) code=\((error as? ASAuthorizationError)?.code.rawValue ?? -1)")
+        #endif
 
         let errorName: String
         if let asError = error as? ASAuthorizationError {
@@ -452,11 +511,19 @@ extension WebAuthnCoordinator: ASAuthorizationControllerPresentationContextProvi
         // MainActor.assumeIsolated since we know we're already on main.
         if Thread.isMainThread {
             return MainActor.assumeIsolated {
-                webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+                let w = webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+                #if DEBUG
+                dlog("webauthn.presentationAnchor window=\(w) isMainThread=true webView.window=\(String(describing: webView?.window))")
+                #endif
+                return w
             }
         }
         return DispatchQueue.main.sync {
-            webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+            let w = webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+            #if DEBUG
+            dlog("webauthn.presentationAnchor window=\(w) isMainThread=false")
+            #endif
+            return w
         }
     }
 }
