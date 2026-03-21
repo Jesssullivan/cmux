@@ -385,7 +385,17 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
         rm -f "$CMUX_SOCKET"
       fi
     fi
-    /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$TAG_APP_PATH" >/dev/null 2>&1 || true
+    # Re-sign with entitlements. Try explicit entitlements file first (embeds
+    # com.apple.developer.web-browser.public-key-credential for WebAuthn passkey
+    # support). Fall back to --generate-entitlement-der if ad-hoc signing with
+    # the restricted entitlement is rejected.
+    REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+    if [ -f "$REPO_ROOT/cmux.entitlements" ]; then
+      /usr/bin/codesign --force --sign - --timestamp=none --entitlements "$REPO_ROOT/cmux.entitlements" "$TAG_APP_PATH" >/dev/null 2>&1 || \
+      /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$TAG_APP_PATH" >/dev/null 2>&1 || true
+    else
+      /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$TAG_APP_PATH" >/dev/null 2>&1 || true
+    fi
   fi
   APP_PATH="$TAG_APP_PATH"
 fi
