@@ -76,7 +76,9 @@ jobs:
           EMBEDDED_ENTITLEMENTS="cmux.embedded.entitlements"
           CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
           HELPER_PATH="$APP_PATH/Contents/Resources/bin/ghostty"
-          # Deep-sign the bundle first, then narrow embedded executables back down.
+          # Deep-sign the bundle first, then narrow embedded executables, then
+          # re-sign the top-level bundle to update the seal (re-signing nested
+          # binaries invalidates the bundle's resource seal).
           /usr/bin/codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
           if [ -f "$CLI_PATH" ]; then
             /usr/bin/codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" --entitlements "$EMBEDDED_ENTITLEMENTS" "$CLI_PATH"
@@ -84,6 +86,8 @@ jobs:
           if [ -f "$HELPER_PATH" ]; then
             /usr/bin/codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" --entitlements "$EMBEDDED_ENTITLEMENTS" "$HELPER_PATH"
           fi
+          # Re-sign top-level bundle (no --deep) to update seal after embedded re-signing
+          /usr/bin/codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$APP_PATH"
           /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           echo "Codesign verified"
           # Confirm team ID is embedded
