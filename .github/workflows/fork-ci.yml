@@ -48,6 +48,12 @@ jobs:
           cp zig-out/lib/libctap2.a ../../
           cp include/ctap2.h ../../
 
+      - name: Run zig-ctap2 tests
+        run: |
+          cd vendor/ctap2
+          zig build test
+          zig build test-pbt
+
       - name: Build cmux LAB (Debug)
         run: |
           xcodebuild -project GhosttyTabs.xcodeproj \
