@@ -1,8 +1,13 @@
 import AuthenticationServices
+import Bonsplit
+import CryptoKit
 import WebKit
+import YubiKit
 
 /// Coordinates WebAuthn/FIDO2 ceremonies between the JS bridge and
-/// Apple's AuthenticationServices framework.
+/// either Apple's AuthenticationServices framework (when the app has
+/// the required entitlements) or Yubico's YubiKit for direct USB HID
+/// communication with security keys (works in any build).
 ///
 /// One coordinator per WKWebView. Handles both registration (create)
 /// and assertion (get) flows using hardware security keys (YubiKey)
@@ -82,7 +87,7 @@ final class WebAuthnCoordinator: NSObject {
         return match
     }
 
-    // MARK: - Registration (create)
+    // MARK: - Registration (create) via YubiKit CTAP2
 
     private func handleCreate(
         options: [String: Any],
@@ -99,6 +104,7 @@ final class WebAuthnCoordinator: NSObject {
 
         let rpID = (options["rp"] as? [String: Any])?["id"] as? String
             ?? webView?.url?.host ?? ""
+        let rpName = (options["rp"] as? [String: Any])?["name"] as? String ?? rpID
 
         let userDict = options["user"] as? [String: Any]
         let userIDData: Data
@@ -111,39 +117,48 @@ final class WebAuthnCoordinator: NSObject {
         let userName = userDict?["name"] as? String ?? ""
         let displayName = userDict?["displayName"] as? String ?? userName
 
+        // Build clientDataHash (SHA-256 of clientDataJSON constructed by JS bridge)
+        let clientDataJSON = buildClientDataJSON(type: "webauthn.create", challenge: challengeB64, origin: origin)
+        let clientDataHash = Data(SHA256.hash(data: clientDataJSON))
+
+        // Parse algorithms
+        var algorithms: [COSE.Algorithm] = []
+        if let credParams = options["pubKeyCredParams"] as? [[String: Any]] {
+            algorithms = credParams.compactMap { param in
+                guard let alg = param["alg"] as? Int else { return nil }
+                return COSE.Algorithm(rawValue: alg)
+            }
+        }
+        if algorithms.isEmpty {
+            algorithms = [.es256, .rs256]
+        }
+
+        // Parse options
+        let authSel = options["authenticatorSelection"] as? [String: Any]
+        let rk = authSel?["residentKey"] as? String == "required"
+            || authSel?["requireResidentKey"] as? Bool == true
+
+        let params = CTAP2.MakeCredential.Parameters(
+            clientDataHash: clientDataHash,
+            rp: .init(id: rpID, name: rpName),
+            user: .init(id: userIDData, name: userName, displayName: displayName),
+            pubKeyCredParams: algorithms,
+            excludeList: nil,
+            extensions: [],
+            rk: rk
+        )
+
         #if DEBUG
-        dlog("webauthn.create rpID=\(rpID) user=\(userName) challengeLen=\(challengeData.count)")
+        dlog("webauthn.ctap2.create rpID=\(rpID) user=\(userName) algorithms=\(algorithms)")
         #endif
 
-        var requests: [ASAuthorizationRequest] = []
-
-        // Hardware security key (YubiKey, etc.)
-        let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let securityKeyRequest = securityKeyProvider.createCredentialRegistrationRequest(
-            challenge: challengeData,
-            displayName: displayName,
-            name: userName,
-            userID: userIDData
-        )
-        configureSecurityKeyRegistrationRequest(securityKeyRequest, options: options)
-        requests.append(securityKeyRequest)
-
-        // Platform authenticator (Touch ID / passkeys)
-        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let platformRequest = platformProvider.createCredentialRegistrationRequest(
-            challenge: challengeData,
-            name: userName,
-            userID: userIDData
-        )
-        requests.append(platformRequest)
-
-        #if DEBUG
-        dlog("webauthn.create requestCount=\(requests.count) (securityKey+platform)")
-        #endif
-        performAuthorization(with: requests, replyHandler: replyHandler)
+        state = .authenticating(replyHandler: replyHandler)
+        Task { @MainActor in
+            await performCTAP2MakeCredential(params: params, replyHandler: replyHandler)
+        }
     }
 
-    // MARK: - Assertion (get)
+    // MARK: - Assertion (get) via YubiKit CTAP2
 
     private func handleGet(
         options: [String: Any],
@@ -160,36 +175,159 @@ final class WebAuthnCoordinator: NSObject {
 
         let rpID = options["rpId"] as? String ?? webView?.url?.host ?? ""
 
-        #if DEBUG
-        let allowCount = (options["allowCredentials"] as? [[String: Any]])?.count ?? 0
-        dlog("webauthn.get rpID=\(rpID) challengeLen=\(challengeData.count) allowCredentials=\(allowCount)")
-        #endif
+        // Build clientDataHash
+        let clientDataJSON = buildClientDataJSON(type: "webauthn.get", challenge: challengeB64, origin: origin)
+        let clientDataHash = Data(SHA256.hash(data: clientDataJSON))
 
-        var requests: [ASAuthorizationRequest] = []
-
-        // Hardware security key assertion
-        let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let securityKeyRequest = securityKeyProvider.createCredentialAssertionRequest(challenge: challengeData)
-        configureSecurityKeyAssertionRequest(securityKeyRequest, options: options)
-        requests.append(securityKeyRequest)
-
-        // Platform authenticator assertion
-        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let platformRequest = platformProvider.createCredentialAssertionRequest(challenge: challengeData)
+        // Parse allowCredentials
+        var allowList: [WebAuthn.PublicKeyCredential.Descriptor]? = nil
         if let allowCredentials = options["allowCredentials"] as? [[String: Any]] {
-            platformRequest.allowedCredentials = allowCredentials.compactMap { cred in
+            allowList = allowCredentials.compactMap { cred in
                 guard let idB64 = cred["id"] as? String,
                       let idData = Data(base64urlEncoded: idB64)
                 else { return nil }
-                return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: idData)
+                return WebAuthn.PublicKeyCredential.Descriptor(
+                    id: idData,
+                    type: .publicKey
+                )
             }
         }
-        requests.append(platformRequest)
+
+        let params = CTAP2.GetAssertion.Parameters(
+            rpId: rpID,
+            clientDataHash: clientDataHash,
+            allowList: allowList,
+            extensions: []
+        )
 
         #if DEBUG
-        dlog("webauthn.get requestCount=\(requests.count) (securityKey+platform)")
+        dlog("webauthn.ctap2.get rpID=\(rpID) allowList=\(allowList?.count ?? 0)")
         #endif
-        performAuthorization(with: requests, replyHandler: replyHandler)
+
+        state = .authenticating(replyHandler: replyHandler)
+        Task { @MainActor in
+            await performCTAP2GetAssertion(params: params, replyHandler: replyHandler)
+        }
+    }
+
+    // MARK: - CTAP2 Direct USB HID
+
+    private func performCTAP2MakeCredential(
+        params: CTAP2.MakeCredential.Parameters,
+        replyHandler: @escaping @MainActor (Any?, String?) -> Void
+    ) async {
+        do {
+            #if DEBUG
+            dlog("webauthn.ctap2.create connecting to YubiKey via USB HID...")
+            #endif
+            let connection = try await HIDFIDOConnection()
+            let session = try await CTAP2.Session(connection: connection)
+
+            #if DEBUG
+            dlog("webauthn.ctap2.create session established, performing makeCredential...")
+            #endif
+
+            var response: CTAP2.MakeCredential.Response?
+            for try await status in await session.makeCredential(parameters: params) {
+                switch status {
+                case .waitingForTouch:
+                    #if DEBUG
+                    dlog("webauthn.ctap2.create waiting for touch...")
+                    #endif
+                case .finished(let result):
+                    response = result
+                }
+            }
+
+            guard let result = response else {
+                state = .idle
+                replyHandler(["error": "No response from authenticator.", "name": "NotAllowedError"], nil)
+                return
+            }
+
+            #if DEBUG
+            dlog("webauthn.ctap2.create SUCCESS credentialID=\(result.authenticatorData.attestedCredential?.credentialId.base64urlEncodedString() ?? "nil")")
+            #endif
+
+            state = .idle
+            replyHandler([
+                "credentialID": result.authenticatorData.attestedCredential?.credentialId.base64urlEncodedString() ?? "",
+                "attestationObject": result.rawAttestationObject.base64urlEncodedString(),
+                "authenticatorAttachment": "cross-platform",
+                "transports": ["usb"],
+                "type": "registration"
+            ], nil)
+        } catch {
+            #if DEBUG
+            dlog("webauthn.ctap2.create FAILED: \(error)")
+            #endif
+            state = .idle
+            replyHandler(["error": error.localizedDescription, "name": "NotAllowedError"], nil)
+        }
+    }
+
+    private func performCTAP2GetAssertion(
+        params: CTAP2.GetAssertion.Parameters,
+        replyHandler: @escaping @MainActor (Any?, String?) -> Void
+    ) async {
+        do {
+            #if DEBUG
+            dlog("webauthn.ctap2.get connecting to YubiKey via USB HID...")
+            #endif
+            let connection = try await HIDFIDOConnection()
+            let session = try await CTAP2.Session(connection: connection)
+
+            #if DEBUG
+            dlog("webauthn.ctap2.get session established, performing getAssertion...")
+            #endif
+
+            var response: CTAP2.GetAssertion.Response?
+            for try await status in await session.getAssertion(parameters: params) {
+                switch status {
+                case .waitingForTouch:
+                    #if DEBUG
+                    dlog("webauthn.ctap2.get waiting for touch...")
+                    #endif
+                case .finished(let result):
+                    response = result
+                }
+            }
+
+            guard let result = response else {
+                state = .idle
+                replyHandler(["error": "No response from authenticator.", "name": "NotAllowedError"], nil)
+                return
+            }
+
+            #if DEBUG
+            dlog("webauthn.ctap2.get SUCCESS credentialID=\(result.credential?.id.base64urlEncodedString() ?? "nil")")
+            #endif
+
+            state = .idle
+            replyHandler([
+                "credentialID": result.credential?.id.base64urlEncodedString() ?? "",
+                "authenticatorData": result.authData.base64urlEncodedString(),
+                "signature": result.signature.base64urlEncodedString(),
+                "userHandle": result.user?.id.base64urlEncodedString() ?? "",
+                "authenticatorAttachment": "cross-platform",
+                "type": "assertion"
+            ], nil)
+        } catch {
+            #if DEBUG
+            dlog("webauthn.ctap2.get FAILED: \(error)")
+            #endif
+            state = .idle
+            replyHandler(["error": error.localizedDescription, "name": "NotAllowedError"], nil)
+        }
+    }
+
+    // MARK: - Client Data JSON
+
+    private func buildClientDataJSON(type: String, challenge: String, origin: String) -> Data {
+        let json = """
+        {"type":"\(type)","challenge":"\(challenge)","origin":"\(origin)","crossOrigin":false}
+        """
+        return Data(json.utf8)
     }
 
     // MARK: - Request Configuration

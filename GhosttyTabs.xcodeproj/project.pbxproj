@@ -572,6 +572,7 @@
 					A5001271 /* PostHog */,
 					A5001261 /* Bonsplit */,
 					A5001291 /* MarkdownUI */,
+					A5009910 /* YubiKit */,
 				);
 			name = GhosttyTabs;
 			productName = GhosttyTabs;
@@ -675,6 +676,7 @@
 					A5001272 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 					A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 					A5001260 /* XCLocalSwiftPackageReference "bonsplit" */,
+					A5009912 /* XCRemoteSwiftPackageReference "yubikit-swift" */,
 				);
 			productRefGroup = A5001042 /* Products */;
 			projectDirPath = "";
@@ -1126,6 +1128,14 @@
 				isa = XCLocalSwiftPackageReference;
 				relativePath = vendor/bonsplit;
 			};
+		A5009912 /* XCRemoteSwiftPackageReference "yubikit-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Yubico/yubikit-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1154,6 +1164,11 @@
 				package = A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 				productName = MarkdownUI;
 			};
+		A5009910 /* YubiKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A5009912 /* XCRemoteSwiftPackageReference "yubikit-swift" */;
+			productName = YubiKit;
+		};
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
