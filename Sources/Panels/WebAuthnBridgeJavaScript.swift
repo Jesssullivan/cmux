@@ -109,7 +109,7 @@ enum WebAuthnBridgeJavaScript {
         const credentialId = b64urlDecode(nativeResult.credentialID);
         const attestationObject = nativeResult.attestationObject ? b64urlDecode(nativeResult.attestationObject) : new ArrayBuffer(0);
 
-        return {
+        var response = {
           type: 'public-key',
           id: nativeResult.credentialID,
           rawId: credentialId,
@@ -140,6 +140,11 @@ enum WebAuthnBridgeJavaScript {
             };
           }
         };
+        // Set prototype so instanceof PublicKeyCredential passes on sites that check it
+        if (typeof PublicKeyCredential !== 'undefined') {
+          Object.setPrototypeOf(response, PublicKeyCredential.prototype);
+        }
+        return response;
       }
 
       function buildAssertionResponse(nativeResult, challenge, origin) {
@@ -147,9 +152,10 @@ enum WebAuthnBridgeJavaScript {
         const credentialId = b64urlDecode(nativeResult.credentialID);
         const authenticatorData = nativeResult.authenticatorData ? b64urlDecode(nativeResult.authenticatorData) : new ArrayBuffer(0);
         const signature = nativeResult.signature ? b64urlDecode(nativeResult.signature) : new ArrayBuffer(0);
-        const userHandle = nativeResult.userHandle ? b64urlDecode(nativeResult.userHandle) : null;
+        // Per spec: userHandle is null when not provided, not empty ArrayBuffer
+        const userHandle = (nativeResult.userHandle && nativeResult.userHandle.length > 0) ? b64urlDecode(nativeResult.userHandle) : null;
 
-        return {
+        var response = {
           type: 'public-key',
           id: nativeResult.credentialID,
           rawId: credentialId,
@@ -177,6 +183,10 @@ enum WebAuthnBridgeJavaScript {
             };
           }
         };
+        if (typeof PublicKeyCredential !== 'undefined') {
+          Object.setPrototypeOf(response, PublicKeyCredential.prototype);
+        }
+        return response;
       }
 
       // --- Error mapping ---
@@ -282,7 +292,7 @@ enum WebAuthnBridgeJavaScript {
       }
 
       PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async function() {
-        return true;
+        return false;  // Only USB security keys supported via direct CTAP2, not platform authenticators
       };
 
       PublicKeyCredential.isConditionalMediationAvailable = async function() {
