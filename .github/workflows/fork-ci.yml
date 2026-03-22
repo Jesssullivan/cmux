@@ -54,6 +54,7 @@ jobs:
             -scheme cmux \
             -configuration Debug \
             -destination 'platform=macOS' \
+            ARCHS=arm64 \
             -derivedDataPath /tmp/cmux-fork-ci \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
             build
@@ -64,6 +65,7 @@ jobs:
             -scheme cmux \
             -configuration Release \
             -destination 'platform=macOS' \
+            ARCHS=arm64 \
             -derivedDataPath build \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
             build
