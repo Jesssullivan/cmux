@@ -165,7 +165,7 @@ final class WebAuthnCoordinator: NSObject {
                     #if DEBUG
                     dlog("webauthn.ctap2.create error=\(error)")
                     #endif
-                    replyHandler(["error": error, "name": "NotAllowedError"], nil)
+                    replyHandler(["error": error.message, "name": "NotAllowedError"], nil)
                 }
             }
         }
@@ -225,7 +225,7 @@ final class WebAuthnCoordinator: NSObject {
                     #if DEBUG
                     dlog("webauthn.ctap2.get error=\(error)")
                     #endif
-                    replyHandler(["error": error, "name": "NotAllowedError"], nil)
+                    replyHandler(["error": error.message, "name": "NotAllowedError"], nil)
                 }
             }
         }
