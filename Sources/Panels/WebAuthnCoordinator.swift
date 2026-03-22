@@ -2,6 +2,12 @@ import CryptoKit
 import libctap2
 import WebKit
 
+/// Error type for CTAP2 operations.
+private struct CTAP2Error: Error, LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 /// Coordinates WebAuthn/FIDO2 ceremonies between the JS bridge and
 /// hardware security keys (via libctap2 over USB HID) and platform
 /// authenticators (Touch ID / passkeys via AuthenticationServices).
@@ -236,7 +242,7 @@ final class WebAuthnCoordinator: NSObject {
         displayName: String,
         algIDs: [Int32],
         residentKey: Bool
-    ) -> Result<[String: Any], String> {
+    ) -> Result<[String: Any], CTAP2Error> {
         var resultBuf = [UInt8](repeating: 0, count: 4096)
 
         let written = clientDataHash.withUnsafeBufferPointer { hashPtr in
@@ -267,7 +273,7 @@ final class WebAuthnCoordinator: NSObject {
         // Raw CTAP2 response: first byte is status, rest is CBOR map
         let statusByte = resultBuf[0]
         guard statusByte == 0 else {
-            return .failure("CTAP2 device error: status 0x\(String(statusByte, radix: 16))")
+            return .failure(CTAP2Error(message: "CTAP2 device error: status 0x\(String(statusByte, radix: 16))"))
         }
 
         let cborData = Data(resultBuf[1..<Int(written)])
@@ -279,18 +285,18 @@ final class WebAuthnCoordinator: NSObject {
         // The full attestationObject is the CBOR from byte 1 onward.
         let attestationObject = cborData
         guard let parsed = Self.parseCBORMap(cborData) else {
-            return .failure("Failed to parse CTAP2 MakeCredential CBOR response.")
+            return .failure(CTAP2Error(message: "Failed to parse CTAP2 MakeCredential CBOR response."))
         }
 
         // Extract credentialID from authData (key 0x02):
         // authData format: rpIdHash(32) + flags(1) + signCount(4) + [attestedCredData]
         // attestedCredData: aaguid(16) + credIdLen(2) + credentialId(credIdLen) + ...
         guard let authData = parsed[2] as? Data, authData.count >= 55 else {
-            return .failure("Invalid authenticator data in MakeCredential response.")
+            return .failure(CTAP2Error(message: "Invalid authenticator data in MakeCredential response."))
         }
         let credIdLen = Int(authData[53]) << 8 | Int(authData[54])
         guard authData.count >= 55 + credIdLen else {
-            return .failure("Authenticator data too short for credentialID.")
+            return .failure(CTAP2Error(message: "Authenticator data too short for credentialID."))
         }
         let credentialID = authData[55..<(55 + credIdLen)]
 
@@ -307,7 +313,7 @@ final class WebAuthnCoordinator: NSObject {
         clientDataHash: [UInt8],
         rpID: String,
         allowListIDs: [Data]
-    ) -> Result<[String: Any], String> {
+    ) -> Result<[String: Any], CTAP2Error> {
         var resultBuf = [UInt8](repeating: 0, count: 4096)
 
         // Build the allow list arrays for the C API
@@ -353,7 +359,7 @@ final class WebAuthnCoordinator: NSObject {
         // Raw CTAP2 response: first byte is status, rest is CBOR map
         let statusByte = resultBuf[0]
         guard statusByte == 0 else {
-            return .failure("CTAP2 device error: status 0x\(String(statusByte, radix: 16))")
+            return .failure(CTAP2Error(message: "CTAP2 device error: status 0x\(String(statusByte, radix: 16))"))
         }
 
         let cborData = Data(resultBuf[1..<Int(written)])
@@ -364,7 +370,7 @@ final class WebAuthnCoordinator: NSObject {
         //   key 0x03 = signature (bytes)
         //   key 0x04 = user (map, optional)
         guard let parsed = Self.parseCBORMap(cborData) else {
-            return .failure("Failed to parse CTAP2 GetAssertion CBOR response.")
+            return .failure(CTAP2Error(message: "Failed to parse CTAP2 GetAssertion CBOR response."))
         }
 
         // Extract credential ID from key 0x01
@@ -377,15 +383,15 @@ final class WebAuthnCoordinator: NSObject {
                   let idBytes = credDict["id"] as? Data {
             credentialID = idBytes
         } else {
-            return .failure("Missing credentialID in GetAssertion response.")
+            return .failure(CTAP2Error(message: "Missing credentialID in GetAssertion response."))
         }
 
         guard let authData = parsed[2] as? Data else {
-            return .failure("Missing authenticatorData in GetAssertion response.")
+            return .failure(CTAP2Error(message: "Missing authenticatorData in GetAssertion response."))
         }
 
         guard let signature = parsed[3] as? Data else {
-            return .failure("Missing signature in GetAssertion response.")
+            return .failure(CTAP2Error(message: "Missing signature in GetAssertion response."))
         }
 
         // User handle is optional (key 0x04)
@@ -422,25 +428,25 @@ final class WebAuthnCoordinator: NSObject {
     }
 
     /// Map CTAP2 error codes to human-readable strings.
-    private static func ctap2ErrorMessage(code: Int) -> String {
+    private nonisolated static func ctap2ErrorMessage(code: Int) -> CTAP2Error {
         switch Int32(code) {
-        case CTAP2_ERR_NO_DEVICE:      return "No FIDO2 security key detected."
-        case CTAP2_ERR_TIMEOUT:        return "Security key operation timed out."
-        case CTAP2_ERR_PROTOCOL:       return "CTAP2 protocol error."
-        case CTAP2_ERR_BUFFER_TOO_SMALL: return "Response buffer too small."
-        case CTAP2_ERR_OPEN_FAILED:    return "Failed to open security key device."
-        case CTAP2_ERR_WRITE_FAILED:   return "Failed to write to security key."
-        case CTAP2_ERR_READ_FAILED:    return "Failed to read from security key."
-        case CTAP2_ERR_CBOR:           return "CBOR encoding/decoding error."
-        case CTAP2_ERR_DEVICE:         return "Security key returned an error."
-        default:                        return "Unknown CTAP2 error (code \(code))."
+        case CTAP2_ERR_NO_DEVICE:      return CTAP2Error(message: "No FIDO2 security key detected.")
+        case CTAP2_ERR_TIMEOUT:        return CTAP2Error(message: "Security key operation timed out.")
+        case CTAP2_ERR_PROTOCOL:       return CTAP2Error(message: "CTAP2 protocol error.")
+        case CTAP2_ERR_BUFFER_TOO_SMALL: return CTAP2Error(message: "Response buffer too small.")
+        case CTAP2_ERR_OPEN_FAILED:    return CTAP2Error(message: "Failed to open security key device.")
+        case CTAP2_ERR_WRITE_FAILED:   return CTAP2Error(message: "Failed to write to security key.")
+        case CTAP2_ERR_READ_FAILED:    return CTAP2Error(message: "Failed to read from security key.")
+        case CTAP2_ERR_CBOR:           return CTAP2Error(message: "CBOR encoding/decoding error.")
+        case CTAP2_ERR_DEVICE:         return CTAP2Error(message: "Security key returned an error.")
+        default:                        return CTAP2Error(message: "Unknown CTAP2 error (code \(code)).")
         }
     }
 
     /// Minimal CBOR map parser for CTAP2 responses.
     /// Handles the top-level CBOR map with integer keys and byte-string / text-string / map values.
     /// Returns a dictionary keyed by CBOR integer keys.
-    private static func parseCBORMap(_ data: Data) -> [Int: Any]? {
+    private nonisolated static func parseCBORMap(_ data: Data) -> [Int: Any]? {
         guard !data.isEmpty else { return nil }
         var result: [Int: Any] = [:]
         var offset = 0
