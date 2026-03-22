@@ -273,7 +273,8 @@ final class WebAuthnCoordinator: NSObject {
         // Raw CTAP2 response: first byte is status, rest is CBOR map
         let statusByte = resultBuf[0]
         guard statusByte == 0 else {
-            return .failure(CTAP2Error(message: "CTAP2 device error: status 0x\(String(statusByte, radix: 16))"))
+            let msg = String(cString: ctap2_status_message(statusByte))
+            return .failure(CTAP2Error(message: msg))
         }
 
         let cborData = Data(resultBuf[1..<Int(written)])
@@ -359,7 +360,8 @@ final class WebAuthnCoordinator: NSObject {
         // Raw CTAP2 response: first byte is status, rest is CBOR map
         let statusByte = resultBuf[0]
         guard statusByte == 0 else {
-            return .failure(CTAP2Error(message: "CTAP2 device error: status 0x\(String(statusByte, radix: 16))"))
+            let msg = String(cString: ctap2_status_message(statusByte))
+            return .failure(CTAP2Error(message: msg))
         }
 
         let cborData = Data(resultBuf[1..<Int(written)])
