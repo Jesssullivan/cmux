@@ -77,3 +77,6 @@ int ctap2_get_info(
 #endif
 
 #endif // CTAP2_H
+
+// Debug: get the last IOReturn error code from HID operations.
+int ctap2_debug_last_ioreturn(void);
