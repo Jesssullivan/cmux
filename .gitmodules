@@ -8,3 +8,6 @@
 [submodule "vendor/bonsplit"]
 	path = vendor/bonsplit
 	url = https://github.com/manaflow-ai/bonsplit.git
+[submodule "vendor/ctap2"]
+	path = vendor/ctap2
+	url = https://github.com/Jesssullivan/zig-ctap2.git

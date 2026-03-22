@@ -41,6 +41,13 @@ jobs:
           tar xzf GhosttyKit.xcframework.tar.gz
           ls -la GhosttyKit.xcframework/
 
+      - name: Build libctap2
+        run: |
+          cd vendor/ctap2
+          zig build -Doptimize=ReleaseFast
+          cp zig-out/lib/libctap2.a ../../
+          cp include/ctap2.h ../../
+
       - name: Build cmux LAB (Debug)
         run: |
           xcodebuild -project GhosttyTabs.xcodeproj \

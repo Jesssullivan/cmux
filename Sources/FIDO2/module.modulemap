@@ -1,0 +1,5 @@
+module libctap2 {
+    header "../../ctap2.h"
+    link "ctap2"
+    export *
+}

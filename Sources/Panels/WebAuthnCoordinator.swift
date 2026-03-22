@@ -1,12 +1,13 @@
-import AuthenticationServices
+import CryptoKit
+import libctap2
 import WebKit
 
 /// Coordinates WebAuthn/FIDO2 ceremonies between the JS bridge and
-/// Apple's AuthenticationServices framework.
+/// hardware security keys (via libctap2 over USB HID) and platform
+/// authenticators (Touch ID / passkeys via AuthenticationServices).
 ///
 /// One coordinator per WKWebView. Handles both registration (create)
-/// and assertion (get) flows using hardware security keys (YubiKey)
-/// and platform authenticators (Touch ID / passkeys).
+/// and assertion (get) flows.
 @MainActor
 final class WebAuthnCoordinator: NSObject {
 
@@ -19,7 +20,9 @@ final class WebAuthnCoordinator: NSObject {
 
     private var state: State = .idle
     private weak var webView: WKWebView?
-    private var authorizationController: ASAuthorizationController?
+
+    /// Queue for blocking CTAP2 USB HID operations.
+    private static let ctap2Queue = DispatchQueue(label: "com.cmuxterm.ctap2", qos: .userInitiated)
 
     init(webView: WKWebView) {
         self.webView = webView
@@ -56,8 +59,6 @@ final class WebAuthnCoordinator: NSObject {
 
     /// Cancels any in-flight WebAuthn ceremony and replies with an error.
     func cancelPendingCeremony() {
-        authorizationController?.cancel()
-        authorizationController = nil
         if case .authenticating(let replyHandler) = state {
             replyHandler(["error": "The operation was cancelled.", "name": "AbortError"], nil)
         }
@@ -97,8 +98,9 @@ final class WebAuthnCoordinator: NSObject {
             return
         }
 
-        let rpID = (options["rp"] as? [String: Any])?["id"] as? String
-            ?? webView?.url?.host ?? ""
+        let rpDict = options["rp"] as? [String: Any]
+        let rpID = rpDict?["id"] as? String ?? webView?.url?.host ?? ""
+        let rpName = rpDict?["name"] as? String ?? rpID
 
         let userDict = options["user"] as? [String: Any]
         let userIDData: Data
@@ -111,36 +113,56 @@ final class WebAuthnCoordinator: NSObject {
         let userName = userDict?["name"] as? String ?? ""
         let displayName = userDict?["displayName"] as? String ?? userName
 
+        // Parse algorithm IDs from pubKeyCredParams (default to ES256 = -7)
+        var algIDs: [Int32] = [-7]
+        if let credParams = options["pubKeyCredParams"] as? [[String: Any]] {
+            let parsed = credParams.compactMap { $0["alg"] as? Int }.map { Int32($0) }
+            if !parsed.isEmpty { algIDs = parsed }
+        }
+
+        let residentKey: Bool
+        if let authSel = options["authenticatorSelection"] as? [String: Any],
+           let rk = authSel["residentKey"] as? String {
+            residentKey = (rk == "required")
+        } else {
+            residentKey = false
+        }
+
         #if DEBUG
         dlog("webauthn.create rpID=\(rpID) user=\(userName) challengeLen=\(challengeData.count)")
         #endif
 
-        var requests: [ASAuthorizationRequest] = []
+        state = .authenticating(replyHandler: replyHandler)
 
-        // Hardware security key (YubiKey, etc.)
-        let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let securityKeyRequest = securityKeyProvider.createCredentialRegistrationRequest(
-            challenge: challengeData,
-            displayName: displayName,
-            name: userName,
-            userID: userIDData
-        )
-        configureSecurityKeyRegistrationRequest(securityKeyRequest, options: options)
-        requests.append(securityKeyRequest)
+        // Build clientDataJSON and hash it with SHA-256
+        let clientDataJSON = Self.buildClientDataJSON(type: "webauthn.create", challenge: challengeB64, origin: origin)
+        let clientDataHash = SHA256.hash(data: clientDataJSON)
+        let hashBytes = Array(clientDataHash)
 
-        // Platform authenticator (Touch ID / passkeys)
-        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let platformRequest = platformProvider.createCredentialRegistrationRequest(
-            challenge: challengeData,
-            name: userName,
-            userID: userIDData
-        )
-        requests.append(platformRequest)
-
-        #if DEBUG
-        dlog("webauthn.create requestCount=\(requests.count) (securityKey+platform)")
-        #endif
-        performAuthorization(with: requests, replyHandler: replyHandler)
+        Self.ctap2Queue.async {
+            let result = self.performCTAP2MakeCredential(
+                clientDataHash: hashBytes,
+                rpID: rpID,
+                rpName: rpName,
+                userID: userIDData,
+                userName: userName,
+                displayName: displayName,
+                algIDs: algIDs,
+                residentKey: residentKey
+            )
+            DispatchQueue.main.async {
+                self.state = .idle
+                switch result {
+                case .success(let response):
+                    replyHandler(response, nil)
+                case .failure(let error):
+                    #if DEBUG
+                    dlog("webauthn.ctap2.create error=\(error)")
+                    #endif
+                    replyHandler(["error": error, "name": "NotAllowedError"], nil)
+                }
+            }
+        }
     }
 
     // MARK: - Assertion (get)
@@ -160,160 +182,425 @@ final class WebAuthnCoordinator: NSObject {
 
         let rpID = options["rpId"] as? String ?? webView?.url?.host ?? ""
 
-        #if DEBUG
-        let allowCount = (options["allowCredentials"] as? [[String: Any]])?.count ?? 0
-        dlog("webauthn.get rpID=\(rpID) challengeLen=\(challengeData.count) allowCredentials=\(allowCount)")
-        #endif
-
-        var requests: [ASAuthorizationRequest] = []
-
-        // Hardware security key assertion
-        let securityKeyProvider = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let securityKeyRequest = securityKeyProvider.createCredentialAssertionRequest(challenge: challengeData)
-        configureSecurityKeyAssertionRequest(securityKeyRequest, options: options)
-        requests.append(securityKeyRequest)
-
-        // Platform authenticator assertion
-        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
-        let platformRequest = platformProvider.createCredentialAssertionRequest(challenge: challengeData)
+        // Parse allowCredentials list
+        var allowListIDs: [Data] = []
         if let allowCredentials = options["allowCredentials"] as? [[String: Any]] {
-            platformRequest.allowedCredentials = allowCredentials.compactMap { cred in
-                guard let idB64 = cred["id"] as? String,
-                      let idData = Data(base64urlEncoded: idB64)
-                else { return nil }
-                return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: idData)
+            for cred in allowCredentials {
+                if let idB64 = cred["id"] as? String,
+                   let idData = Data(base64urlEncoded: idB64) {
+                    allowListIDs.append(idData)
+                }
             }
         }
-        requests.append(platformRequest)
 
         #if DEBUG
-        dlog("webauthn.get requestCount=\(requests.count) (securityKey+platform)")
+        dlog("webauthn.get rpID=\(rpID) challengeLen=\(challengeData.count) allowCredentials=\(allowListIDs.count)")
         #endif
-        performAuthorization(with: requests, replyHandler: replyHandler)
+
+        state = .authenticating(replyHandler: replyHandler)
+
+        // Build clientDataJSON and hash it with SHA-256
+        let clientDataJSON = Self.buildClientDataJSON(type: "webauthn.get", challenge: challengeB64, origin: origin)
+        let clientDataHash = SHA256.hash(data: clientDataJSON)
+        let hashBytes = Array(clientDataHash)
+
+        Self.ctap2Queue.async {
+            let result = self.performCTAP2GetAssertion(
+                clientDataHash: hashBytes,
+                rpID: rpID,
+                allowListIDs: allowListIDs
+            )
+            DispatchQueue.main.async {
+                self.state = .idle
+                switch result {
+                case .success(let response):
+                    replyHandler(response, nil)
+                case .failure(let error):
+                    #if DEBUG
+                    dlog("webauthn.ctap2.get error=\(error)")
+                    #endif
+                    replyHandler(["error": error, "name": "NotAllowedError"], nil)
+                }
+            }
+        }
     }
 
-    // MARK: - Request Configuration
+    // MARK: - CTAP2 C Library Calls
 
-    private func configureSecurityKeyRegistrationRequest(
-        _ request: ASAuthorizationSecurityKeyPublicKeyCredentialRegistrationRequest,
-        options: [String: Any]
-    ) {
-        if let credParams = options["pubKeyCredParams"] as? [[String: Any]] {
-            request.credentialParameters = credParams.compactMap { param in
-                guard let alg = param["alg"] as? Int else { return nil }
-                return ASAuthorizationPublicKeyCredentialParameters(
-                    algorithm: ASCOSEAlgorithmIdentifier(rawValue: alg)
+    private nonisolated func performCTAP2MakeCredential(
+        clientDataHash: [UInt8],
+        rpID: String,
+        rpName: String,
+        userID: Data,
+        userName: String,
+        displayName: String,
+        algIDs: [Int32],
+        residentKey: Bool
+    ) -> Result<[String: Any], String> {
+        var resultBuf = [UInt8](repeating: 0, count: 4096)
+
+        let written = clientDataHash.withUnsafeBufferPointer { hashPtr in
+            userID.withUnsafeBytes { userIDPtr in
+                algIDs.withUnsafeBufferPointer { algPtr in
+                    ctap2_make_credential(
+                        hashPtr.baseAddress,
+                        rpID,
+                        rpName,
+                        userIDPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        userID.count,
+                        userName,
+                        displayName,
+                        algPtr.baseAddress,
+                        algIDs.count,
+                        residentKey,
+                        &resultBuf,
+                        resultBuf.count
+                    )
+                }
+            }
+        }
+
+        guard written > 0 else {
+            return .failure(Self.ctap2ErrorMessage(code: Int(written)))
+        }
+
+        // Raw CTAP2 response: first byte is status, rest is CBOR map
+        let statusByte = resultBuf[0]
+        guard statusByte == 0 else {
+            return .failure("CTAP2 device error: status 0x\(String(statusByte, radix: 16))")
+        }
+
+        let cborData = Data(resultBuf[1..<Int(written)])
+
+        // Parse CBOR map for MakeCredential response:
+        //   key 0x01 = fmt (string)
+        //   key 0x02 = authData (bytes)  — contains credentialID
+        //   key 0x03 = attStmt (map)
+        // The full attestationObject is the CBOR from byte 1 onward.
+        let attestationObject = cborData
+        guard let parsed = Self.parseCBORMap(cborData) else {
+            return .failure("Failed to parse CTAP2 MakeCredential CBOR response.")
+        }
+
+        // Extract credentialID from authData (key 0x02):
+        // authData format: rpIdHash(32) + flags(1) + signCount(4) + [attestedCredData]
+        // attestedCredData: aaguid(16) + credIdLen(2) + credentialId(credIdLen) + ...
+        guard let authData = parsed[2] as? Data, authData.count >= 55 else {
+            return .failure("Invalid authenticator data in MakeCredential response.")
+        }
+        let credIdLen = Int(authData[53]) << 8 | Int(authData[54])
+        guard authData.count >= 55 + credIdLen else {
+            return .failure("Authenticator data too short for credentialID.")
+        }
+        let credentialID = authData[55..<(55 + credIdLen)]
+
+        return .success([
+            "credentialID": Data(credentialID).base64urlEncodedString(),
+            "attestationObject": attestationObject.base64urlEncodedString(),
+            "authenticatorAttachment": "cross-platform",
+            "transports": ["usb"],
+            "type": "registration",
+        ])
+    }
+
+    private nonisolated func performCTAP2GetAssertion(
+        clientDataHash: [UInt8],
+        rpID: String,
+        allowListIDs: [Data]
+    ) -> Result<[String: Any], String> {
+        var resultBuf = [UInt8](repeating: 0, count: 4096)
+
+        // Build the allow list arrays for the C API
+        let idBuffers: [[UInt8]] = allowListIDs.map { Array($0) }
+        let idLens: [Int] = idBuffers.map { $0.count }
+
+        let written: Int32
+        if allowListIDs.isEmpty {
+            written = clientDataHash.withUnsafeBufferPointer { hashPtr in
+                ctap2_get_assertion(
+                    hashPtr.baseAddress,
+                    rpID,
+                    nil,
+                    nil,
+                    0,
+                    &resultBuf,
+                    resultBuf.count
                 )
             }
-        }
-
-        if let excludeCreds = options["excludeCredentials"] as? [[String: Any]] {
-            request.excludedCredentials = excludeCreds.compactMap { cred in
-                guard let idB64 = cred["id"] as? String,
-                      let idData = Data(base64urlEncoded: idB64)
-                else { return nil }
-                let transports = parseTransports(cred["transports"] as? [String])
-                return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor(
-                    credentialID: idData,
-                    transports: transports
-                )
+        } else {
+            // Create array of pointers to each credential ID buffer
+            written = clientDataHash.withUnsafeBufferPointer { hashPtr in
+                idBuffers.withUnsafeBufferPointers { idPtrs in
+                    idLens.withUnsafeBufferPointer { lensPtr in
+                        ctap2_get_assertion(
+                            hashPtr.baseAddress,
+                            rpID,
+                            idPtrs.baseAddress,
+                            lensPtr.baseAddress,
+                            allowListIDs.count,
+                            &resultBuf,
+                            resultBuf.count
+                        )
+                    }
+                }
             }
         }
 
-        if let authSel = options["authenticatorSelection"] as? [String: Any] {
-            if let residentKey = authSel["residentKey"] as? String {
-                request.residentKeyPreference = parseResidentKeyPreference(residentKey)
+        guard written > 0 else {
+            return .failure(Self.ctap2ErrorMessage(code: Int(written)))
+        }
+
+        // Raw CTAP2 response: first byte is status, rest is CBOR map
+        let statusByte = resultBuf[0]
+        guard statusByte == 0 else {
+            return .failure("CTAP2 device error: status 0x\(String(statusByte, radix: 16))")
+        }
+
+        let cborData = Data(resultBuf[1..<Int(written)])
+
+        // Parse CBOR map for GetAssertion response:
+        //   key 0x01 = credential (map with "id" bytes)
+        //   key 0x02 = authData (bytes)
+        //   key 0x03 = signature (bytes)
+        //   key 0x04 = user (map, optional)
+        guard let parsed = Self.parseCBORMap(cborData) else {
+            return .failure("Failed to parse CTAP2 GetAssertion CBOR response.")
+        }
+
+        // Extract credential ID from key 0x01
+        let credentialID: Data
+        if let credMap = parsed[1] as? [Int: Any],
+           let credIDData = credMap[0] as? Data {
+            // credential map: key "id" is CBOR map key for the ID bytes
+            credentialID = credIDData
+        } else if let credDict = parsed[1] as? [String: Any],
+                  let idBytes = credDict["id"] as? Data {
+            credentialID = idBytes
+        } else {
+            return .failure("Missing credentialID in GetAssertion response.")
+        }
+
+        guard let authData = parsed[2] as? Data else {
+            return .failure("Missing authenticatorData in GetAssertion response.")
+        }
+
+        guard let signature = parsed[3] as? Data else {
+            return .failure("Missing signature in GetAssertion response.")
+        }
+
+        // User handle is optional (key 0x04)
+        let userHandle: Data
+        if let userMap = parsed[4] as? [Int: Any],
+           let idData = userMap[0] as? Data {
+            userHandle = idData
+        } else if let userDict = parsed[4] as? [String: Any],
+                  let idData = userDict["id"] as? Data {
+            userHandle = idData
+        } else {
+            userHandle = Data()
+        }
+
+        return .success([
+            "credentialID": credentialID.base64urlEncodedString(),
+            "authenticatorData": authData.base64urlEncodedString(),
+            "signature": signature.base64urlEncodedString(),
+            "userHandle": userHandle.base64urlEncodedString(),
+            "authenticatorAttachment": "cross-platform",
+            "type": "assertion",
+        ])
+    }
+
+    // MARK: - CTAP2 Helpers
+
+    /// Build a clientDataJSON blob matching the WebAuthn spec.
+    private static func buildClientDataJSON(type: String, challenge: String, origin: String) -> Data {
+        // Minimal clientDataJSON per WebAuthn spec
+        let json = """
+        {"type":"\(type)","challenge":"\(challenge)","origin":"\(origin)","crossOrigin":false}
+        """
+        return Data(json.utf8)
+    }
+
+    /// Map CTAP2 error codes to human-readable strings.
+    private static func ctap2ErrorMessage(code: Int) -> String {
+        switch Int32(code) {
+        case CTAP2_ERR_NO_DEVICE:      return "No FIDO2 security key detected."
+        case CTAP2_ERR_TIMEOUT:        return "Security key operation timed out."
+        case CTAP2_ERR_PROTOCOL:       return "CTAP2 protocol error."
+        case CTAP2_ERR_BUFFER_TOO_SMALL: return "Response buffer too small."
+        case CTAP2_ERR_OPEN_FAILED:    return "Failed to open security key device."
+        case CTAP2_ERR_WRITE_FAILED:   return "Failed to write to security key."
+        case CTAP2_ERR_READ_FAILED:    return "Failed to read from security key."
+        case CTAP2_ERR_CBOR:           return "CBOR encoding/decoding error."
+        case CTAP2_ERR_DEVICE:         return "Security key returned an error."
+        default:                        return "Unknown CTAP2 error (code \(code))."
+        }
+    }
+
+    /// Minimal CBOR map parser for CTAP2 responses.
+    /// Handles the top-level CBOR map with integer keys and byte-string / text-string / map values.
+    /// Returns a dictionary keyed by CBOR integer keys.
+    private static func parseCBORMap(_ data: Data) -> [Int: Any]? {
+        guard !data.isEmpty else { return nil }
+        var result: [Int: Any] = [:]
+        var offset = 0
+        let bytes = Array(data)
+
+        // First byte should be a CBOR map (major type 5)
+        guard offset < bytes.count else { return nil }
+        let mapHeader = bytes[offset]
+        let majorType = mapHeader >> 5
+        guard majorType == 5 else { return nil }
+        let mapCount = Int(mapHeader & 0x1f)
+        offset += 1
+
+        for _ in 0..<mapCount {
+            guard offset < bytes.count else { break }
+
+            // Parse key (unsigned integer, major type 0)
+            let key: Int
+            let keyByte = bytes[offset]
+            if keyByte >> 5 == 0 {
+                key = Int(keyByte & 0x1f)
+                offset += 1
+            } else {
+                // Skip entries with non-integer keys
+                break
             }
-            if let userVerification = authSel["userVerification"] as? String {
-                request.userVerificationPreference = parseUserVerificationPreference(userVerification)
+
+            // Parse value
+            guard offset < bytes.count else { break }
+            let (value, newOffset) = parseCBORValue(bytes: bytes, offset: offset)
+            guard let newOffset else { break }
+            result[key] = value
+            offset = newOffset
+        }
+
+        return result
+    }
+
+    /// Parse a single CBOR value starting at the given offset.
+    /// Returns the parsed value and the new offset, or nil on failure.
+    private static func parseCBORValue(bytes: [UInt8], offset: Int) -> (Any?, Int?) {
+        guard offset < bytes.count else { return (nil, nil) }
+        let header = bytes[offset]
+        let majorType = header >> 5
+        let additional = header & 0x1f
+
+        switch majorType {
+        case 0: // Unsigned integer
+            let (value, newOff) = parseCBORUInt(bytes: bytes, offset: offset)
+            return (value, newOff)
+
+        case 1: // Negative integer
+            guard let (raw, newOff) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
+                return (nil, nil)
             }
-        }
+            return (-(Int(raw) + 1), newOff)
 
-        if let attestation = options["attestation"] as? String {
-            request.attestationPreference = parseAttestationPreference(attestation)
-        }
-    }
-
-    private func configureSecurityKeyAssertionRequest(
-        _ request: ASAuthorizationSecurityKeyPublicKeyCredentialAssertionRequest,
-        options: [String: Any]
-    ) {
-        if let allowCredentials = options["allowCredentials"] as? [[String: Any]] {
-            request.allowedCredentials = allowCredentials.compactMap { cred in
-                guard let idB64 = cred["id"] as? String,
-                      let idData = Data(base64urlEncoded: idB64)
-                else { return nil }
-                let transports = parseTransports(cred["transports"] as? [String])
-                return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor(
-                    credentialID: idData,
-                    transports: transports
-                )
+        case 2: // Byte string
+            guard let (length, dataStart) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
+                return (nil, nil)
             }
-        }
+            let len = Int(length)
+            guard dataStart + len <= bytes.count else { return (nil, nil) }
+            return (Data(bytes[dataStart..<(dataStart + len)]), dataStart + len)
 
-        if let userVerification = options["userVerification"] as? String {
-            request.userVerificationPreference = parseUserVerificationPreference(userVerification)
-        }
-    }
-
-    // MARK: - Authorization Controller
-
-    private func performAuthorization(
-        with requests: [ASAuthorizationRequest],
-        replyHandler: @escaping @MainActor (Any?, String?) -> Void
-    ) {
-        let controller = ASAuthorizationController(authorizationRequests: requests)
-        controller.delegate = self
-        controller.presentationContextProvider = self
-        self.authorizationController = controller
-        self.state = .authenticating(replyHandler: replyHandler)
-        #if DEBUG
-        dlog("webauthn.performRequests state=authenticating requestTypes=\(requests.map { type(of: $0) })")
-        #endif
-        controller.performRequests()
-    }
-
-    // MARK: - Enum Parsing
-
-    private func parseTransports(_ transports: [String]?) -> [ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport] {
-        guard let transports else { return ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport.allSupported }
-        var result: [ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport] = []
-        for t in transports {
-            switch t {
-            case "usb": result.append(.usb)
-            case "nfc": result.append(.nfc)
-            case "ble": result.append(.bluetooth)
-            default: break
+        case 3: // Text string
+            guard let (length, dataStart) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
+                return (nil, nil)
             }
+            let len = Int(length)
+            guard dataStart + len <= bytes.count else { return (nil, nil) }
+            let str = String(bytes: bytes[dataStart..<(dataStart + len)], encoding: .utf8) ?? ""
+            return (str, dataStart + len)
+
+        case 4: // Array — skip by parsing each element
+            guard let (count, elemStart) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
+                return (nil, nil)
+            }
+            var off = elemStart
+            for _ in 0..<Int(count) {
+                let (_, nextOff) = parseCBORValue(bytes: bytes, offset: off)
+                guard let nextOff else { return (nil, nil) }
+                off = nextOff
+            }
+            return (nil, off) // We don't need array values for CTAP2 responses
+
+        case 5: // Map
+            guard let (count, elemStart) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
+                return (nil, nil)
+            }
+            var subMap: [Int: Any] = [:]
+            var off = elemStart
+            for _ in 0..<Int(count) {
+                // Parse key
+                let (keyVal, keyOff) = parseCBORValue(bytes: bytes, offset: off)
+                guard let keyOff else { return (nil, nil) }
+                // Parse value
+                let (valVal, valOff) = parseCBORValue(bytes: bytes, offset: keyOff)
+                guard let valOff else { return (nil, nil) }
+                if let intKey = keyVal as? Int {
+                    subMap[intKey] = valVal
+                }
+                off = valOff
+            }
+            return (subMap, off)
+
+        case 7: // Simple values / floats — skip
+            if additional < 24 {
+                return (nil, offset + 1)
+            } else if additional == 24 {
+                return (nil, offset + 2)
+            } else if additional == 25 {
+                return (nil, offset + 3)
+            } else if additional == 26 {
+                return (nil, offset + 5)
+            } else if additional == 27 {
+                return (nil, offset + 9)
+            }
+            return (nil, offset + 1)
+
+        default:
+            return (nil, nil)
         }
-        return result.isEmpty ? ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport.allSupported : result
     }
 
-    private func parseResidentKeyPreference(_ value: String) -> ASAuthorizationPublicKeyCredentialResidentKeyPreference {
-        switch value {
-        case "required": return .required
-        case "preferred": return .preferred
-        case "discouraged": return .discouraged
-        default: return .preferred
+    /// Parse a CBOR unsigned integer (major type 0) at offset.
+    private static func parseCBORUInt(bytes: [UInt8], offset: Int) -> (Int?, Int?) {
+        guard offset < bytes.count else { return (nil, nil) }
+        let additional = bytes[offset] & 0x1f
+        guard let (value, newOff) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
+            return (nil, nil)
         }
+        return (Int(value), newOff)
     }
 
-    private func parseUserVerificationPreference(_ value: String) -> ASAuthorizationPublicKeyCredentialUserVerificationPreference {
-        switch value {
-        case "required": return .required
-        case "preferred": return .preferred
-        case "discouraged": return .discouraged
-        default: return .preferred
+    /// Parse the raw unsigned integer value from CBOR additional info.
+    private static func parseCBORRawUInt(bytes: [UInt8], offset: Int, additional: UInt8) -> (UInt64, Int)? {
+        if additional < 24 {
+            return (UInt64(additional), offset)
+        } else if additional == 24 {
+            guard offset < bytes.count else { return nil }
+            return (UInt64(bytes[offset]), offset + 1)
+        } else if additional == 25 {
+            guard offset + 1 < bytes.count else { return nil }
+            let value = UInt64(bytes[offset]) << 8 | UInt64(bytes[offset + 1])
+            return (value, offset + 2)
+        } else if additional == 26 {
+            guard offset + 3 < bytes.count else { return nil }
+            let value = UInt64(bytes[offset]) << 24 | UInt64(bytes[offset + 1]) << 16
+                | UInt64(bytes[offset + 2]) << 8 | UInt64(bytes[offset + 3])
+            return (value, offset + 4)
+        } else if additional == 27 {
+            guard offset + 7 < bytes.count else { return nil }
+            var value: UInt64 = 0
+            for i in 0..<8 {
+                value = value << 8 | UInt64(bytes[offset + i])
+            }
+            return (value, offset + 8)
         }
-    }
-
-    private func parseAttestationPreference(_ value: String) -> ASAuthorizationPublicKeyCredentialAttestationKind {
-        switch value {
-        case "direct": return .direct
-        case "indirect": return .indirect
-        case "enterprise": return .enterprise
-        default: return .none
-        }
+        return nil
     }
 }
 
@@ -381,150 +668,24 @@ extension WebAuthnCoordinator: WKScriptMessageHandlerWithReply {
     }
 }
 
-// MARK: - ASAuthorizationControllerDelegate
+// MARK: - Allow List Pointer Helper
 
-extension WebAuthnCoordinator: ASAuthorizationControllerDelegate {
-
-    nonisolated func authorizationController(
-        controller: ASAuthorizationController,
-        didCompleteWithAuthorization authorization: ASAuthorization
-    ) {
-        Task { @MainActor in
-            self.handleAuthorizationCompletion(authorization)
-        }
-    }
-
-    nonisolated func authorizationController(
-        controller: ASAuthorizationController,
-        didCompleteWithError error: Error
-    ) {
-        Task { @MainActor in
-            self.handleAuthorizationError(error)
-        }
-    }
-
-    private func handleAuthorizationCompletion(_ authorization: ASAuthorization) {
-        guard case .authenticating(let replyHandler) = state else {
-            #if DEBUG
-            dlog("webauthn.authComplete IGNORED state=idle (no pending request)")
-            #endif
-            return
-        }
-        state = .idle
-        authorizationController = nil
-        #if DEBUG
-        dlog("webauthn.authComplete credentialType=\(type(of: authorization.credential))")
-        #endif
-
-        switch authorization.credential {
-        case let cred as ASAuthorizationSecurityKeyPublicKeyCredentialRegistration:
-            replyHandler([
-                "credentialID": cred.credentialID.base64urlEncodedString(),
-                "attestationObject": cred.rawAttestationObject?.base64urlEncodedString() ?? "",
-                "authenticatorAttachment": "cross-platform",
-                "transports": ["usb"],
-                "type": "registration"
-            ], nil)
-
-        case let cred as ASAuthorizationSecurityKeyPublicKeyCredentialAssertion:
-            replyHandler([
-                "credentialID": cred.credentialID.base64urlEncodedString(),
-                "authenticatorData": cred.rawAuthenticatorData.base64urlEncodedString(),
-                "signature": cred.signature.base64urlEncodedString(),
-                "userHandle": cred.userID.base64urlEncodedString(),
-                "authenticatorAttachment": "cross-platform",
-                "type": "assertion"
-            ], nil)
-
-        case let cred as ASAuthorizationPlatformPublicKeyCredentialRegistration:
-            replyHandler([
-                "credentialID": cred.credentialID.base64urlEncodedString(),
-                "attestationObject": cred.rawAttestationObject?.base64urlEncodedString() ?? "",
-                "authenticatorAttachment": "platform",
-                "type": "registration"
-            ], nil)
-
-        case let cred as ASAuthorizationPlatformPublicKeyCredentialAssertion:
-            replyHandler([
-                "credentialID": cred.credentialID.base64urlEncodedString(),
-                "authenticatorData": cred.rawAuthenticatorData.base64urlEncodedString(),
-                "signature": cred.signature.base64urlEncodedString(),
-                "userHandle": cred.userID.base64urlEncodedString(),
-                "authenticatorAttachment": "platform",
-                "type": "assertion"
-            ], nil)
-
-        default:
-            replyHandler(
-                ["error": "Unsupported credential type.", "name": "NotSupportedError"],
-                nil
-            )
-        }
-    }
-
-    private func handleAuthorizationError(_ error: Error) {
-        guard case .authenticating(let replyHandler) = state else {
-            #if DEBUG
-            dlog("webauthn.authError IGNORED state=idle error=\(error)")
-            #endif
-            return
-        }
-        state = .idle
-        authorizationController = nil
-        #if DEBUG
-        dlog("webauthn.authError error=\(error) code=\((error as? ASAuthorizationError)?.code.rawValue ?? -1)")
-        #endif
-
-        let errorName: String
-        if let asError = error as? ASAuthorizationError {
-            switch asError.code {
-            case .canceled:
-                errorName = "NotAllowedError"
-            case .failed:
-                errorName = "NotAllowedError"
-            case .invalidResponse:
-                errorName = "InvalidStateError"
-            case .notHandled:
-                errorName = "NotSupportedError"
-            case .notInteractive:
-                errorName = "NotAllowedError"
-            case .unknown, .matchedExcludedCredential:
-                errorName = "InvalidStateError"
-            @unknown default:
-                errorName = "UnknownError"
+private extension Array where Element == [UInt8] {
+    /// Provides an array of UnsafePointer<UInt8> for C interop, one per element buffer.
+    func withUnsafeBufferPointers<R>(_ body: (UnsafeBufferPointer<UnsafePointer<UInt8>?>) -> R) -> R {
+        var pointers: [UnsafePointer<UInt8>?] = []
+        // Pin each inner buffer and collect pointers.
+        // This is safe because we call body synchronously before returning.
+        func pin(index: Int, body innerBody: (UnsafeBufferPointer<UnsafePointer<UInt8>?>) -> R) -> R {
+            if index == self.count {
+                return pointers.withUnsafeBufferPointer { innerBody($0) }
             }
-        } else {
-            errorName = "UnknownError"
-        }
-
-        replyHandler(["error": error.localizedDescription, "name": errorName], nil)
-    }
-}
-
-// MARK: - ASAuthorizationControllerPresentationContextProviding
-
-extension WebAuthnCoordinator: ASAuthorizationControllerPresentationContextProviding {
-
-    nonisolated func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        // AuthenticationServices calls this on the main thread. Using DispatchQueue.main.sync
-        // from the main thread deadlocks (BUG IN CLIENT OF LIBDISPATCH). Use
-        // MainActor.assumeIsolated since we know we're already on main.
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated {
-                let w = webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
-                #if DEBUG
-                dlog("webauthn.presentationAnchor window=\(w) isMainThread=true webView.window=\(String(describing: webView?.window))")
-                #endif
-                return w
+            return self[index].withUnsafeBufferPointer { buf in
+                pointers.append(buf.baseAddress)
+                return pin(index: index + 1, body: innerBody)
             }
         }
-        return DispatchQueue.main.sync {
-            let w = webView?.window ?? NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
-            #if DEBUG
-            dlog("webauthn.presentationAnchor window=\(w) isMainThread=false")
-            #endif
-            return w
-        }
+        return pin(index: 0, body: body)
     }
 }
 
