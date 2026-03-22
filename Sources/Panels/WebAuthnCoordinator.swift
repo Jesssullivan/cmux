@@ -435,7 +435,7 @@ final class WebAuthnCoordinator: NSObject {
         case CTAP2_ERR_PROTOCOL:       return CTAP2Error(message: "CTAP2 protocol error.")
         case CTAP2_ERR_BUFFER_TOO_SMALL: return CTAP2Error(message: "Response buffer too small.")
         case CTAP2_ERR_OPEN_FAILED:    return CTAP2Error(message: "Failed to open security key device.")
-        case CTAP2_ERR_WRITE_FAILED:   return CTAP2Error(message: "Failed to write to security key.")
+        case CTAP2_ERR_WRITE_FAILED:   return CTAP2Error(message: "Failed to write to security key. IOReturn=\(ctap2_debug_last_ioreturn())")
         case CTAP2_ERR_READ_FAILED:    return CTAP2Error(message: "Failed to read from security key.")
         case CTAP2_ERR_CBOR:           return CTAP2Error(message: "CBOR encoding/decoding error.")
         case CTAP2_ERR_DEVICE:         return CTAP2Error(message: "Security key returned an error.")
