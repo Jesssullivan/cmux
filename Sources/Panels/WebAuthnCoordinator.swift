@@ -487,7 +487,7 @@ final class WebAuthnCoordinator: NSObject {
 
     /// Parse a single CBOR value starting at the given offset.
     /// Returns the parsed value and the new offset, or nil on failure.
-    private static func parseCBORValue(bytes: [UInt8], offset: Int) -> (Any?, Int?) {
+    private nonisolated static func parseCBORValue(bytes: [UInt8], offset: Int) -> (Any?, Int?) {
         guard offset < bytes.count else { return (nil, nil) }
         let header = bytes[offset]
         let majorType = header >> 5
@@ -573,7 +573,7 @@ final class WebAuthnCoordinator: NSObject {
     }
 
     /// Parse a CBOR unsigned integer (major type 0) at offset.
-    private static func parseCBORUInt(bytes: [UInt8], offset: Int) -> (Int?, Int?) {
+    private nonisolated static func parseCBORUInt(bytes: [UInt8], offset: Int) -> (Int?, Int?) {
         guard offset < bytes.count else { return (nil, nil) }
         let additional = bytes[offset] & 0x1f
         guard let (value, newOff) = parseCBORRawUInt(bytes: bytes, offset: offset + 1, additional: additional) else {
@@ -583,7 +583,7 @@ final class WebAuthnCoordinator: NSObject {
     }
 
     /// Parse the raw unsigned integer value from CBOR additional info.
-    private static func parseCBORRawUInt(bytes: [UInt8], offset: Int, additional: UInt8) -> (UInt64, Int)? {
+    private nonisolated static func parseCBORRawUInt(bytes: [UInt8], offset: Int, additional: UInt8) -> (UInt64, Int)? {
         if additional < 24 {
             return (UInt64(additional), offset)
         } else if additional == 24 {
