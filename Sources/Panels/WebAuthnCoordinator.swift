@@ -373,15 +373,19 @@ final class WebAuthnCoordinator: NSObject {
             return .failure(CTAP2Error(message: "Failed to parse CTAP2 GetAssertion CBOR response."))
         }
 
-        // Extract credential ID from key 0x01
+        // Extract credential ID from key 0x01.
+        // Per CTAP2 spec, the credential field is OPTIONAL when allowList
+        // had exactly one entry — the authenticator omits it since it's implied.
         let credentialID: Data
         if let credMap = parsed[1] as? [Int: Any],
            let credIDData = credMap[0] as? Data {
-            // credential map: key "id" is CBOR map key for the ID bytes
             credentialID = credIDData
         } else if let credDict = parsed[1] as? [String: Any],
                   let idBytes = credDict["id"] as? Data {
             credentialID = idBytes
+        } else if allowListIDs.count == 1 {
+            // Fallback: use the credential ID from the request's allowList
+            credentialID = allowListIDs[0]
         } else {
             return .failure(CTAP2Error(message: "Missing credentialID in GetAssertion response."))
         }
