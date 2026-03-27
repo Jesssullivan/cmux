@@ -5,7 +5,26 @@ import WebKit
 /// Error type for CTAP2 operations.
 private struct CTAP2Error: Error, LocalizedError {
     let message: String
+    let requiresPIN: Bool
     var errorDescription: String? { message }
+
+    init(message: String, requiresPIN: Bool = false) {
+        self.message = message
+        self.requiresPIN = requiresPIN
+    }
+}
+
+/// CTAP2 status bytes that indicate PIN is required.
+private enum CTAP2PINStatus {
+    static let pinInvalid: UInt8 = 0x31
+    static let pinBlocked: UInt8 = 0x32
+    static let pinAuthInvalid: UInt8 = 0x33
+    static let pinNotSet: UInt8 = 0x35
+    static let pinPolicyViolation: UInt8 = 0x36
+
+    static func requiresPIN(_ status: UInt8) -> Bool {
+        status == pinInvalid || status == pinAuthInvalid || status == pinPolicyViolation
+    }
 }
 
 /// Coordinates WebAuthn/FIDO2 ceremonies between the JS bridge and
@@ -69,6 +88,60 @@ final class WebAuthnCoordinator: NSObject {
             replyHandler(["error": "The operation was cancelled.", "name": "AbortError"], nil)
         }
         state = .idle
+    }
+
+    // MARK: - PIN Prompt
+
+    /// Shows a modal dialog prompting the user for their security key PIN.
+    /// Returns the PIN string, or nil if the user cancelled.
+    private func promptForPIN(retries: Int? = nil) async -> String? {
+        await withCheckedContinuation { continuation in
+            let alert = NSAlert()
+            alert.messageText = String(localized: "webauthn.pin.title", defaultValue: "Security Key PIN Required")
+            if let retries {
+                alert.informativeText = String(localized: "webauthn.pin.retries \(retries)", defaultValue: "Enter the PIN for your security key. \(retries) attempt(s) remaining.")
+            } else {
+                alert.informativeText = String(localized: "webauthn.pin.prompt", defaultValue: "Enter the PIN for your security key.")
+            }
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: String(localized: "webauthn.pin.submit", defaultValue: "Submit"))
+            alert.addButton(withTitle: String(localized: "webauthn.pin.cancel", defaultValue: "Cancel"))
+
+            let pinField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+            pinField.placeholderString = "PIN"
+            alert.accessoryView = pinField
+            alert.window.initialFirstResponder = pinField
+
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                let pin = pinField.stringValue
+                continuation.resume(returning: pin.isEmpty ? nil : pin)
+            } else {
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+
+    /// Gets a PIN token from the security key using the provided PIN.
+    /// Returns a 32-byte token on success, or nil on failure.
+    private nonisolated func getPINToken(pin: String) -> (token: [UInt8], retries: Int?)? {
+        var tokenBuf = [UInt8](repeating: 0, count: 32)
+        let result = ctap2_get_pin_token(pin, &tokenBuf, 32)
+        guard result == CTAP2_OK else {
+            #if DEBUG
+            dlog("webauthn.pin.getToken failed status=\(result)")
+            #endif
+            return nil
+        }
+        return (token: tokenBuf, retries: nil)
+    }
+
+    /// Gets remaining PIN retries from the security key.
+    private nonisolated func getPINRetries() -> Int? {
+        var retries: Int32 = 0
+        let result = ctap2_get_pin_retries(&retries)
+        guard result == CTAP2_OK else { return nil }
+        return Int(retries)
     }
 
     // MARK: - Origin Validation
@@ -157,11 +230,53 @@ final class WebAuthnCoordinator: NSObject {
                 residentKey: residentKey
             )
             DispatchQueue.main.async {
-                self.state = .idle
                 switch result {
                 case .success(let response):
+                    self.state = .idle
                     replyHandler(response, nil)
+                case .failure(let error) where error.requiresPIN:
+                    #if DEBUG
+                    dlog("webauthn.ctap2.create PIN required, prompting user")
+                    #endif
+                    Task {
+                        let retries = await Task.detached { self.getPINRetries() }.value
+                        guard let pin = await self.promptForPIN(retries: retries) else {
+                            self.state = .idle
+                            replyHandler(["error": "PIN entry cancelled.", "name": "NotAllowedError"], nil)
+                            return
+                        }
+                        Self.ctap2Queue.async {
+                            guard let tokenResult = self.getPINToken(pin: pin) else {
+                                DispatchQueue.main.async {
+                                    self.state = .idle
+                                    replyHandler(["error": "Incorrect PIN.", "name": "NotAllowedError"], nil)
+                                }
+                                return
+                            }
+                            let pinResult = self.performCTAP2MakeCredentialWithPIN(
+                                clientDataHash: hashBytes,
+                                rpID: rpID,
+                                rpName: rpName,
+                                userID: userIDData,
+                                userName: userName,
+                                displayName: displayName,
+                                algIDs: algIDs,
+                                residentKey: residentKey,
+                                pinToken: tokenResult.token
+                            )
+                            DispatchQueue.main.async {
+                                self.state = .idle
+                                switch pinResult {
+                                case .success(let response):
+                                    replyHandler(response, nil)
+                                case .failure(let pinError):
+                                    replyHandler(["error": pinError.message, "name": "NotAllowedError"], nil)
+                                }
+                            }
+                        }
+                    }
                 case .failure(let error):
+                    self.state = .idle
                     #if DEBUG
                     dlog("webauthn.ctap2.create error=\(error)")
                     #endif
@@ -217,11 +332,48 @@ final class WebAuthnCoordinator: NSObject {
                 allowListIDs: allowListIDs
             )
             DispatchQueue.main.async {
-                self.state = .idle
                 switch result {
                 case .success(let response):
+                    self.state = .idle
                     replyHandler(response, nil)
+                case .failure(let error) where error.requiresPIN:
+                    #if DEBUG
+                    dlog("webauthn.ctap2.get PIN required, prompting user")
+                    #endif
+                    Task {
+                        let retries = await Task.detached { self.getPINRetries() }.value
+                        guard let pin = await self.promptForPIN(retries: retries) else {
+                            self.state = .idle
+                            replyHandler(["error": "PIN entry cancelled.", "name": "NotAllowedError"], nil)
+                            return
+                        }
+                        Self.ctap2Queue.async {
+                            guard let tokenResult = self.getPINToken(pin: pin) else {
+                                DispatchQueue.main.async {
+                                    self.state = .idle
+                                    replyHandler(["error": "Incorrect PIN.", "name": "NotAllowedError"], nil)
+                                }
+                                return
+                            }
+                            let pinResult = self.performCTAP2GetAssertionWithPIN(
+                                clientDataHash: hashBytes,
+                                rpID: rpID,
+                                allowListIDs: allowListIDs,
+                                pinToken: tokenResult.token
+                            )
+                            DispatchQueue.main.async {
+                                self.state = .idle
+                                switch pinResult {
+                                case .success(let response):
+                                    replyHandler(response, nil)
+                                case .failure(let pinError):
+                                    replyHandler(["error": pinError.message, "name": "NotAllowedError"], nil)
+                                }
+                            }
+                        }
+                    }
                 case .failure(let error):
+                    self.state = .idle
                     #if DEBUG
                     dlog("webauthn.ctap2.get error=\(error)")
                     #endif
@@ -274,7 +426,8 @@ final class WebAuthnCoordinator: NSObject {
         let statusByte = resultBuf[0]
         guard statusByte == 0 else {
             let msg = String(cString: ctap2_status_message(statusByte))
-            return .failure(CTAP2Error(message: msg))
+            let needsPIN = CTAP2PINStatus.requiresPIN(statusByte)
+            return .failure(CTAP2Error(message: msg, requiresPIN: needsPIN))
         }
 
         let cborData = Data(resultBuf[1..<Int(written)])
@@ -361,7 +514,8 @@ final class WebAuthnCoordinator: NSObject {
         let statusByte = resultBuf[0]
         guard statusByte == 0 else {
             let msg = String(cString: ctap2_status_message(statusByte))
-            return .failure(CTAP2Error(message: msg))
+            let needsPIN = CTAP2PINStatus.requiresPIN(statusByte)
+            return .failure(CTAP2Error(message: msg, requiresPIN: needsPIN))
         }
 
         let cborData = Data(resultBuf[1..<Int(written)])
@@ -417,6 +571,148 @@ final class WebAuthnCoordinator: NSObject {
             "authenticatorData": authData.base64urlEncodedString(),
             "signature": signature.base64urlEncodedString(),
             "userHandle": userHandle.base64urlEncodedString(),
+            "authenticatorAttachment": "cross-platform",
+            "type": "assertion",
+        ])
+    }
+
+    // MARK: - PIN-Authenticated CTAP2 Operations
+
+    private nonisolated func performCTAP2MakeCredentialWithPIN(
+        clientDataHash: [UInt8],
+        rpID: String,
+        rpName: String,
+        userID: Data,
+        userName: String,
+        displayName: String,
+        algIDs: [Int32],
+        residentKey: Bool,
+        pinToken: [UInt8]
+    ) -> Result<[String: Any], CTAP2Error> {
+        var outCredID = [UInt8](repeating: 0, count: 1024)
+        var outCredIDLen = outCredID.count
+        var outAttObj = [UInt8](repeating: 0, count: 4096)
+        var outAttObjLen = outAttObj.count
+
+        let status = clientDataHash.withUnsafeBufferPointer { hashPtr in
+            userID.withUnsafeBytes { userIDPtr in
+                algIDs.withUnsafeBufferPointer { algPtr in
+                    pinToken.withUnsafeBufferPointer { pinPtr in
+                        ctap2_make_credential_with_pin(
+                            hashPtr.baseAddress,
+                            rpID,
+                            rpName,
+                            userIDPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            userID.count,
+                            userName,
+                            displayName,
+                            algPtr.baseAddress,
+                            algIDs.count,
+                            residentKey,
+                            pinPtr.baseAddress,
+                            2, // PIN protocol v2
+                            &outCredID,
+                            &outCredIDLen,
+                            &outAttObj,
+                            &outAttObjLen
+                        )
+                    }
+                }
+            }
+        }
+
+        guard status == CTAP2_OK else {
+            if status > 0 {
+                let msg = String(cString: ctap2_status_message(UInt8(status)))
+                return .failure(CTAP2Error(message: msg))
+            }
+            return .failure(Self.ctap2ErrorMessage(code: Int(status)))
+        }
+
+        let credentialID = Data(outCredID[..<outCredIDLen])
+        let attestationObject = Data(outAttObj[..<outAttObjLen])
+
+        return .success([
+            "credentialID": credentialID.base64urlEncodedString(),
+            "attestationObject": attestationObject.base64urlEncodedString(),
+            "authenticatorAttachment": "cross-platform",
+            "transports": ["usb"],
+            "type": "registration",
+        ])
+    }
+
+    private nonisolated func performCTAP2GetAssertionWithPIN(
+        clientDataHash: [UInt8],
+        rpID: String,
+        allowListIDs: [Data],
+        pinToken: [UInt8]
+    ) -> Result<[String: Any], CTAP2Error> {
+        var outCredID = [UInt8](repeating: 0, count: 1024)
+        var outCredIDLen = outCredID.count
+        var outAuthData = [UInt8](repeating: 0, count: 1024)
+        var outAuthDataLen = outAuthData.count
+        var outSig = [UInt8](repeating: 0, count: 1024)
+        var outSigLen = outSig.count
+        var outUserHandle = [UInt8](repeating: 0, count: 1024)
+        var outUserHandleLen = outUserHandle.count
+
+        let idBuffers: [[UInt8]] = allowListIDs.map { Array($0) }
+        let idLens: [Int] = idBuffers.map { $0.count }
+
+        let status: Int32
+        if allowListIDs.isEmpty {
+            status = clientDataHash.withUnsafeBufferPointer { hashPtr in
+                pinToken.withUnsafeBufferPointer { pinPtr in
+                    ctap2_get_assertion_with_pin(
+                        hashPtr.baseAddress,
+                        rpID,
+                        nil, nil, 0,
+                        pinPtr.baseAddress,
+                        2,
+                        &outCredID, &outCredIDLen,
+                        &outAuthData, &outAuthDataLen,
+                        &outSig, &outSigLen,
+                        &outUserHandle, &outUserHandleLen
+                    )
+                }
+            }
+        } else {
+            status = clientDataHash.withUnsafeBufferPointer { hashPtr in
+                idBuffers.withUnsafeBufferPointers { idPtrs in
+                    idLens.withUnsafeBufferPointer { lensPtr in
+                        pinToken.withUnsafeBufferPointer { pinPtr in
+                            ctap2_get_assertion_with_pin(
+                                hashPtr.baseAddress,
+                                rpID,
+                                idPtrs.baseAddress,
+                                lensPtr.baseAddress,
+                                allowListIDs.count,
+                                pinPtr.baseAddress,
+                                2,
+                                &outCredID, &outCredIDLen,
+                                &outAuthData, &outAuthDataLen,
+                                &outSig, &outSigLen,
+                                &outUserHandle, &outUserHandleLen
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        guard status == CTAP2_OK else {
+            if status > 0 {
+                let msg = String(cString: ctap2_status_message(UInt8(status)))
+                return .failure(CTAP2Error(message: msg))
+            }
+            return .failure(Self.ctap2ErrorMessage(code: Int(status)))
+        }
+
+        return .success([
+            "credentialID": Data(outCredID[..<outCredIDLen]).base64urlEncodedString(),
+            "authenticatorData": Data(outAuthData[..<outAuthDataLen]).base64urlEncodedString(),
+            "signature": Data(outSig[..<outSigLen]).base64urlEncodedString(),
+            "userHandle": Data(outUserHandle[..<outUserHandleLen]).base64urlEncodedString(),
             "authenticatorAttachment": "cross-platform",
             "type": "assertion",
         ])
