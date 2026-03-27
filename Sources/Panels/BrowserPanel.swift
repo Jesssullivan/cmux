@@ -8,9 +8,6 @@ import CFNetwork
 import SQLite3
 import libzig_crypto
 import libzig_keychain
-#if canImport(Security)
-import Security
-#endif
 
 fileprivate func dedupedCanonicalURLs(_ urls: [URL]) -> [URL] {
     var seen = Set<String>()
@@ -7958,28 +7955,24 @@ private final class ChromiumCookieDecryptor {
             append(service: "\(baseName) Safe Storage", account: baseName)
         }
 
-        // Dynamic keychain search requires SecItemCopyMatching with kSecMatchLimitAll +
-        // kSecReturnAttributes, which zig_keychain_search does not yet support. Keep
-        // Security.framework for this discovery path until the Zig FFI adds attribute search.
-        #if canImport(Security)
+        // Dynamic keychain search via zig_keychain_search (null-separated service names)
         for baseName in keychainBaseNames() {
-            let query: [CFString: Any] = [
-                kSecClass: kSecClassGenericPassword,
-                kSecAttrAccount: baseName,
-                kSecReturnAttributes: true,
-                kSecMatchLimit: kSecMatchLimitAll,
-            ]
-            var rawResult: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &rawResult)
-            guard status == errSecSuccess else { continue }
-            let attributesList = rawResult as? [[String: Any]] ?? []
-            for attributes in attributesList {
-                guard let service = attributes[kSecAttrService as String] as? String else { continue }
-                guard service.contains("Storage Key") || service.contains("Safe Storage") else { continue }
-                append(service: service, account: baseName)
+            var searchBuf = [UInt8](repeating: 0, count: 4096)
+            let matchCount = zig_keychain_search(baseName, baseName.utf8.count, &searchBuf, searchBuf.count)
+            guard matchCount > 0 else { continue }
+            // Parse null-separated service names
+            var offset = 0
+            for _ in 0..<matchCount {
+                guard let nullIdx = searchBuf[offset...].firstIndex(of: 0) else { break }
+                let serviceBytes = searchBuf[offset..<nullIdx]
+                if let service = String(bytes: serviceBytes, encoding: .utf8) {
+                    if service.contains("Storage Key") || service.contains("Safe Storage") {
+                        append(service: service, account: baseName)
+                    }
+                }
+                offset = nullIdx + 1
             }
         }
-        #endif
 
         return result
     }

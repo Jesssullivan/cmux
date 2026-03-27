@@ -1,5 +1,6 @@
 import Foundation
 import libzig_crypto
+import libzig_keychain
 import Darwin
 #if canImport(LocalAuthentication)
 import LocalAuthentication
@@ -624,6 +625,8 @@ enum SocketPasswordResolver {
 
     private static func loadFromKeychain(socketPath: String) -> String? {
         for service in keychainServices(socketPath: socketPath) {
+            #if canImport(Security) && canImport(LocalAuthentication)
+            // macOS: Use LAContext with interactionNotAllowed to prevent UI prompts from CLI
             let authContext = LAContext()
             authContext.interactionNotAllowed = true
             let query: [String: Any] = [
@@ -632,7 +635,6 @@ enum SocketPasswordResolver {
                 kSecAttrAccount as String: account,
                 kSecReturnData as String: true,
                 kSecMatchLimit as String: kSecMatchLimitOne,
-                // Never trigger keychain UI from CLI commands; fail fast instead.
                 kSecUseAuthenticationContext as String: authContext,
             ]
             var result: CFTypeRef?
@@ -644,10 +646,18 @@ enum SocketPasswordResolver {
                 continue
             }
             guard let data = result as? Data,
-                  let password = String(data: data, encoding: .utf8) else {
+                  let pw = String(data: data, encoding: .utf8) else {
                 continue
             }
-            return password
+            return pw
+            #else
+            // Linux/other: Use zig-keychain portable lookup
+            var buf = [UInt8](repeating: 0, count: 4096)
+            let len = zig_keychain_lookup(service, service.utf8.count, account, account.utf8.count, &buf, buf.count)
+            if len > 0, let pw = String(bytes: buf[..<Int(len)], encoding: .utf8) {
+                return pw
+            }
+            #endif
         }
         return nil
     }
@@ -3598,8 +3608,7 @@ struct CMUXCLI {
 
     private func randomHex(byteCount: Int) throws -> String {
         var bytes = [UInt8](repeating: 0, count: byteCount)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        guard status == errSecSuccess else {
+        guard zig_crypto_random(&bytes, bytes.count) else {
             throw CLIError(message: "failed to generate SSH relay credential")
         }
         return bytes.map { String(format: "%02x", $0) }.joined()

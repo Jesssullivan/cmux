@@ -68,14 +68,23 @@ int zig_keychain_delete(
     const char *account, size_t account_len
 );
 
-/* zig_keychain_search is declared in the upstream header but not yet
- * implemented in the Zig FFI. Once the implementation lands, uncomment:
+/**
+ * Search for keychain items matching an account prefix.
+ * Writes matching service names as null-separated strings.
  *
- * int zig_keychain_search(
- *     const char *account, size_t account_len,
- *     char *out, size_t out_capacity
- * );
+ * @param account       Account name to search for.
+ * @param account_len   Length of account string.
+ * @param out           Output buffer for null-separated service names.
+ * @param out_capacity  Capacity of output buffer.
+ * @return              Number of matches found, -1 on error.
+ *
+ * macOS: SecItemCopyMatching (kSecMatchLimitAll, kSecReturnAttributes)
+ * Linux: libsecret secret_service_search_sync
  */
+int zig_keychain_search(
+    const char *account, size_t account_len,
+    char *out, size_t out_capacity
+);
 
 #ifdef __cplusplus
 }
