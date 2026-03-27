@@ -316,7 +316,7 @@ jobs:
           steps.check.outputs.has_updates == 'true'
           && steps.merge.outputs.merge_clean == 'true'
           && steps.verify.outputs.files_ok == 'true'
-          && steps.build.outputs.build_ok == 'true'
+          && steps.build.conclusion == 'success'
         run: |
           git push origin main
 
@@ -325,7 +325,7 @@ jobs:
           steps.check.outputs.has_updates == 'true'
           && steps.merge.outputs.merge_clean == 'true'
           && steps.verify.outputs.files_ok == 'true'
-          && steps.build.outputs.build_ok == 'true'
+          && steps.build.conclusion == 'success'
         run: |
           SUMMARY=$(cat /tmp/sync-summary.md)
           {
@@ -343,7 +343,7 @@ jobs:
         if: >-
           steps.check.outputs.has_updates == 'true'
           && steps.merge.outputs.merge_clean == 'true'
-          && (steps.verify.outputs.files_ok == 'false' || steps.build.outputs.build_ok == 'false')
+          && (steps.verify.outputs.files_ok == 'false' || steps.build.conclusion == 'failure')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
