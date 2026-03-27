@@ -1,8 +1,6 @@
 import Darwin
 import Foundation
-#if canImport(Security)
-import Security
-#endif
+import libzig_keychain
 
 enum SocketControlMode: String, CaseIterable, Identifiable {
     case off
@@ -232,38 +230,22 @@ enum SocketControlPasswordStore {
     }
 
     private static func loadLegacyPasswordFromKeychain() -> String? {
-#if canImport(Security)
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: legacyKeychainService,
-            kSecAttrAccount: legacyKeychainAccount,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-#else
-        return nil
-#endif
+        var buf = [UInt8](repeating: 0, count: 4096)
+        let result = zig_keychain_lookup(
+            legacyKeychainService, legacyKeychainService.utf8.count,
+            legacyKeychainAccount, legacyKeychainAccount.utf8.count,
+            &buf, buf.count
+        )
+        guard result > 0 else { return nil }
+        return String(bytes: buf[..<Int(result)], encoding: .utf8)
     }
 
     private static func deleteLegacyPasswordFromKeychain() -> Bool {
-#if canImport(Security)
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: legacyKeychainService,
-            kSecAttrAccount: legacyKeychainAccount,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-#else
-        return false
-#endif
+        let result = zig_keychain_delete(
+            legacyKeychainService, legacyKeychainService.utf8.count,
+            legacyKeychainAccount, legacyKeychainAccount.utf8.count
+        )
+        return result == 0
     }
 
     private static func cachedLazyKeychainFallbackPassword(

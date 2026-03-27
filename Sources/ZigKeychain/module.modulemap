@@ -1,0 +1,5 @@
+module libzig_keychain {
+    header "../../zig_keychain.h"
+    link "zig-keychain"
+    export *
+}

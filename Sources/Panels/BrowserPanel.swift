@@ -7,6 +7,7 @@ import Network
 import CFNetwork
 import SQLite3
 import libzig_crypto
+import libzig_keychain
 #if canImport(Security)
 import Security
 #endif
@@ -7957,6 +7958,10 @@ private final class ChromiumCookieDecryptor {
             append(service: "\(baseName) Safe Storage", account: baseName)
         }
 
+        // Dynamic keychain search requires SecItemCopyMatching with kSecMatchLimitAll +
+        // kSecReturnAttributes, which zig_keychain_search does not yet support. Keep
+        // Security.framework for this discovery path until the Zig FFI adds attribute search.
+        #if canImport(Security)
         for baseName in keychainBaseNames() {
             let query: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
@@ -7974,6 +7979,7 @@ private final class ChromiumCookieDecryptor {
                 append(service: service, account: baseName)
             }
         }
+        #endif
 
         return result
     }
@@ -8027,23 +8033,21 @@ private final class ChromiumCookieDecryptor {
     }
 
     private func readPasswordData(item: ChromiumCookieKeychainItem) -> KeychainLookupResult {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: item.service,
-            kSecAttrAccount: item.account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-
-        var rawResult: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &rawResult)
-        guard status == errSecSuccess else {
-            return .failure(status)
+        var buf = [UInt8](repeating: 0, count: 4096)
+        let result = zig_keychain_lookup(
+            item.service, item.service.utf8.count,
+            item.account, item.account.utf8.count,
+            &buf, buf.count
+        )
+        if result == -1 {
+            // zig_keychain_lookup: -1 = not found
+            return .failure(errSecItemNotFound)
         }
-        guard let passwordData = rawResult as? Data else {
+        if result < 0 {
+            // zig_keychain_lookup: -2 = error
             return .failure(errSecDecode)
         }
-        return .success(passwordData)
+        return .success(Data(buf[..<Int(result)]))
     }
 
     private func chromiumVersionPrefix(in encryptedValue: Data) -> Data? {

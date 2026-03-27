@@ -14,3 +14,6 @@
 [submodule "vendor/zig-crypto"]
 	path = vendor/zig-crypto
 	url = https://github.com/Jesssullivan/zig-crypto.git
+[submodule "vendor/zig-keychain"]
+	path = vendor/zig-keychain
+	url = https://github.com/Jesssullivan/zig-keychain.git
