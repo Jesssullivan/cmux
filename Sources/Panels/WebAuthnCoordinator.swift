@@ -27,6 +27,17 @@ private enum CTAP2PINStatus {
     }
 }
 
+/// Global keepalive callback for CTAP2 operations. Invoked from the ctap2Queue
+/// when the security key sends a keepalive packet (status 2 = user touch needed).
+/// Dispatches to main thread to show/hide the dock touch indicator.
+private func ctap2KeepaliveHandler(status: UInt8) {
+    if status == 2 { // upneeded — user must touch the key
+        DispatchQueue.main.async {
+            DockTouchIndicatorManager.shared.start()
+        }
+    }
+}
+
 /// Coordinates WebAuthn/FIDO2 ceremonies between the JS bridge and
 /// hardware security keys (via libctap2 over USB HID) and platform
 /// authenticators (Touch ID / passkeys via AuthenticationServices).
@@ -84,6 +95,7 @@ final class WebAuthnCoordinator: NSObject {
 
     /// Cancels any in-flight WebAuthn ceremony and replies with an error.
     func cancelPendingCeremony() {
+        DockTouchIndicatorManager.shared.stop()
         if case .authenticating(let replyHandler) = state {
             replyHandler(["error": "The operation was cancelled.", "name": "AbortError"], nil)
         }
@@ -230,6 +242,7 @@ final class WebAuthnCoordinator: NSObject {
                 residentKey: residentKey
             )
             DispatchQueue.main.async {
+                DockTouchIndicatorManager.shared.stop()
                 switch result {
                 case .success(let response):
                     self.state = .idle
@@ -332,6 +345,7 @@ final class WebAuthnCoordinator: NSObject {
                 allowListIDs: allowListIDs
             )
             DispatchQueue.main.async {
+                DockTouchIndicatorManager.shared.stop()
                 switch result {
                 case .success(let response):
                     self.state = .idle
@@ -400,7 +414,7 @@ final class WebAuthnCoordinator: NSObject {
         let written = clientDataHash.withUnsafeBufferPointer { hashPtr in
             userID.withUnsafeBytes { userIDPtr in
                 algIDs.withUnsafeBufferPointer { algPtr in
-                    ctap2_make_credential(
+                    ctap2_make_credential_with_keepalive(
                         hashPtr.baseAddress,
                         rpID,
                         rpName,
@@ -411,6 +425,7 @@ final class WebAuthnCoordinator: NSObject {
                         algPtr.baseAddress,
                         algIDs.count,
                         residentKey,
+                        ctap2KeepaliveHandler,
                         &resultBuf,
                         resultBuf.count
                     )
@@ -477,12 +492,13 @@ final class WebAuthnCoordinator: NSObject {
         let written: Int32
         if allowListIDs.isEmpty {
             written = clientDataHash.withUnsafeBufferPointer { hashPtr in
-                ctap2_get_assertion(
+                ctap2_get_assertion_with_keepalive(
                     hashPtr.baseAddress,
                     rpID,
                     nil,
                     nil,
                     0,
+                    ctap2KeepaliveHandler,
                     &resultBuf,
                     resultBuf.count
                 )
@@ -492,12 +508,13 @@ final class WebAuthnCoordinator: NSObject {
             written = clientDataHash.withUnsafeBufferPointer { hashPtr in
                 idBuffers.withUnsafeBufferPointers { idPtrs in
                     idLens.withUnsafeBufferPointer { lensPtr in
-                        ctap2_get_assertion(
+                        ctap2_get_assertion_with_keepalive(
                             hashPtr.baseAddress,
                             rpID,
                             idPtrs.baseAddress,
                             lensPtr.baseAddress,
                             allowListIDs.count,
+                            ctap2KeepaliveHandler,
                             &resultBuf,
                             resultBuf.count
                         )
