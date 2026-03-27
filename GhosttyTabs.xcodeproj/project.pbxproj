@@ -35,6 +35,7 @@
 		A5007420 /* BrowserPopupWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5007421 /* BrowserPopupWindowController.swift */; };
 		A5009900 /* WebAuthnBridgeJavaScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5009901 /* WebAuthnBridgeJavaScript.swift */; };
 		A5009902 /* WebAuthnCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5009903 /* WebAuthnCoordinator.swift */; };
+		A5009911 /* DockTouchIndicatorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5009910 /* DockTouchIndicatorManager.swift */; };
 		A5001420 /* MarkdownPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001418 /* MarkdownPanel.swift */; };
 		A5001421 /* MarkdownPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001419 /* MarkdownPanelView.swift */; };
 		A5001290 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = A5001291 /* MarkdownUI */; };
@@ -218,6 +219,7 @@
 		A5007421 /* BrowserPopupWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/BrowserPopupWindowController.swift; sourceTree = "<group>"; };
 		A5009901 /* WebAuthnBridgeJavaScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/WebAuthnBridgeJavaScript.swift; sourceTree = "<group>"; };
 		A5009903 /* WebAuthnCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/WebAuthnCoordinator.swift; sourceTree = "<group>"; };
+		A5009910 /* DockTouchIndicatorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockTouchIndicatorManager.swift; sourceTree = "<group>"; };
 		A5001415 /* PanelContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PanelContentView.swift; sourceTree = "<group>"; };
 		A5001418 /* MarkdownPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownPanel.swift; sourceTree = "<group>"; };
 		A5001419 /* MarkdownPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownPanelView.swift; sourceTree = "<group>"; };
@@ -460,6 +462,7 @@
 				A5001510 /* CmuxWebView.swift */,
 				A5009901 /* WebAuthnBridgeJavaScript.swift */,
 				A5009903 /* WebAuthnCoordinator.swift */,
+				A5009910 /* DockTouchIndicatorManager.swift */,
 				A5001415 /* PanelContentView.swift */,
 				A5001211 /* UpdateController.swift */,
 				A5001212 /* UpdateDelegate.swift */,
@@ -761,6 +764,7 @@
 				A5001500 /* CmuxWebView.swift in Sources */,
 				A5009900 /* WebAuthnBridgeJavaScript.swift in Sources */,
 				A5009902 /* WebAuthnCoordinator.swift in Sources */,
+				A5009911 /* DockTouchIndicatorManager.swift in Sources */,
 				A5001405 /* PanelContentView.swift in Sources */,
 				A5001201 /* UpdateController.swift in Sources */,
 				A5001202 /* UpdateDelegate.swift in Sources */,

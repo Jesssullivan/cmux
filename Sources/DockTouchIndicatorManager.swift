@@ -21,10 +21,6 @@ final class DockTouchIndicatorManager {
         guard !isActive else { return }
         isActive = true
 
-        #if DEBUG
-        dlog("dock.touch.start")
-        #endif
-
         // Set animated dock view
         let view = NSHostingView(rootView: DockTouchIndicatorView())
         view.frame = NSRect(x: 0, y: 0, width: 128, height: 128)
@@ -48,10 +44,6 @@ final class DockTouchIndicatorManager {
     func stop() {
         guard isActive else { return }
         isActive = false
-
-        #if DEBUG
-        dlog("dock.touch.stop")
-        #endif
 
         pulseTimer?.invalidate()
         pulseTimer = nil
