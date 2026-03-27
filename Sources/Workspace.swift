@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 import Bonsplit
 import Combine
-import CryptoKit
+import libzig_crypto
 import Darwin
 import Network
 import CoreText
@@ -2878,9 +2878,19 @@ private final class WorkspaceRemoteCLIRelayServer {
         }
 
         private static func authMAC(token: Data, message: Data) -> Data {
-            let key = SymmetricKey(data: token)
-            let code = HMAC<SHA256>.authenticationCode(for: message, using: key)
-            return Data(code)
+            var mac = [UInt8](repeating: 0, count: 32)
+            token.withUnsafeBytes { keyPtr in
+                message.withUnsafeBytes { msgPtr in
+                    zig_crypto_hmac_sha256(
+                        keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        token.count,
+                        msgPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        message.count,
+                        &mac
+                    )
+                }
+            }
+            return Data(mac)
         }
 
         private static func constantTimeEqual(_ lhs: Data, _ rhs: Data) -> Bool {
@@ -2908,7 +2918,7 @@ private final class WorkspaceRemoteCLIRelayServer {
 
         private static func randomHex(byteCount: Int) -> String {
             var bytes = [UInt8](repeating: 0, count: byteCount)
-            _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+            _ = zig_crypto_random(&bytes, bytes.count)
             return bytes.map { String(format: "%02x", $0) }.joined()
         }
 
@@ -4129,8 +4139,15 @@ final class WorkspaceRemoteSessionController {
 
     private static func sha256Hex(forFile url: URL) throws -> String {
         let data = try Data(contentsOf: url)
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
+        var hex = [UInt8](repeating: 0, count: 64)
+        data.withUnsafeBytes { ptr in
+            _ = zig_crypto_sha256_hex(
+                ptr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                data.count,
+                &hex
+            )
+        }
+        return String(bytes: hex, encoding: .ascii) ?? ""
     }
 
     private static func allowLocalDaemonBuildFallback(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
@@ -4652,16 +4669,24 @@ final class WorkspaceRemoteSessionController {
 
         guard !relativePaths.isEmpty else { return nil }
 
-        let digest = SHA256.hash(data: relativePaths.sorted().reduce(into: Data()) { partialResult, relativePath in
+        let combined = relativePaths.sorted().reduce(into: Data()) { partialResult, relativePath in
             let fileURL = daemonRoot.appendingPathComponent(relativePath, isDirectory: false)
             guard let fileData = try? Data(contentsOf: fileURL) else { return }
             partialResult.append(Data(relativePath.utf8))
             partialResult.append(0)
             partialResult.append(fileData)
             partialResult.append(0)
-        })
-        let hex = digest.map { String(format: "%02x", $0) }.joined()
-        return String(hex.prefix(12))
+        }
+        var hex = [UInt8](repeating: 0, count: 64)
+        combined.withUnsafeBytes { ptr in
+            _ = zig_crypto_sha256_hex(
+                ptr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                combined.count,
+                &hex
+            )
+        }
+        let hexStr = String(bytes: hex, encoding: .ascii) ?? ""
+        return String(hexStr.prefix(12))
     }
 
     private static func remoteDaemonPath(version: String, goOS: String, goArch: String) -> String {
