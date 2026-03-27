@@ -1,0 +1,476 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    # Daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    name: Sync from manaflow-ai/cmux
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/manaflow-ai/cmux.git || true
+          git fetch upstream main
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          LOCAL_SHA=$(git rev-parse HEAD)
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+
+          if [ "$LOCAL_SHA" = "$UPSTREAM_SHA" ]; then
+            echo "Already up to date with upstream."
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          COMMIT_COUNT=$(git rev-list HEAD..upstream/main --count)
+          echo "Found $COMMIT_COUNT new upstream commit(s)."
+          echo "has_updates=true" >> "$GITHUB_OUTPUT"
+          echo "commit_count=$COMMIT_COUNT" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Generate upstream changelog
+        if: steps.check.outputs.has_updates == 'true'
+        id: changelog
+        run: |
+          set -euo pipefail
+
+          COMMIT_COUNT="${{ steps.check.outputs.commit_count }}"
+
+          # Collect commit subjects
+          COMMITS=$(git log HEAD..upstream/main --pretty=format:"- %h %s" --no-merges | head -50)
+
+          # Classify changed files for risk assessment
+          CHANGED_FILES=$(git diff HEAD..upstream/main --name-only)
+
+          FORK_OWNED_HITS=""
+          MERGE_CAREFULLY_HITS=""
+          UPSTREAM_TRACKED_HITS=""
+
+          classify_file() {
+            local file="$1"
+            case "$file" in
+              Sources/Panels/WebAuthn*) return 1 ;;
+              Sources/FIDO2/*) return 1 ;;
+              cmux.entitlements) return 1 ;;
+              cmux.embedded.entitlements) return 1 ;;
+              .github/workflows/fork-*) return 1 ;;
+              vendor/ctap2/*) return 1 ;;
+              vendor/ctap2) return 1 ;;
+              ctap2.h) return 1 ;;
+              libctap2.a) return 1 ;;
+              GhosttyTabs.xcodeproj/project.pbxproj) return 2 ;;
+              Sources/Panels/BrowserPanel.swift) return 2 ;;
+              Sources/GhosttyTerminalView.swift) return 2 ;;
+              CLAUDE.md) return 2 ;;
+              .github/workflows/*.yml) return 2 ;;
+              *) return 0 ;;
+            esac
+          }
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            set +e
+            classify_file "$file"
+            rc=$?
+            set -e
+            if [ "$rc" -eq 1 ]; then
+              FORK_OWNED_HITS="${FORK_OWNED_HITS}\n- \`${file}\`"
+            elif [ "$rc" -eq 2 ]; then
+              MERGE_CAREFULLY_HITS="${MERGE_CAREFULLY_HITS}\n- \`${file}\`"
+            else
+              UPSTREAM_TRACKED_HITS="${UPSTREAM_TRACKED_HITS}\n- \`${file}\`"
+            fi
+          done <<< "$CHANGED_FILES"
+
+          # Determine risk level
+          RISK="low"
+          if [ -n "$MERGE_CAREFULLY_HITS" ]; then
+            RISK="medium"
+          fi
+          if [ -n "$FORK_OWNED_HITS" ]; then
+            RISK="high"
+          fi
+
+          # Check for potential breaking changes
+          BREAKING_SIGNALS=""
+          if echo "$COMMITS" | grep -iq "break\|BREAK\|major\|remove\|deprecat"; then
+            BREAKING_SIGNALS="Possible breaking changes detected in commit messages."
+          fi
+
+          # Count by category
+          FORK_COUNT=0
+          CAREFUL_COUNT=0
+          TRACKED_COUNT=0
+          if [ -n "$FORK_OWNED_HITS" ]; then
+            FORK_COUNT=$(printf '%b' "$FORK_OWNED_HITS" | grep -c '`' || true)
+          fi
+          if [ -n "$MERGE_CAREFULLY_HITS" ]; then
+            CAREFUL_COUNT=$(printf '%b' "$MERGE_CAREFULLY_HITS" | grep -c '`' || true)
+          fi
+          if [ -n "$UPSTREAM_TRACKED_HITS" ]; then
+            TRACKED_COUNT=$(printf '%b' "$UPSTREAM_TRACKED_HITS" | grep -c '`' || true)
+          fi
+
+          # Build the summary file
+          {
+            echo "## Upstream Sync Summary"
+            echo ""
+            echo "**Upstream commits:** $COMMIT_COUNT"
+            echo "**Risk level:** $RISK"
+            echo "**Files changed:** $FORK_COUNT fork-owned, $CAREFUL_COUNT merge-carefully, $TRACKED_COUNT upstream-tracked"
+            echo ""
+            if [ -n "$BREAKING_SIGNALS" ]; then
+              echo "> **Warning:** $BREAKING_SIGNALS"
+              echo ""
+            fi
+            echo "### Recent upstream commits"
+            echo "$COMMITS"
+            echo ""
+            if [ -n "$FORK_OWNED_HITS" ]; then
+              echo "### Fork-owned files touched (HIGH risk)"
+              printf '%b\n' "$FORK_OWNED_HITS"
+              echo ""
+            fi
+            if [ -n "$MERGE_CAREFULLY_HITS" ]; then
+              echo "### Merge-carefully files touched (MEDIUM risk)"
+              printf '%b\n' "$MERGE_CAREFULLY_HITS"
+              echo ""
+            fi
+          } > /tmp/sync-summary.md
+
+          echo "risk=$RISK" >> "$GITHUB_OUTPUT"
+
+      - name: Attempt merge
+        if: steps.check.outputs.has_updates == 'true'
+        id: merge
+        run: |
+          if git merge upstream/main --no-edit; then
+            echo "merge_clean=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge_clean=false" >> "$GITHUB_OUTPUT"
+
+            # Capture conflicted files
+            git diff --name-only --diff-filter=U > /tmp/conflicted-files.txt
+
+            # Classify conflicts into categories
+            FORK_OWNED=""
+            UPSTREAM_TRACKED=""
+            NEEDS_MANUAL=""
+
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                Sources/Panels/WebAuthn*|Sources/FIDO2/*|cmux.entitlements|cmux.embedded.entitlements|.github/workflows/fork-*|vendor/ctap2/*|vendor/ctap2|ctap2.h|libctap2.a)
+                  FORK_OWNED="${FORK_OWNED}\n- \`${file}\` (fork-owned)"
+                  ;;
+                GhosttyTabs.xcodeproj/project.pbxproj|Sources/Panels/BrowserPanel.swift|Sources/GhosttyTerminalView.swift|CLAUDE.md|.github/workflows/*.yml)
+                  NEEDS_MANUAL="${NEEDS_MANUAL}\n- \`${file}\` (needs-manual)"
+                  ;;
+                *)
+                  UPSTREAM_TRACKED="${UPSTREAM_TRACKED}\n- \`${file}\` (upstream-tracked)"
+                  ;;
+              esac
+            done < /tmp/conflicted-files.txt
+
+            # Build conflict details
+            {
+              echo "## Merge Conflicts"
+              echo ""
+              echo "The following files have conflicts that need manual resolution:"
+              echo ""
+              if [ -n "$FORK_OWNED" ]; then
+                echo "### Fork-owned (keep our version unless upstream change is needed)"
+                printf '%b\n' "$FORK_OWNED"
+                echo ""
+              fi
+              if [ -n "$NEEDS_MANUAL" ]; then
+                echo "### Needs manual merge"
+                printf '%b\n' "$NEEDS_MANUAL"
+                echo ""
+              fi
+              if [ -n "$UPSTREAM_TRACKED" ]; then
+                echo "### Upstream-tracked (take upstream version)"
+                printf '%b\n' "$UPSTREAM_TRACKED"
+                echo ""
+              fi
+            } > /tmp/conflict-details.md
+
+            # Abort the failed merge so we can create a branch from clean state
+            git merge --abort
+          fi
+
+      # --- Clean merge path: verify fork files, build check, push ---
+
+      - name: Verify fork-specific files
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true'
+        id: verify
+        run: |
+          set -euo pipefail
+          MISSING=""
+
+          for f in \
+            Sources/Panels/WebAuthnCoordinator.swift \
+            Sources/Panels/WebAuthnBridgeJavaScript.swift \
+            Sources/FIDO2/module.modulemap \
+            cmux.entitlements \
+            cmux.embedded.entitlements \
+            ctap2.h \
+            .github/workflows/fork-ci.yml \
+            .github/workflows/fork-release.yml; do
+            if [ ! -f "$f" ]; then
+              MISSING="$MISSING $f"
+            fi
+          done
+
+          if [ ! -d "vendor/ctap2" ] || [ ! -f "vendor/ctap2/build.zig" ]; then
+            MISSING="$MISSING vendor/ctap2"
+          fi
+
+          if [ -n "$MISSING" ]; then
+            echo "Fork-specific files missing after merge:$MISSING"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            echo "$MISSING" > /tmp/missing-fork-files.txt
+          else
+            echo "All fork-specific files present."
+            echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Zig
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+          use-cache: false
+
+      - name: Download pre-built GhosttyKit
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          GHOSTTY_SHA=$(git -C ghostty rev-parse HEAD)
+          TAG="xcframework-${GHOSTTY_SHA}"
+          echo "Downloading GhosttyKit for ghostty commit ${GHOSTTY_SHA}"
+          gh release download "$TAG" --repo manaflow-ai/ghostty --pattern "GhosttyKit.xcframework.tar.gz" || {
+            echo "Pre-built xcframework not found for $TAG"
+            echo "Available releases:"
+            gh release list --repo manaflow-ai/ghostty --limit 5
+            exit 1
+          }
+          tar xzf GhosttyKit.xcframework.tar.gz
+
+      - name: Build libctap2
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
+        run: |
+          cd vendor/ctap2
+          zig build -Doptimize=ReleaseFast
+          cp zig-out/lib/libctap2.a ../../
+          cp include/ctap2.h ../../
+
+      - name: Build check (compile only)
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
+        id: build
+        run: |
+          set -euo pipefail
+          if xcodebuild -project GhosttyTabs.xcodeproj \
+            -scheme cmux \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            ARCHS=arm64 \
+            -derivedDataPath /tmp/cmux-upstream-sync \
+            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Fork \
+            build 2>&1 | tee /tmp/build-output.txt; then
+            echo "build_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_ok=false" >> "$GITHUB_OUTPUT"
+            tail -100 /tmp/build-output.txt > /tmp/build-errors.txt
+          fi
+
+      - name: Push clean merge to main
+        if: >-
+          steps.check.outputs.has_updates == 'true'
+          && steps.merge.outputs.merge_clean == 'true'
+          && steps.verify.outputs.files_ok == 'true'
+          && steps.build.outputs.build_ok == 'true'
+        run: |
+          git push origin main
+
+      - name: Post success summary
+        if: >-
+          steps.check.outputs.has_updates == 'true'
+          && steps.merge.outputs.merge_clean == 'true'
+          && steps.verify.outputs.files_ok == 'true'
+          && steps.build.outputs.build_ok == 'true'
+        run: |
+          SUMMARY=$(cat /tmp/sync-summary.md)
+          {
+            echo "## Upstream sync succeeded"
+            echo ""
+            echo "Merged ${{ steps.check.outputs.commit_count }} upstream commit(s) cleanly."
+            echo "Fork-specific files verified. Build passed."
+            echo ""
+            echo "$SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Triage PR path: build failure after clean merge ---
+
+      - name: Create triage PR (build failure)
+        if: >-
+          steps.check.outputs.has_updates == 'true'
+          && steps.merge.outputs.merge_clean == 'true'
+          && (steps.verify.outputs.files_ok == 'false' || steps.build.outputs.build_ok == 'false')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          BRANCH="upstream-sync/build-failure-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          git push origin "$BRANCH"
+
+          SUMMARY=$(cat /tmp/sync-summary.md)
+
+          if [ "${{ steps.verify.outputs.files_ok }}" = "false" ]; then
+            MISSING=$(cat /tmp/missing-fork-files.txt 2>/dev/null || echo "(unknown)")
+            FAILURE_DETAILS="### Fork file verification failed
+
+          The following fork-specific files are missing after merge:
+          \`\`\`
+          ${MISSING}
+          \`\`\`"
+          else
+            BUILD_ERRORS=$(cat /tmp/build-errors.txt 2>/dev/null || echo "(no output captured)")
+            FAILURE_DETAILS="### Build failed
+
+          <details>
+          <summary>Build errors (last 100 lines)</summary>
+
+          \`\`\`
+          ${BUILD_ERRORS}
+          \`\`\`
+          </details>"
+          fi
+
+          PR_BODY="${SUMMARY}
+
+          ---
+
+          ${FAILURE_DETAILS}
+
+          ---
+
+          **Action required:** Fix build errors and merge manually.
+          Upstream SHA: \`${{ steps.check.outputs.upstream_sha }}\`"
+
+          gh pr create \
+            --title "Upstream sync: build failure ($(date +%Y-%m-%d))" \
+            --body "$PR_BODY" \
+            --label "upstream-sync,needs-triage" \
+            --base main \
+            --head "$BRANCH" || true
+
+      # --- Triage PR path: merge conflicts ---
+
+      - name: Create triage PR (merge conflicts)
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          BRANCH="upstream-sync/conflicts-$(date +%Y%m%d)"
+
+          # Create branch from current main, merge with conflicts left in place
+          git checkout -b "$BRANCH"
+          git merge upstream/main --no-edit || true
+
+          # Stage everything including conflict markers so the PR shows the diff
+          git add -A
+          git commit -m "upstream-sync: merge with conflicts from upstream/main" || true
+
+          git push origin "$BRANCH"
+
+          SUMMARY=$(cat /tmp/sync-summary.md)
+          CONFLICT_DETAILS=$(cat /tmp/conflict-details.md)
+          CONFLICTED_LIST=$(cat /tmp/conflicted-files.txt)
+          CONFLICT_COUNT=$(wc -l < /tmp/conflicted-files.txt | tr -d ' ')
+
+          PR_BODY="${SUMMARY}
+
+          ---
+
+          ${CONFLICT_DETAILS}
+
+          ---
+
+          **Total conflicted files:** ${CONFLICT_COUNT}
+
+          <details>
+          <summary>All conflicted files</summary>
+
+          \`\`\`
+          ${CONFLICTED_LIST}
+          \`\`\`
+          </details>
+
+          ---
+
+          **Action required:** Resolve conflicts, verify fork-specific files, and ensure build passes before merging.
+          Upstream SHA: \`${{ steps.check.outputs.upstream_sha }}\`"
+
+          gh pr create \
+            --title "Upstream sync: ${CONFLICT_COUNT} conflict(s) ($(date +%Y-%m-%d))" \
+            --body "$PR_BODY" \
+            --label "upstream-sync,needs-triage" \
+            --base main \
+            --head "$BRANCH" || true
+
+      - name: Post conflict summary
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'false'
+        run: |
+          SUMMARY=$(cat /tmp/sync-summary.md)
+          CONFLICTED_LIST=$(cat /tmp/conflicted-files.txt)
+          {
+            echo "## Upstream sync: merge conflicts"
+            echo ""
+            echo "$SUMMARY"
+            echo ""
+            echo "### Conflicted files"
+            echo "\`\`\`"
+            echo "$CONFLICTED_LIST"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Skip summary
+        if: steps.check.outputs.has_updates == 'false'
+        run: |
+          {
+            echo "## Upstream sync: already up to date"
+            echo ""
+            echo "No new commits from manaflow-ai/cmux."
+          } >> "$GITHUB_STEP_SUMMARY"
