@@ -32,6 +32,9 @@ private enum CTAP2PINStatus {
 /// when the security key sends a keepalive packet (status 2 = user touch needed).
 /// Dispatches to main thread to show/hide the dock touch indicator.
 private func ctap2KeepaliveHandler(status: UInt8) {
+    #if DEBUG
+    dlog("webauthn.keepalive status=\(status) (\(status == 1 ? "processing" : status == 2 ? "upneeded" : "unknown"))")
+    #endif
     if status == 2 { // upneeded — user must touch the key
         DispatchQueue.main.async {
             DockTouchIndicatorManager.shared.start()
@@ -412,6 +415,10 @@ final class WebAuthnCoordinator: NSObject {
     ) -> Result<[String: Any], CTAP2Error> {
         var resultBuf = [UInt8](repeating: 0, count: 4096)
 
+        #if DEBUG
+        dlog("webauthn.ctap2.makeCredential.start rpID=\(rpID) user=\(userName) algs=\(algIDs) resident=\(residentKey)")
+        #endif
+
         let written = clientDataHash.withUnsafeBufferPointer { hashPtr in
             userID.withUnsafeBytes { userIDPtr in
                 algIDs.withUnsafeBufferPointer { algPtr in
@@ -434,6 +441,10 @@ final class WebAuthnCoordinator: NSObject {
             }
         }
 
+        #if DEBUG
+        dlog("webauthn.ctap2.makeCredential.done written=\(written)")
+        #endif
+
         guard written > 0 else {
             return .failure(Self.ctap2ErrorMessage(code: Int(written)))
         }
@@ -452,8 +463,10 @@ final class WebAuthnCoordinator: NSObject {
         //   key 0x01 = fmt (string)
         //   key 0x02 = authData (bytes)  — contains credentialID
         //   key 0x03 = attStmt (map)
-        // The full attestationObject is the CBOR from byte 1 onward.
-        let attestationObject = cborData
+        // Re-encode from CTAP2 integer keys to WebAuthn string keys.
+        guard let attestationObject = Self.reEncodeAttestationObject(cborData) else {
+            return .failure(CTAP2Error(message: "Failed to re-encode attestation object."))
+        }
         guard let parsed = Self.parseCBORMap(cborData) else {
             return .failure(CTAP2Error(message: "Failed to parse CTAP2 MakeCredential CBOR response."))
         }
@@ -648,7 +661,10 @@ final class WebAuthnCoordinator: NSObject {
         }
 
         let credentialID = Data(outCredID[..<outCredIDLen])
-        let attestationObject = Data(outAttObj[..<outAttObjLen])
+        let rawAttObj = Data(outAttObj[..<outAttObjLen])
+        guard let attestationObject = Self.reEncodeAttestationObject(rawAttObj) else {
+            return .failure(CTAP2Error(message: "Failed to re-encode attestation object."))
+        }
 
         return .success([
             "credentialID": credentialID.base64urlEncodedString(),
@@ -766,6 +782,57 @@ final class WebAuthnCoordinator: NSObject {
     /// Minimal CBOR map parser for CTAP2 responses.
     /// Handles the top-level CBOR map with integer keys and byte-string / text-string / map values.
     /// Returns a dictionary keyed by CBOR integer keys.
+    /// Re-encode a CTAP2 MakeCredential response (integer-keyed CBOR map)
+    /// into the WebAuthn attestationObject format (string-keyed CBOR map).
+    ///
+    /// CTAP2 uses integer keys: {1: fmt, 2: authData, 3: attStmt}
+    /// WebAuthn requires string keys: {"fmt": ..., "authData": ..., "attStmt": ...}
+    private nonisolated static func reEncodeAttestationObject(_ ctapCBOR: Data) -> Data? {
+        let bytes = Array(ctapCBOR)
+        guard !bytes.isEmpty else { return nil }
+
+        // Parse map header (major type 5)
+        let header = bytes[0]
+        guard header >> 5 == 5 else { return nil }
+        let mapCount = Int(header & 0x1f)
+        guard mapCount >= 3 else { return nil }
+
+        var offset = 1
+        var rawEntries: [Int: ArraySlice<UInt8>] = [:]
+
+        for _ in 0..<mapCount {
+            guard offset < bytes.count else { return nil }
+            let keyByte = bytes[offset]
+            guard keyByte >> 5 == 0 else { return nil } // integer key
+            let key = Int(keyByte & 0x1f)
+            offset += 1
+
+            let valueStart = offset
+            let (_, newOffset) = parseCBORValue(bytes: bytes, offset: offset)
+            guard let newOffset else { return nil }
+            rawEntries[key] = bytes[valueStart..<newOffset]
+            offset = newOffset
+        }
+
+        guard let fmtRaw = rawEntries[1],
+              let authDataRaw = rawEntries[2],
+              let attStmtRaw = rawEntries[3] else { return nil }
+
+        // Build WebAuthn attestationObject: {"fmt": ..., "attStmt": ..., "authData": ...}
+        var result: [UInt8] = [0xA3] // map of 3
+        // "fmt" (text string, length 3)
+        result.append(contentsOf: [0x63, 0x66, 0x6D, 0x74])
+        result.append(contentsOf: fmtRaw)
+        // "attStmt" (text string, length 7)
+        result.append(contentsOf: [0x67, 0x61, 0x74, 0x74, 0x53, 0x74, 0x6D, 0x74])
+        result.append(contentsOf: attStmtRaw)
+        // "authData" (text string, length 8)
+        result.append(contentsOf: [0x68, 0x61, 0x75, 0x74, 0x68, 0x44, 0x61, 0x74, 0x61])
+        result.append(contentsOf: authDataRaw)
+
+        return Data(result)
+    }
+
     private nonisolated static func parseCBORMap(_ data: Data) -> [Int: Any]? {
         guard !data.isEmpty else { return nil }
         var result: [Int: Any] = [:]
