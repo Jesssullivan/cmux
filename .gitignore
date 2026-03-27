@@ -47,3 +47,5 @@ tests/visual_report.html
 # Local scratch (screenshots, etc.)
 tmp/
 tmp-*/
+.pr-review-*.md
+.todo-*.md
