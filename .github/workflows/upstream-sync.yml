@@ -292,6 +292,22 @@ jobs:
           cp zig-out/lib/libctap2.a ../../
           cp include/ctap2.h ../../
 
+      - name: Build libzig-crypto
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
+        run: |
+          cd vendor/zig-crypto
+          zig build -Doptimize=ReleaseFast
+          cp zig-out/lib/libzig-crypto.a ../../
+          cp include/zig_crypto.h ../../
+
+      - name: Build libzig-keychain
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
+        run: |
+          cd vendor/zig-keychain
+          zig build -Doptimize=ReleaseFast
+          cp zig-out/lib/libzig-keychain.a ../../
+          cp include/zig_keychain.h ../../
+
       - name: Build check (compile only)
         if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
         id: build
