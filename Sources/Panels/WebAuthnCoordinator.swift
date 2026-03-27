@@ -99,7 +99,7 @@ final class WebAuthnCoordinator: NSObject {
             let alert = NSAlert()
             alert.messageText = String(localized: "webauthn.pin.title", defaultValue: "Security Key PIN Required")
             if let retries {
-                alert.informativeText = String(localized: "webauthn.pin.retries \(retries)", defaultValue: "Enter the PIN for your security key. \(retries) attempt(s) remaining.")
+                alert.informativeText = String(localized: "webauthn.pin.retries", defaultValue: "Enter the PIN for your security key.") + " \(retries) " + String(localized: "webauthn.pin.attemptsRemaining", defaultValue: "attempt(s) remaining.")
             } else {
                 alert.informativeText = String(localized: "webauthn.pin.prompt", defaultValue: "Enter the PIN for your security key.")
             }
