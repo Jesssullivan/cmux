@@ -1,6 +1,6 @@
 import Bonsplit
-import CryptoKit
 import libctap2
+import libzig_crypto
 import WebKit
 
 /// Error type for CTAP2 operations.
@@ -231,8 +231,10 @@ final class WebAuthnCoordinator: NSObject {
 
         // Build clientDataJSON and hash it with SHA-256
         let clientDataJSON = Self.buildClientDataJSON(type: "webauthn.create", challenge: challengeB64, origin: origin)
-        let clientDataHash = SHA256.hash(data: clientDataJSON)
-        let hashBytes = Array(clientDataHash)
+        var hashBytes = [UInt8](repeating: 0, count: 32)
+        clientDataJSON.withUnsafeBytes { ptr in
+            zig_crypto_sha256(ptr.baseAddress?.assumingMemoryBound(to: UInt8.self), clientDataJSON.count, &hashBytes)
+        }
 
         Self.ctap2Queue.async {
             let result = self.performCTAP2MakeCredential(
@@ -339,8 +341,10 @@ final class WebAuthnCoordinator: NSObject {
 
         // Build clientDataJSON and hash it with SHA-256
         let clientDataJSON = Self.buildClientDataJSON(type: "webauthn.get", challenge: challengeB64, origin: origin)
-        let clientDataHash = SHA256.hash(data: clientDataJSON)
-        let hashBytes = Array(clientDataHash)
+        var hashBytes = [UInt8](repeating: 0, count: 32)
+        clientDataJSON.withUnsafeBytes { ptr in
+            zig_crypto_sha256(ptr.baseAddress?.assumingMemoryBound(to: UInt8.self), clientDataJSON.count, &hashBytes)
+        }
 
         Self.ctap2Queue.async {
             let result = self.performCTAP2GetAssertion(

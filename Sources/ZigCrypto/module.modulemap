@@ -1,0 +1,5 @@
+module libzig_crypto {
+    header "../../zig_crypto.h"
+    link "zig-crypto"
+    export *
+}

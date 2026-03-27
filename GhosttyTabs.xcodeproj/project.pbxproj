@@ -21,6 +21,7 @@
 		A5001543 /* TerminalSSHSessionDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001545 /* TerminalSSHSessionDetector.swift */; };
 			A5001006 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5001016 /* GhosttyKit.xcframework */; };
 		A500F202 /* libctap2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A500F200 /* libctap2.a */; };
+		A500F302 /* libzig-crypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A500F300 /* libzig-crypto.a */; };
 		A5001007 /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001019 /* TerminalController.swift */; };
 		A5001500 /* CmuxWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001510 /* CmuxWebView.swift */; };
 		A5001501 /* UITestRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001511 /* UITestRecorder.swift */; };
@@ -202,6 +203,8 @@
 			A5001016 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 		A500F200 /* libctap2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libctap2.a; sourceTree = "<group>"; };
 		A500F201 /* ctap2.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ctap2.h; sourceTree = "<group>"; };
+		A500F300 /* libzig-crypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libzig-crypto.a"; sourceTree = "<group>"; };
+		A500F301 /* zig_crypto.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = zig_crypto.h; sourceTree = "<group>"; };
 		A5001017 /* ghostty.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ghostty.h; sourceTree = "<group>"; };
 		A5001018 /* cmux-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "cmux-Bridging-Header.h"; sourceTree = "<group>"; };
 		A5001019 /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
@@ -318,6 +321,7 @@
 				files = (
 					A5001006 /* GhosttyKit.xcframework in Frameworks */,
 					A500F202 /* libctap2.a in Frameworks */,
+				A500F302 /* libzig-crypto.a in Frameworks */,
 					A5001230 /* Sparkle in Frameworks */,
 					A5001250 /* Sentry in Frameworks */,
 					A5001270 /* PostHog in Frameworks */,
@@ -411,6 +415,8 @@
 				A5001016 /* GhosttyKit.xcframework */,
 				A500F200 /* libctap2.a */,
 				A500F201 /* ctap2.h */,
+				A500F300 /* libzig-crypto.a */,
+				A500F301 /* zig_crypto.h */,
 				A5001017 /* ghostty.h */,
 				A5001018 /* cmux-Bridging-Header.h */,
 				3196C9C2D01F054C1D3385DD /* cmuxUITests */,
@@ -963,6 +969,7 @@
 				OTHER_LDFLAGS = (
 					"-lc++",
 					"-lctap2",
+					"-lzig-crypto",
 					"-framework",
 					Metal,
 					"-framework",
@@ -981,6 +988,7 @@
 				SWIFT_INCLUDE_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/Sources/FIDO2",
+					"$(SRCROOT)/Sources/ZigCrypto",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app.debug;
 				PRODUCT_NAME = "cmux DEV";
@@ -1015,6 +1023,7 @@
 				OTHER_LDFLAGS = (
 					"-lc++",
 					"-lctap2",
+					"-lzig-crypto",
 					"-framework",
 					Metal,
 					"-framework",
@@ -1033,6 +1042,7 @@
 				SWIFT_INCLUDE_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/Sources/FIDO2",
+					"$(SRCROOT)/Sources/ZigCrypto",
 				);
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app;
@@ -1057,6 +1067,17 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_NAME = cmux;
 				PRODUCT_MODULE_NAME = cmux_cli;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)",
+				);
+				OTHER_LDFLAGS = (
+					"-lzig-crypto",
+				);
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Sources/ZigCrypto",
+				);
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -1076,6 +1097,17 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_NAME = cmux;
 				PRODUCT_MODULE_NAME = cmux_cli;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)",
+				);
+				OTHER_LDFLAGS = (
+					"-lzig-crypto",
+				);
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Sources/ZigCrypto",
+				);
 				ONLY_ACTIVE_ARCH = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";

@@ -6,10 +6,7 @@ import Bonsplit
 import Network
 import CFNetwork
 import SQLite3
-import CryptoKit
-#if canImport(CommonCrypto)
-import CommonCrypto
-#endif
+import libzig_crypto
 #if canImport(Security)
 import Security
 #endif
@@ -8058,61 +8055,45 @@ private final class ChromiumCookieDecryptor {
 
     private func deriveKey(from passwordData: Data) -> Data? {
         let salt = Data("saltysalt".utf8)
-        var derivedKey = Data(count: kCCKeySizeAES128)
+        var derivedKey = [UInt8](repeating: 0, count: 16) // AES-128 key
 
-        let status = derivedKey.withUnsafeMutableBytes { derivedBytes in
-            passwordData.withUnsafeBytes { passwordBytes in
-                salt.withUnsafeBytes { saltBytes in
-                    CCKeyDerivationPBKDF(
-                        CCPBKDFAlgorithm(kCCPBKDF2),
-                        passwordBytes.baseAddress?.assumingMemoryBound(to: Int8.self),
-                        passwordData.count,
-                        saltBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        salt.count,
-                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1),
-                        1003,
-                        derivedBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        kCCKeySizeAES128
-                    )
-                }
+        passwordData.withUnsafeBytes { passPtr in
+            salt.withUnsafeBytes { saltPtr in
+                zig_crypto_pbkdf2_sha1(
+                    passPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    passwordData.count,
+                    saltPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    salt.count,
+                    1003,
+                    &derivedKey,
+                    16
+                )
             }
         }
 
-        guard status == kCCSuccess else { return nil }
-        return derivedKey
+        return Data(derivedKey)
     }
 
     private func decrypt(ciphertext: Data, key: Data) -> Data? {
-        let iv = Data(repeating: 0x20, count: kCCBlockSizeAES128)
-        var plaintext = Data(count: ciphertext.count + kCCBlockSizeAES128)
-        var plaintextLength = 0
-        let plaintextCapacity = plaintext.count
+        let iv: [UInt8] = [UInt8](repeating: 0x20, count: 16) // Chromium uses 0x20 space IV
+        var plaintext = [UInt8](repeating: 0, count: ciphertext.count)
 
-        let status = plaintext.withUnsafeMutableBytes { plaintextBytes in
-            ciphertext.withUnsafeBytes { ciphertextBytes in
-                key.withUnsafeBytes { keyBytes in
-                    iv.withUnsafeBytes { ivBytes in
-                        CCCrypt(
-                            CCOperation(kCCDecrypt),
-                            CCAlgorithm(kCCAlgorithmAES),
-                            CCOptions(kCCOptionPKCS7Padding),
-                            keyBytes.baseAddress,
-                            key.count,
-                            ivBytes.baseAddress,
-                            ciphertextBytes.baseAddress,
-                            ciphertext.count,
-                            plaintextBytes.baseAddress,
-                            plaintextCapacity,
-                            &plaintextLength
-                        )
-                    }
-                }
-            }
+        guard key.count == 16 else { return nil }
+        var keyBytes = [UInt8](repeating: 0, count: 16)
+        key.copyBytes(to: &keyBytes, count: 16)
+
+        let ptLen = ciphertext.withUnsafeBytes { ctPtr in
+            zig_crypto_aes128_cbc_decrypt(
+                &keyBytes,
+                iv,
+                ctPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                ciphertext.count,
+                &plaintext
+            )
         }
 
-        guard status == kCCSuccess else { return nil }
-        plaintext.removeSubrange(plaintextLength...)
-        return plaintext
+        guard ptLen >= 0 else { return nil }
+        return Data(plaintext[..<Int(ptLen)])
     }
 
     private func decodePlaintext(_ plaintext: Data, host: String) -> String? {
@@ -8120,7 +8101,12 @@ private final class ChromiumCookieDecryptor {
             return value
         }
 
-        let hostDigest = Data(SHA256.hash(data: Data(host.utf8)))
+        let hostData = Data(host.utf8)
+        var hostHash = [UInt8](repeating: 0, count: 32)
+        hostData.withUnsafeBytes { ptr in
+            zig_crypto_sha256(ptr.baseAddress?.assumingMemoryBound(to: UInt8.self), hostData.count, &hostHash)
+        }
+        let hostDigest = Data(hostHash)
         if plaintext.starts(with: hostDigest) {
             return String(data: plaintext.dropFirst(hostDigest.count), encoding: .utf8)
         }

@@ -1,5 +1,5 @@
 import Foundation
-import CryptoKit
+import libzig_crypto
 import Darwin
 #if canImport(LocalAuthentication)
 import LocalAuthentication
@@ -4480,8 +4480,15 @@ struct CMUXCLI {
 
     private func sha256Hex(forFile url: URL) throws -> String {
         let data = try Data(contentsOf: url)
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
+        var hex = [UInt8](repeating: 0, count: 64)
+        data.withUnsafeBytes { ptr in
+            _ = zig_crypto_sha256_hex(
+                ptr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                data.count,
+                &hex
+            )
+        }
+        return String(bytes: hex, encoding: .ascii) ?? ""
     }
 
     private func hasSSHOptionKey(_ options: [String], key: String) -> Bool {

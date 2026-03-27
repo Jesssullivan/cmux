@@ -11,3 +11,6 @@
 [submodule "vendor/ctap2"]
 	path = vendor/ctap2
 	url = https://github.com/Jesssullivan/zig-ctap2.git
+[submodule "vendor/zig-crypto"]
+	path = vendor/zig-crypto
+	url = https://github.com/Jesssullivan/zig-crypto.git
