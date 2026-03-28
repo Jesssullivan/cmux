@@ -47,6 +47,22 @@ jobs:
           cp zig-out/lib/libctap2.a ../../
           cp include/ctap2.h ../../
 
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: daemon/remote/go.mod
+
+      - name: Build remote daemon binaries
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          [ -z "$TAG" ] && TAG="${{ github.event.inputs.tag }}"
+          VERSION="${TAG#lab-v}"
+          ./scripts/build_remote_daemon_release_assets.sh \
+            --version "$VERSION" \
+            --release-tag "$TAG" \
+            --repo "${{ github.repository }}" \
+            --output-dir "remote-daemon-assets"
+
       - name: Build cmux LAB (Release)
         run: |
           xcodebuild -project GhosttyTabs.xcodeproj \
@@ -146,6 +162,12 @@ jobs:
           name: cmux-lab-macos
           path: cmux-lab-macos.dmg
 
+      - name: Upload remote daemon artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-lab-remote-daemon
+          path: remote-daemon-assets/cmuxd-remote-*
+
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain build.keychain >/dev/null 2>&1 || true
@@ -172,6 +194,10 @@ jobs:
             [ -f "$f" ] && ASSETS+=("$f")
           done
 
+          for f in cmux-lab-remote-daemon/cmuxd-remote-*; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
           if [ ${#ASSETS[@]} -eq 0 ]; then
             echo "ERROR: No DMG artifacts found"
             ls -laR cmux-lab-macos/ || echo "artifact dir missing"
@@ -182,6 +208,7 @@ jobs:
 
           ## Assets
           - **cmux-lab-macos.dmg** — signed macOS .app (trans-themed LAB branding, Developer ID)
+          - **cmuxd-remote-{darwin,linux}-{arm64,amd64}** — cross-platform remote daemon binaries
 
           ## Nix
           \`\`\`bash
