@@ -1,12 +1,13 @@
-# Ghostty Fork Changes (manaflow-ai/ghostty)
+# Ghostty Fork Changes (Jesssullivan/ghostty)
 
 This repo uses a fork of Ghostty for local patches that aren't upstream yet.
+The submodule now points to `Jesssullivan/ghostty` (forked from `manaflow-ai/ghostty`).
 When we change the fork, update this document and the parent submodule SHA.
 
 ## Fork update checklist
 
-1) Make changes in `ghostty/`.
-2) Commit and push to `manaflow-ai/ghostty`.
+1) Make changes in `ghostty/` or `ghostty-dev/` (the Jesssullivan/ghostty clone).
+2) Commit and push to `Jesssullivan/ghostty`.
 3) Update this file with the new change summary + conflict notes.
 4) In the parent repo: `git add ghostty` and commit the submodule SHA.
 
@@ -130,4 +131,23 @@ These files change frequently upstream; be careful when rebasing the fork:
     If upstream reorganizes the preview loop or key handling, re-check the cmux mode path and keep the
     stock Ghostty behavior unchanged when the cmux env vars are absent.
 
+- `src/apprt/embedded.zig`
+  - Platform union and PlatformTag enum. If upstream adds new platforms (e.g. visionOS from PR #11010),
+    merge conflict at the union/enum definition. Resolution: add both platform variants.
+
+- `include/ghostty.h`
+  - Platform enum and union. Same conflict potential as embedded.zig above.
+
 If you resolve a conflict, update this doc with what changed.
+
+### 8) Linux embedded platform variant
+
+- Commit: `e109d653c` (Jesssullivan/ghostty#1)
+- Files: `include/ghostty.h`, `src/apprt/embedded.zig`
+- Description: Add `GHOSTTY_PLATFORM_LINUX` to the embedded runtime Platform union,
+  enabling libghostty surface creation on Linux. The linux platform carries an opaque
+  `surface` pointer (e.g. GtkGLArea widget) following the same pattern as macOS (nsview)
+  and iOS (uiview).
+- Style reference: upstream ghostty-org/ghostty#11010 (visionOS platform variant)
+- Conflict notes: merge conflict possible in Platform union and ghostty_platform_e enum
+  if upstream adds new platforms concurrently.

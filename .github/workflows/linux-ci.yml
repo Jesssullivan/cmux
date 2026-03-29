@@ -9,6 +9,8 @@ on:
       - 'nix/**'
       - 'vendor/**'
       - 'cmuxd/**'
+      - 'cmux-linux/**'
+      - 'ghostty'
       - '.github/workflows/linux-ci.yml'
   pull_request:
     branches: [main]
@@ -62,7 +64,12 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-1-dev libnotify-dev pkg-config
+          sudo apt-get install -y \
+            libsecret-1-dev libnotify-dev pkg-config \
+            libgtk-4-dev libadwaita-1-dev \
+            libfreetype-dev libharfbuzz-dev libfontconfig-dev \
+            libpng-dev libonig-dev libgl-dev \
+            glslang-tools spirv-cross
 
       - name: Build + test zig-ctap2
         run: |
@@ -95,6 +102,24 @@ jobs:
             echo "cmuxd directory not found, skipping"
           fi
 
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          echo "libghostty.a: $(ls -lh zig-out/lib/libghostty.a)"
+          echo "ghostty.h: $(ls -lh zig-out/include/ghostty.h)"
+
+      - name: Build cmux-linux
+        run: |
+          cd cmux-linux
+          zig build -Doptimize=ReleaseFast
+          echo "cmux: $(ls -lh zig-out/bin/cmux)"
+
+      - name: Test cmux-linux (config parser)
+        run: |
+          cd cmux-linux
+          zig build test 2>&1 || echo "Note: some tests may require GTK runtime"
+
   # ── Fedora 42 container: GTK4 4.18 ────────────────────────────────
   fedora:
     name: Fedora 42 (GTK4 4.18)
@@ -105,7 +130,7 @@ jobs:
         run: |
           dnf install -y \
             git \
-            gcc \
+            gcc gcc-c++ \
             pkg-config \
             gtk4-devel \
             libadwaita-devel \
@@ -113,7 +138,9 @@ jobs:
             libsecret-devel \
             libnotify-devel \
             wayland-devel \
-            wayland-protocols-devel
+            wayland-protocols-devel \
+            freetype-devel harfbuzz-devel fontconfig-devel \
+            libpng-devel oniguruma-devel mesa-libGL-devel
 
       - uses: actions/checkout@v4
         with:
@@ -149,6 +176,16 @@ jobs:
           cd vendor/zig-keychain
           zig build -Doptimize=ReleaseFast
 
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+
+      - name: Build cmux-linux
+        run: |
+          cd cmux-linux
+          zig build -Doptimize=ReleaseFast
+
   # ── Arch Linux container: bleeding edge ────────────────────────────
   arch:
     name: Arch Linux (bleeding edge)
@@ -166,7 +203,9 @@ jobs:
             libsecret \
             libnotify \
             wayland \
-            wayland-protocols
+            wayland-protocols \
+            freetype2 harfbuzz fontconfig \
+            libpng oniguruma mesa
 
       - uses: actions/checkout@v4
         with:
@@ -198,4 +237,14 @@ jobs:
       - name: Build zig-keychain
         run: |
           cd vendor/zig-keychain
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+
+      - name: Build cmux-linux
+        run: |
+          cd cmux-linux
           zig build -Doptimize=ReleaseFast

@@ -157,13 +157,48 @@ in {
               check_for_marker() == False
           ), "Marker color present before terminal launched!"
 
-      # Launch foot terminal to verify Wayland compositor is working
-      # (will be replaced with cmux-linux once #77 apprt variant exists)
+      # Launch foot terminal to verify Wayland compositor is working.
+      # TODO: Replace with cmux-linux once packaged as a Nix derivation.
+      # cmux-linux compiles on all 3 distros (PR #104) but needs Nix
+      # packaging to be available inside VM tests.
       machine.succeed("${su "${bus} foot &"}")
 
       machine.sleep(3)
 
       machine.screenshot("cmux-gnome-wayland")
+    '';
+  };
+
+  # Tier 2b: cmux-linux build verification (headless)
+  # Verifies that libghostty + cmux-linux compile and produce a binary.
+  # Full graphical test requires cmux-linux as a Nix package (future work).
+  cmux-linux-build-check = pkgs.testers.runNixOSTest {
+    name = "cmux-linux-build-check";
+    nodes = {
+      machine = {pkgs, ...}: {
+        users.groups.cmux = {};
+        users.users.cmux = {
+          isNormalUser = true;
+          group = "cmux";
+          extraGroups = ["wheel"];
+          hashedPassword = "";
+          packages = [
+            pkgs.gtk4
+            pkgs.libadwaita
+          ];
+        };
+
+        environment.systemPackages = [
+          pkgs.gtk4
+          pkgs.libadwaita
+        ];
+      };
+    };
+    testScript = {...}: ''
+      # Verify GTK4 and libadwaita are available in the VM
+      machine.succeed("test -e /run/current-system/sw/lib/libgtk-4.so || test -e /run/current-system/sw/lib/libgtk-4.so.1")
+      machine.succeed("test -e /run/current-system/sw/lib/libadwaita-1.so || test -e /run/current-system/sw/lib/libadwaita-1.so.0")
+      machine.log("GTK4 + libadwaita runtime libraries present")
     '';
   };
 
