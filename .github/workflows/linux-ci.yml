@@ -109,7 +109,7 @@ jobs:
             pkg-config \
             gtk4-devel \
             libadwaita-devel \
-            webkit2gtk5.0-devel \
+            webkitgtk6.0-devel \
             libsecret-devel \
             libnotify-devel \
             wayland-devel \
@@ -134,11 +134,20 @@ jobs:
           version: 0.15.2
           use-cache: false
 
-      - name: Build vendor libraries
+      - name: Build zig-ctap2
         run: |
-          cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/ctap2
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-crypto
+        run: |
+          cd vendor/zig-crypto
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-keychain
+        run: |
+          cd vendor/zig-keychain
+          zig build -Doptimize=ReleaseFast
 
   # ── Arch Linux container: bleeding edge ────────────────────────────
   arch:
@@ -176,8 +185,17 @@ jobs:
           version: 0.15.2
           use-cache: false
 
-      - name: Build vendor libraries
+      - name: Build zig-ctap2
         run: |
-          cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/ctap2
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-crypto
+        run: |
+          cd vendor/zig-crypto
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-keychain
+        run: |
+          cd vendor/zig-keychain
+          zig build -Doptimize=ReleaseFast

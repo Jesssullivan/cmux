@@ -183,6 +183,7 @@ in {
             pkgs.gtk4
             pkgs.libadwaita
             pkgs.webkitgtk_6_0
+            pkgs.pkg-config
           ];
         };
       };
