@@ -25,21 +25,13 @@ jobs:
           version: 0.15.2
           use-cache: false
 
-      - name: Download pre-built GhosttyKit
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build GhosttyKit.xcframework
         run: |
-          GHOSTTY_SHA=$(git -C ghostty rev-parse HEAD)
-          TAG="xcframework-${GHOSTTY_SHA}"
-          echo "Downloading GhosttyKit for ghostty commit ${GHOSTTY_SHA}"
-          gh release download "$TAG" --repo manaflow-ai/ghostty --pattern "GhosttyKit.xcframework.tar.gz" || {
-            echo "Pre-built xcframework not found for $TAG"
-            echo "Available releases:"
-            gh release list --repo manaflow-ai/ghostty --limit 5
-            exit 1
-          }
-          tar xzf GhosttyKit.xcframework.tar.gz
-          ls -la GhosttyKit.xcframework/
+          cd ghostty
+          zig build -Demit-xcframework=true -Dxcframework-target=native -Doptimize=ReleaseFast
+          ln -sf "$PWD/macos/GhosttyKit.xcframework" ../GhosttyKit.xcframework
+          echo "GhosttyKit.xcframework built from source ($(git rev-parse --short HEAD))"
+          ls -la ../GhosttyKit.xcframework/
 
       - name: Build libctap2
         run: |
