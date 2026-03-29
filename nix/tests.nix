@@ -172,20 +172,30 @@ in {
   gtk4-version-check = pkgs.testers.runNixOSTest {
     name = "gtk4-version-check";
     nodes = {
-      machine = {pkgs, ...}: {
+      machine = {pkgs, lib, ...}: {
         users.groups.cmux = {};
         users.users.cmux = {
           isNormalUser = true;
           group = "cmux";
           extraGroups = ["wheel"];
           hashedPassword = "";
-          packages = [
-            pkgs.gtk4
-            pkgs.libadwaita
-            pkgs.webkitgtk_6_0
-            pkgs.pkg-config
-          ];
         };
+
+        environment.systemPackages = [
+          pkgs.gtk4
+          pkgs.gtk4.dev
+          pkgs.libadwaita
+          pkgs.libadwaita.dev
+          pkgs.webkitgtk_6_0
+          pkgs.webkitgtk_6_0.dev
+          pkgs.pkg-config
+        ];
+
+        environment.variables.PKG_CONFIG_PATH = lib.makeSearchPath "lib/pkgconfig" [
+          pkgs.gtk4.dev
+          pkgs.libadwaita.dev
+          pkgs.webkitgtk_6_0.dev
+        ];
       };
     };
     testScript = {...}: ''
