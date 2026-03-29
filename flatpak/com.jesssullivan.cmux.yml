@@ -1,0 +1,56 @@
+app-id: com.jesssullivan.cmux
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: cmux
+
+finish-args:
+  # GPU rendering (OpenGL for libghostty)
+  - --device=dri
+  # PTY device access (terminal I/O)
+  - --device=all
+  # Windowing
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  # Network (for browser panels, WebAuthn)
+  - --share=network
+  # Home directory (config files, working directories)
+  - --filesystem=home
+  # Host commands (run user's shell, tools)
+  - --talk-name=org.freedesktop.Flatpak
+  # Notifications
+  - --talk-name=org.freedesktop.Notifications
+  # Secrets / keychain
+  - --talk-name=org.freedesktop.secrets
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/pkgconfig
+  - '*.la'
+  - '*.a'
+
+modules:
+  - name: cmux
+    buildsystem: simple
+    build-commands:
+      # Build libghostty
+      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+      # Build cmux-linux
+      - cd cmux-linux && zig build -Doptimize=ReleaseFast
+      # Install binary
+      - install -Dm755 cmux-linux/zig-out/bin/cmux /app/bin/cmux
+      # Install shared library
+      - install -Dm755 ghostty/zig-out/lib/libghostty.so /app/lib/libghostty.so
+      # Install desktop file
+      - install -Dm644 dist/linux/com.jesssullivan.cmux.desktop /app/share/applications/com.jesssullivan.cmux.desktop
+      # Install metainfo
+      - install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml /app/share/metainfo/com.jesssullivan.cmux.metainfo.xml
+      # Install icons
+      - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png /app/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
+      - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png /app/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
+      - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_512x512.png /app/share/icons/hicolor/512x512/apps/com.jesssullivan.cmux.png
+    sources:
+      - type: dir
+        path: ..

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.jesssullivan.cmux</id>
+
+  <name>cmux</name>
+  <summary>Terminal multiplexer with split panes, workspaces, and WebAuthn</summary>
+
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      cmux is a GTK4 terminal multiplexer built on libghostty, providing
+      tabbed workspaces, split pane management, a sidebar for workspace
+      navigation, and session persistence.
+    </p>
+    <p>
+      Features include a JSON-RPC socket control interface, hot-reloadable
+      configuration, and integrated FIDO2/WebAuthn support via zig-ctap2
+      for hardware security key authentication directly in the terminal.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.jesssullivan.cmux.desktop</launchable>
+
+  <url type="homepage">https://github.com/Jesssullivan/cmux</url>
+  <url type="bugtracker">https://github.com/Jesssullivan/cmux/issues</url>
+  <url type="vcs-browser">https://github.com/Jesssullivan/cmux</url>
+
+  <developer id="com.jesssullivan">
+    <name>Jess Sullivan</name>
+  </developer>
+
+  <content_rating type="oars-1.1" />
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <releases>
+    <release version="0.72.0" date="2026-03-28">
+      <description>
+        <p>Initial Linux MVP with GTK4 + libghostty integration.</p>
+      </description>
+    </release>
+  </releases>
+</component>

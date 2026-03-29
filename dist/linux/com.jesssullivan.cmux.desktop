@@ -1,0 +1,21 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=cmux
+GenericName=Terminal Emulator
+Comment=A terminal multiplexer with split panes, workspaces, and WebAuthn
+Exec=cmux
+Icon=com.jesssullivan.cmux
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;tty;pty;multiplexer;tabs;splits;
+StartupNotify=true
+StartupWMClass=cmux
+TryExec=cmux
+DBusActivatable=false
+X-TerminalArgExec=-e
+X-GNOME-UsesNotifications=true
+
+[Desktop Action new-window]
+Name=New Window
+Exec=cmux

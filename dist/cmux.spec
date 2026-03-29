@@ -1,0 +1,86 @@
+Name:           cmux
+Version:        0.72.0
+Release:        1%{?dist}
+Summary:        Terminal multiplexer with GTK4 UI and FIDO2 support
+License:        MIT
+URL:            https://github.com/Jesssullivan/cmux
+Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
+
+BuildRequires:  zig >= 0.15.2
+BuildRequires:  gcc
+BuildRequires:  gcc-c++
+BuildRequires:  pkg-config
+BuildRequires:  gtk4-devel >= 4.10
+BuildRequires:  libadwaita-devel >= 1.3
+BuildRequires:  libsecret-devel
+BuildRequires:  libnotify-devel
+BuildRequires:  freetype-devel
+BuildRequires:  harfbuzz-devel
+BuildRequires:  fontconfig-devel
+BuildRequires:  libpng-devel
+BuildRequires:  oniguruma-devel
+BuildRequires:  mesa-libGL-devel
+
+Requires:       gtk4 >= 4.10
+Requires:       libadwaita >= 1.3
+
+Recommends:     libsecret
+Recommends:     libnotify
+
+%description
+cmux is a GTK4 terminal multiplexer built on libghostty, providing
+tabbed workspaces, split pane management, a sidebar for workspace
+navigation, and session persistence.
+
+Features:
+- Tabbed terminal interface using AdwTabView
+- Binary tree split pane management
+- Workspace model with sidebar navigation
+- JSON configuration with hot-reload
+- Unix socket JSON-RPC control interface
+- Session snapshot and restore
+- FIDO2/WebAuthn hardware key support via zig-ctap2
+
+%prep
+%autosetup
+
+%build
+# Build libghostty
+cd ghostty
+zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+cd ..
+
+# Build cmux-linux
+cd cmux-linux
+zig build -Doptimize=ReleaseFast
+cd ..
+
+%install
+install -Dm755 cmux-linux/zig-out/bin/cmux %{buildroot}%{_bindir}/cmux
+install -Dm755 ghostty/zig-out/lib/libghostty.so %{buildroot}%{_libdir}/cmux/libghostty.so
+install -Dm644 dist/linux/com.jesssullivan.cmux.desktop %{buildroot}%{_datadir}/applications/com.jesssullivan.cmux.desktop
+install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml %{buildroot}%{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
+install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
+install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
+
+%post
+/usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
+
+%postun
+/usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
+
+%files
+%license LICENSE
+%doc README.md
+%{_bindir}/cmux
+%{_libdir}/cmux/libghostty.so
+%{_datadir}/applications/com.jesssullivan.cmux.desktop
+%{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
+%{_datadir}/icons/hicolor/*/apps/com.jesssullivan.cmux.png
+
+%changelog
+* Sat Mar 29 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.72.0-1
+- Initial Fedora packaging
+- GTK4 + libghostty terminal multiplexer
+- Tabbed workspaces, split panes, sidebar, config parser
+- Unix socket JSON-RPC, session persistence
