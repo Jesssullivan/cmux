@@ -161,14 +161,9 @@
 
     # ── Overlays ─────────────────────────────────────────────────────
     overlays = {
-      default = final: prev: {
-        # Once cmux-linux GTK4 package exists (#77), wire it here:
-        # cmux-linux = final.callPackage ./nix/package.nix {};
-        ghostty = final.callPackage ./ghostty/nix/package.nix {
-          optimize = "ReleaseFast";
-          revision = self.shortRev or self.dirtyShortRev or "dirty";
-        };
-      };
+      # Placeholder overlay. Once cmux-linux GTK4 package exists (#77),
+      # ghostty and cmux-linux will be wired here.
+      default = final: prev: {};
     };
 
     # ── Formatter ────────────────────────────────────────────────────

@@ -37,7 +37,7 @@
   };
 
   # Disable GDM — sway starts from tty
-  services.xserver.displayManager.gdm.enable = lib.mkForce false;
+  services.displayManager.gdm.enable = lib.mkForce false;
   services.xserver.enable = lib.mkForce false;
 
   services.greetd = {

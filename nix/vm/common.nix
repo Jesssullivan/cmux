@@ -36,8 +36,8 @@
   };
 
   environment.systemPackages = with pkgs; [
-    ghostty
     kitty
+    foot
     fish
     helix
     neovim
