@@ -81,7 +81,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
-      - run: nix flake check
-      - run: nix develop --command echo "dev shell OK"
+      - run: nix flake check --print-build-logs
+      - run: nix develop --command bash -c 'echo "zig $(zig version) — dev shell OK"'
