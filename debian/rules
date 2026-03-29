@@ -1,0 +1,27 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build libghostty
+	cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+	# Build cmux-linux
+	cd cmux-linux && zig build -Doptimize=ReleaseFast
+
+override_dh_auto_install:
+	# Binary
+	install -Dm755 cmux-linux/zig-out/bin/cmux debian/cmux/usr/bin/cmux
+	# Shared library
+	install -Dm755 ghostty/zig-out/lib/libghostty.so debian/cmux/usr/lib/cmux/libghostty.so
+	# Desktop file
+	install -Dm644 dist/linux/com.jesssullivan.cmux.desktop debian/cmux/usr/share/applications/com.jesssullivan.cmux.desktop
+	# Metainfo
+	install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml debian/cmux/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml
+	# Icons
+	install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png debian/cmux/usr/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
+	install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png debian/cmux/usr/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
+
+override_dh_auto_test:
+	# Skip tests in packaging build
+	true

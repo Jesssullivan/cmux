@@ -1,0 +1,28 @@
+Source: cmux
+Section: x11
+Priority: optional
+Maintainer: Jess Sullivan <jess@jesssullivan.dev>
+Homepage: https://github.com/Jesssullivan/cmux
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: cmux
+Architecture: amd64 arm64
+Depends: ${shlibs:Depends}, ${misc:Depends},
+ libgtk-4-1 (>= 4.10),
+ libadwaita-1-0 (>= 1.3)
+Recommends: libsecret-1-0, libnotify4
+Suggests: libwebkitgtk-6.0-4, fonts-liberation
+Description: Terminal multiplexer with split panes, workspaces, and WebAuthn
+ cmux is a GTK4 terminal multiplexer built on libghostty, providing
+ tabbed workspaces, split pane management, a sidebar for workspace
+ navigation, and session persistence.
+ .
+ Features:
+  - Tabbed terminal interface (AdwTabView)
+  - Binary tree split pane management
+  - Workspace model with sidebar navigation
+  - JSON config with hot-reload
+  - Unix socket JSON-RPC control interface
+  - Session snapshot and restore
+  - FIDO2/WebAuthn hardware key support

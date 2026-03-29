@@ -1,0 +1,8 @@
+cmux (0.72.0-1) unstable; urgency=medium
+
+  * Initial Linux packaging
+  * GTK4 + libadwaita terminal multiplexer with libghostty
+  * Tabbed workspaces, split panes, sidebar, config parser
+  * Unix socket JSON-RPC control, session persistence
+
+ -- Jess Sullivan <jess@jesssullivan.dev>  Sat, 29 Mar 2026 00:00:00 +0000
