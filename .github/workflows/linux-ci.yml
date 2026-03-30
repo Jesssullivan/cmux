@@ -180,8 +180,10 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
 
           # Force software OpenGL (Xvfb has no GPU)
+          # Ghostty requires GL 4.3; llvmpipe supports it but reports 3.3 by default
           export LIBGL_ALWAYS_SOFTWARE=1
-          export MESA_GL_VERSION_OVERRIDE=3.3
+          export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
+          export MESA_GLSL_VERSION_OVERRIDE=460
 
           echo "=== OpenGL info ==="
           glxinfo 2>/dev/null | grep -E "OpenGL version|OpenGL renderer|direct rendering" || echo "glxinfo not available"
@@ -220,7 +222,7 @@ jobs:
 
           echo "=== Clean shutdown test ==="
           if kill -0 $BINARY_PID 2>/dev/null; then
-            kill -TERM $BINARY_PID
+            kill -TERM $BINARY_PID 2>/dev/null || true
             # Wait up to 3 seconds for clean exit
             for i in $(seq 1 6); do
               kill -0 $BINARY_PID 2>/dev/null || break
@@ -234,13 +236,8 @@ jobs:
               echo "Clean shutdown: PASS"
             fi
           else
-            wait $BINARY_PID 2>/dev/null
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 0 ]; then
-              echo "Process exited cleanly (code 0)"
-            else
-              echo "Process exited with code $EXIT_CODE"
-            fi
+            echo "Process already exited before shutdown test"
+            # Don't call wait — the PID may belong to timeout wrapper
           fi
 
           # Show any stderr from the binary
