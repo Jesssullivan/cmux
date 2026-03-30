@@ -59,36 +59,37 @@ jobs:
           echo "=== Vulkan info ==="
           vulkaninfo --summary 2>/dev/null | head -20 || echo "vulkaninfo not available"
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
-
-      - name: Build libghostty
+      - name: Build and test (via Nix dev shell)
         run: |
-          cd ghostty
-          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
-          echo "libghostty.so: $(ls -lh zig-out/lib/libghostty.* 2>/dev/null || echo 'not found')"
+          nix develop --command bash -c '
+            echo "=== Zig: $(zig version) ==="
+            echo "=== GTK4: $(pkg-config --modversion gtk4 2>/dev/null || echo missing) ==="
 
-      - name: Build cmux-linux
-        run: |
-          cd cmux-linux
-          zig build -Doptimize=ReleaseFast
-          echo "cmux: $(ls -lh zig-out/bin/cmux)"
+            echo "=== Building libghostty ==="
+            cd ghostty
+            zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+            echo "libghostty: $(ls -lh zig-out/lib/libghostty.* 2>/dev/null)"
 
-      - name: Test cmux-linux (config parser)
-        run: |
-          cd cmux-linux
-          zig build test
+            echo "=== Building cmux-linux ==="
+            cd ../cmux-linux
+            zig build -Doptimize=ReleaseFast
+            echo "cmux: $(ls -lh zig-out/bin/cmux)"
+
+            echo "=== Config parser tests ==="
+            zig build test
+          '
 
       - name: GPU smoke test
         run: |
+          nix develop --command bash -c '
           BINARY="cmux-linux/zig-out/bin/cmux"
           export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
 
-          # Set up virtual display with GPU DRI access via GLX
+          # Xvfb from Nix + GL version override (Nix Mesa is software-only)
           export DISPLAY=:99
+          export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
+          export MESA_GLSL_VERSION_OVERRIDE=460
+          export LIBGL_ALWAYS_SOFTWARE=1
           Xvfb :99 -screen 0 1280x720x24 +extension GLX &
           XVFB_PID=$!
           sleep 1
@@ -101,7 +102,7 @@ jobs:
           echo "=== OpenGL context check ==="
           glxinfo 2>/dev/null | grep -E "OpenGL (version|renderer)|direct rendering" || echo "glxinfo not available"
 
-          TIMEOUT="${{ inputs.test_timeout || '15' }}"
+          TIMEOUT="${{ inputs.test_timeout || '\''15'\'' }}"
           echo "=== Starting cmux-linux (timeout ${TIMEOUT}s) ==="
           timeout "$TIMEOUT" "$BINARY" 2>/tmp/cmux-gpu-stderr.log &
           BINARY_PID=$!
@@ -183,6 +184,7 @@ jobs:
           rm -rf "$XDG_RUNTIME_DIR"
 
           echo "=== GPU smoke test completed ==="
+          '
 
       - name: Upload crash logs
         if: failure()
