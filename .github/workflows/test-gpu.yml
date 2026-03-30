@@ -1,14 +1,15 @@
 name: GPU Smoke Test (Self-Hosted)
 
 on:
+  # SECURITY: Only trigger on direct pushes and manual dispatch.
+  # Never run on pull_request — fork PRs could execute arbitrary code
+  # on the self-hosted runner with GPU access.
   push:
     branches: [main, 'sid/**']
     paths:
       - 'cmux-linux/**'
       - 'ghostty'
       - '.github/workflows/test-gpu.yml'
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
@@ -82,9 +83,9 @@ jobs:
           BINARY="cmux-linux/zig-out/bin/cmux"
           export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
 
-          # Set up virtual display with GPU DRI access
+          # Set up virtual display with GPU DRI access via GLX
           export DISPLAY=:99
-          Xvfb :99 -screen 0 1280x720x24 &
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX &
           XVFB_PID=$!
           sleep 1
 
