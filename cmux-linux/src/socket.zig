@@ -541,8 +541,10 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
 
-    // Rebuild widget tree
-    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    // Rebuild widget tree (skip GTK calls in test mode — not thread-safe)
+    if (!isNoSurface()) {
+        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    }
     ws.focused_panel_id = panel.id;
 
     const panel_hex = formatId(panel.id);
@@ -580,9 +582,11 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
         }
     }
 
-    // Rebuild widget tree
-    if (ws.root_node) |new_root| {
-        ws.content_widget = split_tree.buildWidget(new_root);
+    // Rebuild widget tree (skip GTK calls in test mode)
+    if (!isNoSurface()) {
+        if (ws.root_node) |new_root| {
+            ws.content_widget = split_tree.buildWidget(new_root);
+        }
     }
 
     return "{}";
@@ -685,7 +689,9 @@ fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
-    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    if (!isNoSurface()) {
+        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    }
     ws.focused_panel_id = panel.id;
 
     const panel_hex = formatId(panel.id);
@@ -949,9 +955,11 @@ fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
-    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    if (!isNoSurface()) {
+        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+        if (window.getSidebar()) |sb| sb.refresh();
+    }
     ws.focused_panel_id = panel.id;
-    if (window.getSidebar()) |sb| sb.refresh();
 
     const panel_hex = formatId(panel.id);
     return std.fmt.allocPrint(alloc, "{{\"surface_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
