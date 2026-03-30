@@ -7,12 +7,23 @@ const std = @import("std");
 const c = @import("c_api.zig");
 const app_mod = @import("app.zig");
 const window = @import("window.zig");
+const SocketServer = @import("socket.zig").SocketServer;
+
+const log = std.log.scoped(.main);
 
 /// Global libghostty app instance (set after ghostty_app_new).
 var ghostty_app: c.ghostty_app_t = null;
 
+/// Global socket server (started before window creation).
+var socket_server: SocketServer = SocketServer.init(std.heap.c_allocator);
+
 /// GTK application activate callback.
 fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
+    // Start socket server FIRST — so it's available even if surface creation crashes
+    socket_server.start() catch |err| {
+        log.warn("Socket server failed to start: {}", .{err});
+    };
+
     // Create the main window
     window.createWindow(gtk_app, ghostty_app);
 }
@@ -85,7 +96,11 @@ pub fn main() !void {
         0,
         null,
     );
+
+    // Clean up socket server
+    socket_server.stop();
+
     if (status != 0) {
-        std.log.warn("Application exited with status {}", .{status});
+        log.warn("Application exited with status {}", .{status});
     }
 }
