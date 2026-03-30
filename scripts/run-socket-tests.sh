@@ -90,6 +90,8 @@ for f in "$TESTS_DIR"/test_*.py; do
 
   # Skip browser tests (need WebKit DOM interaction we haven't wired)
   case "$name" in test_browser_*) continue ;; esac
+  # Skip CLI tests (need cmux CLI binary, macOS-specific paths)
+  case "$name" in test_cli_*) continue ;; esac
   # Skip interactive tests (need TTY)
   case "$name" in test_ctrl_interactive*) continue ;; esac
   # Skip SSH remote tests (need SSH infrastructure)
@@ -98,6 +100,10 @@ for f in "$TESTS_DIR"/test_*.py; do
   case "$name" in test_visual_*) continue ;; esac
   # Skip lint tests (macOS source checks)
   case "$name" in test_lint_*) continue ;; esac
+  # Skip command palette tests (need macOS UI simulation)
+  case "$name" in test_command_palette_*) continue ;; esac
+  # Skip tmux tests (need tmux binary)
+  case "$name" in test_tmux_*) continue ;; esac
 
   TESTS+=("$f")
 done
