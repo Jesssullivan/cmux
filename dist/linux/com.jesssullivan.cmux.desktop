@@ -15,6 +15,7 @@ TryExec=cmux
 DBusActivatable=false
 X-TerminalArgExec=-e
 X-GNOME-UsesNotifications=true
+Actions=new-window;
 
 [Desktop Action new-window]
 Name=New Window

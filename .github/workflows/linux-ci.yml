@@ -10,6 +10,7 @@ on:
       - 'vendor/**'
       - 'cmuxd/**'
       - 'cmux-linux/**'
+      - 'dist/linux/**'
       - 'ghostty'
       - '.github/workflows/linux-ci.yml'
   pull_request:
@@ -118,7 +119,141 @@ jobs:
       - name: Test cmux-linux (config parser)
         run: |
           cd cmux-linux
-          zig build test 2>&1 || echo "Note: some tests may require GTK runtime"
+          zig build test
+
+      - name: Tier 0 — Validate desktop + metainfo files
+        run: |
+          sudo apt-get install -y desktop-file-utils appstream
+
+          echo "=== Desktop entry validation ==="
+          desktop-file-validate dist/linux/com.jesssullivan.cmux.desktop
+
+          echo "=== AppStream metainfo validation ==="
+          appstreamcli validate --no-net dist/linux/com.jesssullivan.cmux.metainfo.xml
+
+          echo "=== Icon format checks ==="
+          for icon in dist/linux/icons/*.png; do
+            info=$(file "$icon")
+            echo "  $info"
+            echo "$info" | grep -q "PNG image data" || { echo "FAIL: $icon is not a valid PNG"; exit 1; }
+          done
+
+          echo "Tier 0 validation passed"
+
+      - name: Tier 1 — Static binary checks
+        run: |
+          BINARY="cmux-linux/zig-out/bin/cmux"
+          export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
+
+          echo "=== ELF magic check ==="
+          file "$BINARY" | grep -q "ELF 64-bit" || { echo "FAIL: not a 64-bit ELF"; exit 1; }
+
+          echo "=== Executable bit ==="
+          [ -x "$BINARY" ] || { echo "FAIL: not executable"; exit 1; }
+
+          echo "=== Shared library dependencies ==="
+          ldd "$BINARY"
+          ldd "$BINARY" | grep -q "libgtk-4" || { echo "FAIL: libgtk-4 not linked"; exit 1; }
+          ldd "$BINARY" | grep -q "libadwaita" || { echo "FAIL: libadwaita not linked"; exit 1; }
+
+          echo "Static binary checks passed"
+
+      - name: Tier 1 — Headless smoke test (Xvfb)
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y xvfb socat mesa-utils libgl1-mesa-dri
+
+          # Start virtual framebuffer
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 800x600x24 &
+          XVFB_PID=$!
+          sleep 1
+
+          # Set up XDG runtime
+          export XDG_RUNTIME_DIR=/tmp/xdg-runtime-smoke
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          BINARY="cmux-linux/zig-out/bin/cmux"
+
+          # libghostty.so is in ghostty/zig-out/lib
+          export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
+
+          # Force software OpenGL (Xvfb has no GPU)
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_GL_VERSION_OVERRIDE=3.3
+
+          echo "=== OpenGL info ==="
+          glxinfo 2>/dev/null | grep -E "OpenGL version|OpenGL renderer|direct rendering" || echo "glxinfo not available"
+
+          echo "=== Starting cmux-linux under Xvfb ==="
+          timeout 8 "$BINARY" 2>/tmp/cmux-smoke-stderr.log &
+          BINARY_PID=$!
+
+          # Wait for socket creation (up to 5 seconds)
+          SOCKET_FOUND=false
+          for i in $(seq 1 10); do
+            if [ -S "$XDG_RUNTIME_DIR/cmux.sock" ]; then
+              SOCKET_FOUND=true
+              echo "Socket created after ${i}x0.5s"
+              break
+            fi
+            sleep 0.5
+          done
+
+          if [ "$SOCKET_FOUND" = true ]; then
+            echo "=== Socket permissions ==="
+            ls -la "$XDG_RUNTIME_DIR/cmux.sock"
+
+            echo "=== JSON-RPC ping test ==="
+            RESPONSE=$(echo '{"id":1,"method":"system.ping","params":{}}' | \
+              socat -t2 - UNIX-CONNECT:"$XDG_RUNTIME_DIR/cmux.sock" 2>/dev/null || true)
+            echo "Response: $RESPONSE"
+            if echo "$RESPONSE" | grep -q "pong"; then
+              echo "Socket ping: PASS"
+            else
+              echo "Socket ping: SKIP (method may not be wired yet)"
+            fi
+          else
+            echo "Socket not created (expected — socket server may not be wired to GTK lifecycle yet)"
+          fi
+
+          echo "=== Clean shutdown test ==="
+          if kill -0 $BINARY_PID 2>/dev/null; then
+            kill -TERM $BINARY_PID
+            # Wait up to 3 seconds for clean exit
+            for i in $(seq 1 6); do
+              kill -0 $BINARY_PID 2>/dev/null || break
+              sleep 0.5
+            done
+
+            if kill -0 $BINARY_PID 2>/dev/null; then
+              echo "WARN: Process did not exit on SIGTERM, sending SIGKILL"
+              kill -9 $BINARY_PID 2>/dev/null || true
+            else
+              echo "Clean shutdown: PASS"
+            fi
+          else
+            wait $BINARY_PID 2>/dev/null
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 0 ]; then
+              echo "Process exited cleanly (code 0)"
+            else
+              echo "Process exited with code $EXIT_CODE"
+            fi
+          fi
+
+          # Show any stderr from the binary
+          if [ -f /tmp/cmux-smoke-stderr.log ]; then
+            echo "=== Binary stderr ==="
+            cat /tmp/cmux-smoke-stderr.log || true
+          fi
+
+          # Cleanup
+          kill -9 $XVFB_PID 2>/dev/null || true
+          rm -rf "$XDG_RUNTIME_DIR"
+
+          echo "Headless smoke test completed"
 
   # ── Fedora 42 container: GTK4 4.18 ────────────────────────────────
   fedora:
@@ -181,10 +316,17 @@ jobs:
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
 
-      - name: Build cmux-linux
+      - name: Build cmux-linux (Fedora)
         run: |
           cd cmux-linux
           zig build -Doptimize=ReleaseFast
+
+      - name: Tier 0 — Validate desktop + metainfo (Fedora)
+        run: |
+          dnf install -y desktop-file-utils appstream
+          desktop-file-validate dist/linux/com.jesssullivan.cmux.desktop
+          appstreamcli validate --no-net dist/linux/com.jesssullivan.cmux.metainfo.xml
+          echo "Tier 0 (Fedora) passed"
 
   # ── Arch Linux container: bleeding edge ────────────────────────────
   arch:
@@ -244,7 +386,14 @@ jobs:
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
 
-      - name: Build cmux-linux
+      - name: Build cmux-linux (Arch)
         run: |
           cd cmux-linux
           zig build -Doptimize=ReleaseFast
+
+      - name: Tier 0 — Validate desktop + metainfo (Arch)
+        run: |
+          pacman -S --noconfirm desktop-file-utils appstream
+          desktop-file-validate dist/linux/com.jesssullivan.cmux.desktop
+          appstreamcli validate --no-net dist/linux/com.jesssullivan.cmux.metainfo.xml
+          echo "Tier 0 (Arch) passed"

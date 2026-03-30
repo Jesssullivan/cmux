@@ -6,6 +6,7 @@ const std = @import("std");
 pub const gtk = @cImport({
     @cInclude("gtk/gtk.h");
     @cInclude("adwaita.h");
+    @cInclude("glib-unix.h");
 });
 
 pub const ghostty = @cImport({
