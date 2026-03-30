@@ -47,14 +47,22 @@ sleep 1
 # Start cmux daemon in test mode (no surface creation, no GL crash)
 echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
 export CMUX_NO_SURFACE=1
-echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" | head -c 200
-echo "..."
+echo "Binary: $BINARY"
+echo "XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
+file "$BINARY" | head -1
+readelf -l "$BINARY" 2>/dev/null | grep interpreter || echo "(no readelf)"
 timeout 120 "$BINARY" 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
-# Wait for socket (Nix interpreter adds startup latency)
+# Wait for socket
 for i in $(seq 1 40); do
   [ -S "$CMUX_SOCKET" ] && break
+  # Check if daemon is still alive
+  if ! kill -0 "$CMUX_PID" 2>/dev/null; then
+    echo "WARN: Daemon died (PID $CMUX_PID) at iteration $i"
+    echo "Stderr:" && cat "$STDERR_LOG" 2>/dev/null
+    break
+  fi
   sleep 0.5
 done
 
