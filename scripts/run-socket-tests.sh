@@ -52,14 +52,17 @@ export CMUX_NO_SURFACE=1
 timeout 120 $BINARY_CMD 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
-# Wait for socket
-for i in $(seq 1 20); do
+# Wait for socket (Nix interpreter adds startup latency)
+for i in $(seq 1 40); do
   [ -S "$CMUX_SOCKET" ] && break
-  sleep 0.25
+  sleep 0.5
 done
 
 if [ ! -S "$CMUX_SOCKET" ]; then
-  echo "FAIL: Socket not created"
+  echo "FAIL: Socket not created within 20s"
+  echo "Expected: $CMUX_SOCKET"
+  ls -la "$XDG_RUNTIME_DIR/" 2>/dev/null || echo "(dir not found)"
+  echo "Daemon stderr:"
   cat "$STDERR_LOG" 2>/dev/null
   exit 1
 fi
