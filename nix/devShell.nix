@@ -25,7 +25,8 @@
   gtk4-layer-shell,
   # Linux media
   gst_all_1,
-  # Linux rendering
+  # Linux rendering + OpenGL
+  libGL,
   bzip2,
   expat,
   fontconfig,
@@ -43,6 +44,7 @@
   libsecret,
   libnotify,
   # Testing / VMs
+  xorg,
   qemu,
   # Icons
   adwaita-icon-theme,
@@ -80,10 +82,12 @@ in
         libadwaita
       ]
       ++ lib.optionals stdenv.hostPlatform.isLinux [
-        # VM testing
+        # VM testing + headless display
         qemu
+        xorg.xorgserver
 
-        # Rendering deps
+        # Rendering deps (OpenGL via libGL/Mesa)
+        libGL
         bzip2
         expat
         fontconfig
