@@ -26,9 +26,11 @@ fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
     };
 
     // CMUX_NO_SURFACE=1: skip window/surface creation for socket-only testing.
-    // The daemon stays alive with just the socket server and GLib event loop.
+    // Hold the application to prevent g_application_run() from exiting
+    // (GtkApplication auto-quits when no windows are presented).
     if (posix.getenv("CMUX_NO_SURFACE") != null) {
         log.info("Test mode: surface creation skipped (CMUX_NO_SURFACE=1)", .{});
+        c.gtk.g_application_hold(@ptrCast(gtk_app));
         return;
     }
 
