@@ -37,9 +37,10 @@ Xvfb :99 -screen 0 1280x720x24 +extension GLX &
 XVFB_PID=$!
 sleep 1
 
-# Start daemon — run directly (nix develop provides correct LD_LIBRARY_PATH)
-echo "=== Starting cmux daemon ==="
-timeout 30 "$BINARY" 2>"$STDERR_LOG" &
+# Start daemon in test mode (CMUX_NO_SURFACE prevents GL crash, daemon survives indefinitely)
+echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
+export CMUX_NO_SURFACE=1
+timeout 120 "$BINARY" 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
 # Wait for socket
