@@ -143,6 +143,7 @@ jobs:
       - name: Tier 1 — Static binary checks
         run: |
           BINARY="cmux-linux/zig-out/bin/cmux"
+          export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
 
           echo "=== ELF magic check ==="
           file "$BINARY" | grep -q "ELF 64-bit" || { echo "FAIL: not a 64-bit ELF"; exit 1; }
@@ -174,8 +175,11 @@ jobs:
 
           BINARY="cmux-linux/zig-out/bin/cmux"
 
+          # libghostty.so is in ghostty/zig-out/lib
+          export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
+
           echo "=== Starting cmux-linux under Xvfb ==="
-          timeout 8 "$BINARY" &
+          timeout 8 "$BINARY" 2>/tmp/cmux-smoke-stderr.log &
           BINARY_PID=$!
 
           # Wait for socket creation (up to 5 seconds)
@@ -229,6 +233,12 @@ jobs:
             else
               echo "Process exited with code $EXIT_CODE"
             fi
+          fi
+
+          # Show any stderr from the binary
+          if [ -f /tmp/cmux-smoke-stderr.log ]; then
+            echo "=== Binary stderr ==="
+            cat /tmp/cmux-smoke-stderr.log || true
           fi
 
           # Cleanup
