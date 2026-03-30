@@ -1,0 +1,36 @@
+# udev rules for FIDO2/U2F hardware security keys.
+# Grants unprivileged access to hidraw devices with FIDO usage page.
+# Install to /etc/udev/rules.d/70-u2f.rules
+# Then reload: sudo udevadm control --reload && sudo udevadm trigger
+#
+# Source: Yubico/libfido2 (trimmed to most common vendors)
+# Full list: https://github.com/Yubico/libfido2/blob/main/udev/70-u2f.rules
+
+# Yubico YubiKey
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", ATTRS{idProduct}=="0113|0114|0115|0116|0120|0121|0200|0402|0403|0406|0407|0410", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Google Titan
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="18d1", ATTRS{idProduct}=="5026|5028", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Feitian ePass / BioPass
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="096e", ATTRS{idProduct}=="0850|0852|0853|0854|0856|0858|085a|085b|085d", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# SoloKeys Solo / Solo V2
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="a2ca", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="beee|b000", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Nitrokey FIDO2 / Nitrokey 3
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="20a0", ATTRS{idProduct}=="42b1|42b3", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Ledger
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2c97", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# OnlyKey
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="60fc", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Thetis FIDO2
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1ea8", ATTRS{idProduct}=="f025", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Generic FIDO/U2F (catch-all via usage page)
+# This matches any HID device with FIDO usage page 0xF1D0
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="*", TAG+="uaccess", GROUP="plugdev", MODE="0660", ENV{ID_SECURITY_TOKEN}="1"
