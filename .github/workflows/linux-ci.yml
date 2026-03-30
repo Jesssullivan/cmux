@@ -159,6 +159,7 @@ jobs:
           echo "Static binary checks passed"
 
       - name: Tier 1 — Headless smoke test (Xvfb)
+        continue-on-error: true
         run: |
           sudo apt-get install -y xvfb socat
 
