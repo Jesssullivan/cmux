@@ -208,6 +208,14 @@ const methods = .{
     .{ "surface.move", handleSurfaceMove },
     .{ "surface.reorder", handleSurfaceReorder },
     .{ "surface.drag_to_split", handleSurfaceDragToSplit },
+    .{ "browser.open_split", handleBrowserOpenSplit },
+    .{ "browser.navigate", handleBrowserNavigate },
+    .{ "browser.back", handleBrowserBack },
+    .{ "browser.forward", handleBrowserForward },
+    .{ "browser.reload", handleBrowserReload },
+    .{ "browser.url.get", handleBrowserUrlGet },
+    .{ "browser.focus_webview", handleBrowserFocusWebview },
+    .{ "browser.is_webview_focused", handleBrowserIsWebviewFocused },
     .{ "notification.create", handleNotificationCreate },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
@@ -323,7 +331,7 @@ fn handleIdentify(alloc: Allocator, _: json.Value) []const u8 {
 }
 
 fn handleCapabilities(_: Allocator, _: json.Value) []const u8 {
-    return "{\"workspaces\":true,\"splits\":true,\"notifications\":true,\"browser\":false,\"session\":true}";
+    return "{\"workspaces\":true,\"splits\":true,\"notifications\":true,\"browser\":true,\"session\":true}";
 }
 
 // ── Window Handlers ─────────────────────────────────────────────────────
@@ -879,6 +887,175 @@ fn handleSurfaceReorder(_: Allocator, params: json.Value) []const u8 {
 fn handleSurfaceDragToSplit(alloc: Allocator, params: json.Value) []const u8 {
     // Same as surface.split but semantically "dragging" an existing surface
     return handleSurfaceSplit(alloc, params);
+}
+
+// ── Browser Handlers ────────────────────────────────────────────────────
+
+const browser_mod = @import("browser.zig");
+
+fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+    const url = getParamString(params, "url");
+
+    const panel = ws.createBrowserPanel(url) catch return "{\"error\":\"create browser failed\"}";
+
+    // Add to split tree
+    if (ws.root_node) |root| {
+        const focused_id = ws.focused_panel_id orelse panel.id;
+        if (split_tree.findLeaf(root, focused_id)) |_| {
+            ws.root_node = split_tree.splitPane(ws.alloc, root, .horizontal, panel.id, panel.widget) catch return "{\"error\":\"split failed\"}";
+        }
+    } else {
+        ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
+    }
+    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    ws.focused_panel_id = panel.id;
+    if (window.getSidebar()) |sb| sb.refresh();
+
+    const panel_hex = formatId(panel.id);
+    return std.fmt.allocPrint(alloc, "{{\"surface_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
+}
+
+fn handleBrowserNavigate(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const url = getParamString(params, "url") orelse return "{\"error\":\"missing url\"}";
+
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    };
+
+    // Find the panel and its browser view
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.panel_type == .browser) {
+                if (panel.widget) |widget| {
+                    if (browser_mod.fromWidget(widget)) |bv| {
+                        const alloc = std.heap.c_allocator;
+                        const url_z = alloc.dupeZ(u8, url) catch return "{\"error\":\"alloc failed\"}";
+                        defer alloc.free(url_z);
+                        bv.navigate(url_z);
+                        return "{}";
+                    }
+                }
+            }
+            return "{\"error\":\"not a browser panel\"}";
+        }
+    }
+    return "{\"error\":\"surface not found\"}";
+}
+
+fn handleBrowserBack(_: Allocator, params: json.Value) []const u8 {
+    return browserAction(params, .back);
+}
+
+fn handleBrowserForward(_: Allocator, params: json.Value) []const u8 {
+    return browserAction(params, .forward);
+}
+
+fn handleBrowserReload(_: Allocator, params: json.Value) []const u8 {
+    return browserAction(params, .reload);
+}
+
+const BrowserAction = enum { back, forward, reload };
+
+fn browserAction(params: json.Value, action: BrowserAction) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    };
+
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.panel_type == .browser) {
+                if (panel.widget) |widget| {
+                    if (browser_mod.fromWidget(widget)) |bv| {
+                        switch (action) {
+                            .back => bv.goBack(),
+                            .forward => bv.goForward(),
+                            .reload => bv.reload(),
+                        }
+                        return "{}";
+                    }
+                }
+            }
+            return "{\"error\":\"not a browser panel\"}";
+        }
+    }
+    return "{\"error\":\"surface not found\"}";
+}
+
+fn handleBrowserUrlGet(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    };
+
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.panel_type == .browser) {
+                if (panel.widget) |widget| {
+                    if (browser_mod.fromWidget(widget)) |bv| {
+                        if (bv.getUri()) |uri| {
+                            return std.fmt.allocPrint(alloc, "{{\"url\":\"{s}\"}}", .{uri}) catch "{}";
+                        }
+                        return "{\"url\":\"\"}";
+                    }
+                }
+            }
+            return "{\"error\":\"not a browser panel\"}";
+        }
+    }
+    return "{\"error\":\"surface not found\"}";
+}
+
+fn handleBrowserFocusWebview(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    };
+
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.widget) |widget| {
+                _ = c.gtk.gtk_widget_grab_focus(widget);
+                return "{}";
+            }
+        }
+    }
+    return "{\"error\":\"surface not found\"}";
+}
+
+fn handleBrowserIsWebviewFocused(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"focused\":false}";
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"focused\":false}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"focused\":false}";
+        break :blk ws.focused_panel_id orelse return "{\"focused\":false}";
+    };
+
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.widget) |widget| {
+                const focused = c.gtk.gtk_widget_has_focus(widget) != 0;
+                return if (focused) "{\"focused\":true}" else "{\"focused\":false}";
+            }
+        }
+    }
+    return "{\"focused\":false}";
 }
 
 // ── Batch 5: Notification Stubs ─────────────────────────────────────────

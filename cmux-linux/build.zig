@@ -21,10 +21,11 @@ pub fn build(b: *std.Build) void {
     });
 
     if (!headless) {
-        // Full GUI mode: GTK4 + libadwaita + OpenGL
+        // Full GUI mode: GTK4 + libadwaita + OpenGL + WebKitGTK
         exe.root_module.linkSystemLibrary("gtk4", .{});
         exe.root_module.linkSystemLibrary("libadwaita-1", .{});
         exe.root_module.linkSystemLibrary("gl", .{});
+        exe.root_module.linkSystemLibrary("webkitgtk-6.0", .{});
     }
 
     // libghostty: shared library built from ghostty submodule.

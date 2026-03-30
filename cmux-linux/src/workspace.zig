@@ -22,6 +22,7 @@ pub const Panel = struct {
     title: ?[]const u8 = null,
     custom_title: ?[]const u8 = null,
     directory: ?[]const u8 = null,
+    url: ?[]const u8 = null,
     is_pinned: bool = false,
     is_manually_unread: bool = false,
     git_branch: ?[]const u8 = null,
@@ -104,6 +105,25 @@ pub const Workspace = struct {
 
         // Create the surface widget
         const widget = try @import("surface.zig").Surface.create(ghostty_app);
+        panel.widget = widget;
+
+        try self.panels.put(self.alloc, id, panel);
+        self.focused_panel_id = id;
+        return panel;
+    }
+
+    /// Create a new browser panel in this workspace.
+    pub fn createBrowserPanel(self: *Workspace, url: ?[]const u8) !*Panel {
+        const id = generateId();
+        const panel = try self.alloc.create(Panel);
+        panel.* = .{
+            .id = id,
+            .panel_type = .browser,
+            .url = if (url) |u| self.alloc.dupe(u8, u) catch null else null,
+        };
+
+        // Create the WebKitGTK browser widget
+        const widget = try @import("browser.zig").BrowserView.create(url);
         panel.widget = widget;
 
         try self.panels.put(self.alloc, id, panel);
