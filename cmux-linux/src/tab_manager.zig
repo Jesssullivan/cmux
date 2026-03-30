@@ -71,7 +71,6 @@ pub const TabManager = struct {
         const idx = self.workspaces.items.len - 1;
 
         // Add tab page in AdwTabView (skip in test mode — GTK calls must be on main thread)
-        const no_surface = std.posix.getenv("CMUX_NO_SURFACE") != null;
         if (!no_surface) {
             if (self.tab_view) |tv| {
                 if (ws.content_widget) |widget| {
