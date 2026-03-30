@@ -216,6 +216,12 @@ const methods = .{
     .{ "browser.url.get", handleBrowserUrlGet },
     .{ "browser.focus_webview", handleBrowserFocusWebview },
     .{ "browser.is_webview_focused", handleBrowserIsWebviewFocused },
+    .{ "browser.show_devtools", handleBrowserShowDevtools },
+    .{ "browser.close_devtools", handleBrowserCloseDevtools },
+    .{ "browser.find", handleBrowserFind },
+    .{ "browser.find_next", handleBrowserFindNext },
+    .{ "browser.find_previous", handleBrowserFindPrevious },
+    .{ "browser.find_finish", handleBrowserFindFinish },
     .{ "notification.create", handleNotificationCreate },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
@@ -1056,6 +1062,88 @@ fn handleBrowserIsWebviewFocused(_: Allocator, params: json.Value) []const u8 {
         }
     }
     return "{\"focused\":false}";
+}
+
+// ── DevTools + Find Handlers ────────────────────────────────────────────
+
+fn handleBrowserShowDevtools(_: Allocator, params: json.Value) []const u8 {
+    return browserViewAction(params, .show_devtools);
+}
+
+fn handleBrowserCloseDevtools(_: Allocator, params: json.Value) []const u8 {
+    return browserViewAction(params, .close_devtools);
+}
+
+fn handleBrowserFind(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    };
+    const query = getParamString(params, "query") orelse return "{\"error\":\"missing query\"}";
+
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.panel_type == .browser) {
+                if (panel.widget) |widget| {
+                    if (browser_mod.fromWidget(widget)) |bv| {
+                        const alloc = std.heap.c_allocator;
+                        const query_z = alloc.dupeZ(u8, query) catch return "{\"error\":\"alloc\"}";
+                        defer alloc.free(query_z);
+                        bv.findText(query_z);
+                        return "{}";
+                    }
+                }
+            }
+        }
+    }
+    return "{\"error\":\"surface not found\"}";
+}
+
+fn handleBrowserFindNext(_: Allocator, params: json.Value) []const u8 {
+    return browserViewAction(params, .find_next);
+}
+
+fn handleBrowserFindPrevious(_: Allocator, params: json.Value) []const u8 {
+    return browserViewAction(params, .find_previous);
+}
+
+fn handleBrowserFindFinish(_: Allocator, params: json.Value) []const u8 {
+    return browserViewAction(params, .find_finish);
+}
+
+const BrowserViewAction = enum { show_devtools, close_devtools, find_next, find_previous, find_finish };
+
+fn browserViewAction(params: json.Value, action: BrowserViewAction) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    };
+
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            if (panel.panel_type == .browser) {
+                if (panel.widget) |widget| {
+                    if (browser_mod.fromWidget(widget)) |bv| {
+                        switch (action) {
+                            .show_devtools => bv.showInspector(),
+                            .close_devtools => bv.closeInspector(),
+                            .find_next => bv.findNext(),
+                            .find_previous => bv.findPrevious(),
+                            .find_finish => bv.findFinish(),
+                        }
+                        return "{}";
+                    }
+                }
+            }
+        }
+    }
+    return "{\"error\":\"surface not found\"}";
 }
 
 // ── Batch 5: Notification Stubs ─────────────────────────────────────────
