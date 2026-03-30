@@ -21,8 +21,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Environment
-export LD_LIBRARY_PATH="$REPO_ROOT/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
+# Environment — prepend ghostty lib; keep Nix's library paths for glibc + GTK + WebKit
+export LD_LIBRARY_PATH="$REPO_ROOT/ghostty/zig-out/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Nix's ld-linux must be used for the binary (host ld-linux has older glibc).
+# Find and use the Nix interpreter if available.
+NIX_LD=$(find /nix/store -maxdepth 1 -name '*glibc*' -type d 2>/dev/null | head -1)
+if [ -n "$NIX_LD" ] && [ -f "$NIX_LD/lib/ld-linux-x86-64.so.2" ]; then
+  NIX_INTERP="$NIX_LD/lib/ld-linux-x86-64.so.2"
+  echo "Using Nix interpreter: $NIX_INTERP"
+  BINARY_CMD="$NIX_INTERP --library-path $LD_LIBRARY_PATH $BINARY"
+else
+  BINARY_CMD="$BINARY"
+fi
 export DISPLAY=:99
 export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
 export MESA_GLSL_VERSION_OVERRIDE=460
@@ -38,7 +48,7 @@ sleep 1
 
 # Start cmux daemon
 echo "=== Starting cmux daemon ==="
-timeout 60 "$BINARY" 2>"$STDERR_LOG" &
+timeout 60 $BINARY_CMD 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
 # Wait for socket
