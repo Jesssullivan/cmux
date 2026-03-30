@@ -28,7 +28,7 @@ jobs:
       - name: Build GhosttyKit.xcframework
         run: |
           cd ghostty
-          zig build -Demit-xcframework=true -Dxcframework-target=native -Doptimize=ReleaseFast
+          zig build -Demit-xcframework=true -Dxcframework-target=native -Doptimize=ReleaseFast -Demit-macos-app=false -Demit-exe=false -Demit-docs=false -Demit-webdata=false
           ln -sf "$PWD/macos/GhosttyKit.xcframework" ../GhosttyKit.xcframework
           echo "GhosttyKit.xcframework built from source ($(git rev-parse --short HEAD))"
           ls -la ../GhosttyKit.xcframework/
