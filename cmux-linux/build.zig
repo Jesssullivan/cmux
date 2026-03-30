@@ -4,25 +4,31 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const headless = b.option(bool, "headless", "Build terminal-only mode (no GTK4/GUI)") orelse false;
+
+    const root_source = if (headless)
+        b.path("src/main_headless.zig")
+    else
+        b.path("src/main.zig");
+
     const exe = b.addExecutable(.{
-        .name = "cmux",
+        .name = if (headless) "cmux-term" else "cmux",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = root_source,
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    // Link GTK4 and libadwaita via pkg-config
-    exe.root_module.linkSystemLibrary("gtk4", .{});
-    exe.root_module.linkSystemLibrary("libadwaita-1", .{});
-
-    // Link OpenGL for terminal rendering
-    exe.root_module.linkSystemLibrary("gl", .{});
+    if (!headless) {
+        // Full GUI mode: GTK4 + libadwaita + OpenGL
+        exe.root_module.linkSystemLibrary("gtk4", .{});
+        exe.root_module.linkSystemLibrary("libadwaita-1", .{});
+        exe.root_module.linkSystemLibrary("gl", .{});
+    }
 
     // libghostty: shared library built from ghostty submodule.
     // Build first: cd ../ghostty && zig build -Dapp-runtime=none -Drenderer=opengl
-    // The .so bundles all deps (simdutf, glslang, imgui, spirv-cross, etc.)
     exe.root_module.addLibraryPath(.{ .cwd_relative = "../ghostty/zig-out/lib" });
     exe.root_module.addSystemIncludePath(.{ .cwd_relative = "../ghostty/include" });
     exe.root_module.linkSystemLibrary("ghostty", .{});
@@ -45,7 +51,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     const t = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/config.zig"),
             .target = target,
             .optimize = optimize,
         }),
