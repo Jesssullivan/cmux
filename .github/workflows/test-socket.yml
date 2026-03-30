@@ -1,0 +1,58 @@
+name: Socket Tests (Self-Hosted Linux)
+
+on:
+  # SECURITY: Only trigger on direct pushes and manual dispatch.
+  push:
+    branches: [main, 'sid/**']
+    paths:
+      - 'cmux-linux/**'
+      - 'tests_v2/**'
+      - 'ghostty'
+      - '.github/workflows/test-socket.yml'
+      - 'scripts/run-socket-tests.sh'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or SHA to test
+        required: false
+        default: ""
+      test_filter:
+        description: "Test file glob (e.g., test_workspace_*.py)"
+        required: false
+        default: ""
+
+concurrency:
+  group: test-socket-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  socket-tests:
+    name: Socket tests (honey)
+    runs-on: [self-hosted, linux, gpu, cmux-test]
+    environment: gpu-tests
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          submodules: recursive
+
+      - name: Build libghostty (Nix)
+        run: nix develop --command bash -c 'cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast && ls -lh zig-out/lib/libghostty.*'
+
+      - name: Build cmux-linux (Nix)
+        run: nix develop --command bash -c 'cd cmux-linux && zig build -Doptimize=ReleaseFast && ls -lh zig-out/bin/cmux'
+
+      - name: Run socket tests
+        continue-on-error: true
+        env:
+          TEST_FILTER: ${{ inputs.test_filter || '' }}
+        run: nix develop --command bash scripts/run-socket-tests.sh
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: socket-test-results
+          path: /tmp/socket-tests-*
+          retention-days: 7

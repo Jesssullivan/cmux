@@ -4,6 +4,7 @@
 /// libghostty, and runs the main event loop.
 
 const std = @import("std");
+const posix = std.posix;
 const c = @import("c_api.zig");
 const app_mod = @import("app.zig");
 const window = @import("window.zig");
@@ -24,8 +25,13 @@ fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
         log.warn("Socket server failed to start: {}", .{err});
     };
 
-    // Create the main window
+    // Create the main window (tab manager, sidebar, workspaces)
     window.createWindow(gtk_app, ghostty_app);
+
+    // In test mode, hold the app to prevent auto-quit (placeholder widget may not keep it alive)
+    if (posix.getenv("CMUX_NO_SURFACE") != null) {
+        c.gtk.g_application_hold(@ptrCast(gtk_app));
+    }
 }
 
 /// Wakeup callback: called by libghostty when it needs a tick.

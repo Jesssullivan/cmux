@@ -46,19 +46,23 @@ pub const TabManager = struct {
     }
 
     /// Create a new workspace with a single terminal panel.
+    /// If CMUX_NO_SURFACE is set, creates an empty workspace (no terminal surface).
     pub fn createWorkspace(self: *TabManager) !*Workspace {
         const ws = try self.alloc.create(Workspace);
         ws.* = Workspace.init(self.alloc);
         ws.id = generateId();
 
-        // Create initial terminal panel
-        const panel = try ws.createTerminalPanel(self.ghostty_app);
-
-        // Create leaf node for the split tree
-        ws.root_node = try split_tree.createLeaf(self.alloc, panel.id, panel.widget);
-
-        // Build the GTK widget from the tree
-        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+        // CMUX_NO_SURFACE: skip terminal surface to avoid GL renderer crash in CI
+        const no_surface = std.posix.getenv("CMUX_NO_SURFACE") != null;
+        if (!no_surface) {
+            // Create initial terminal panel
+            const panel = try ws.createTerminalPanel(self.ghostty_app);
+            ws.root_node = try split_tree.createLeaf(self.alloc, panel.id, panel.widget);
+            ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+        } else {
+            // Empty workspace — use a placeholder label widget
+            ws.content_widget = @ptrCast(c.gtk.gtk_label_new("cmux test mode"));
+        }
 
         // Add to workspace list
         try self.workspaces.append(self.alloc, ws);
