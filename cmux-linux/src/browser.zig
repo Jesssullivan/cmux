@@ -4,6 +4,7 @@
 /// Parallel to surface.zig (terminal panels) in the panel architecture.
 
 const std = @import("std");
+const posix = std.posix;
 const c = @import("c_api.zig");
 const WebAuthnBridge = @import("webauthn_bridge.zig").WebAuthnBridge;
 
@@ -36,6 +37,10 @@ pub const BrowserView = struct {
         c.webkit.webkit_settings_set_enable_javascript(settings, 1);
         // Allow autoplay (for media-heavy sites)
         c.webkit.webkit_settings_set_media_playback_requires_user_gesture(settings, 0);
+
+        // Configure cookie persistence
+        // Store cookies in ~/.config/cmux/cookies.sqlite (SQLite format)
+        configureCookieStorage();
 
         // Create the web view
         const web_view: *c.WebKitWebView = @ptrCast(c.webkit.webkit_web_view_new() orelse
@@ -149,6 +154,40 @@ pub const BrowserView = struct {
     /// Check if the view can go forward.
     pub fn canGoForward(self: *const BrowserView) bool {
         return c.webkit.webkit_web_view_can_go_forward(self.web_view) != 0;
+    }
+
+    // ── Cookie Management ─────────────────────────────────────────────
+
+    /// Configure persistent cookie storage for the default web context.
+    /// Stores cookies in SQLite format at ~/.config/cmux/cookies.sqlite.
+    fn configureCookieStorage() void {
+        const context = c.webkit.webkit_web_context_get_default() orelse return;
+        const cookie_manager = c.webkit.webkit_web_context_get_cookie_manager(context) orelse return;
+
+        // Ensure the config directory exists
+        const alloc = std.heap.c_allocator;
+        const home = posix.getenv("HOME") orelse return;
+        const config_dir = std.fmt.allocPrintZ(alloc, "{s}/.config/cmux", .{home}) catch return;
+        defer alloc.free(config_dir);
+        std.fs.makeDirAbsolute(config_dir) catch {};
+
+        const cookie_path = std.fmt.allocPrintZ(alloc, "{s}/.config/cmux/cookies.sqlite", .{home}) catch return;
+        defer alloc.free(cookie_path);
+
+        // Set persistent storage (SQLite format)
+        c.webkit.webkit_cookie_manager_set_persistent_storage(
+            cookie_manager,
+            cookie_path.ptr,
+            c.webkit.WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE,
+        );
+
+        // Accept policy: no third-party cookies (privacy-friendly default)
+        c.webkit.webkit_cookie_manager_set_accept_policy(
+            cookie_manager,
+            c.webkit.WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY,
+        );
+
+        log.info("Cookie storage configured: {s}", .{cookie_path});
     }
 
     // ── Signal Handlers ─────────────────────────────────────────────────
