@@ -132,29 +132,50 @@ pub const SocketServer = struct {
             return 1;
         };
 
-        // Read request
+        // Register client fd for persistent reading via GLib main loop
+        _ = c.gtk.g_unix_fd_add(client_fd, c.gtk.G_IO_IN, &onClientData, self);
+        return 1;
+    }
+
+    /// GLib callback for data on a connected client.
+    fn onClientData(fd: c_int, _: c_uint, data: ?*anyopaque) callconv(.c) c.gtk.gboolean {
+        const self: *SocketServer = @ptrCast(@alignCast(data));
+
         var buf: [8192]u8 = undefined;
-        const n = posix.read(client_fd, &buf) catch {
-            posix.close(client_fd);
-            return 1;
+        const n = posix.read(fd, &buf) catch {
+            posix.close(fd);
+            return 0; // Remove source
         };
 
-        if (n > 0) {
-            const response = dispatch(self.alloc, buf[0..n]) catch |err| blk: {
-                log.warn("Dispatch error: {}", .{err});
-                break :blk "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"dispatch failed\"}}\n";
-            };
-            _ = posix.write(client_fd, response) catch {};
-            // Free dynamically allocated responses (not comptime strings)
-            if (response.len > 0 and response[0] != 0) {
-                // Only free if it was allocated (heuristic: comptime strings are in .rodata)
-                // We use a simple check: allocated responses from our formatters always start with '{'
-                // and are longer than typical static error strings. We track this via the arena pattern below.
+        if (n == 0) {
+            // Client disconnected
+            posix.close(fd);
+            return 0; // Remove source
+        }
+
+        // Process each newline-delimited request in the buffer
+        var remaining = buf[0..n];
+        while (remaining.len > 0) {
+            const newline = std.mem.indexOf(u8, remaining, "\n");
+            const line = if (newline) |nl| remaining[0..nl] else remaining;
+            if (line.len > 0) {
+                const response = dispatch(self.alloc, line) catch |err| blk: {
+                    log.warn("Dispatch error: {}", .{err});
+                    break :blk "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"dispatch failed\"}}\n";
+                };
+                _ = posix.write(fd, response) catch {
+                    posix.close(fd);
+                    return 0;
+                };
+            }
+            if (newline) |nl| {
+                remaining = remaining[nl + 1 ..];
+            } else {
+                break;
             }
         }
 
-        posix.close(client_fd);
-        return 1;
+        return 1; // Keep watching
     }
 };
 
