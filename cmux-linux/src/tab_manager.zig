@@ -60,8 +60,10 @@ pub const TabManager = struct {
             ws.root_node = try split_tree.createLeaf(self.alloc, panel.id, panel.widget);
             ws.content_widget = split_tree.buildWidget(ws.root_node.?);
         } else {
-            // Empty workspace — use a placeholder label widget
-            ws.content_widget = @ptrCast(c.gtk.gtk_label_new("cmux test mode"));
+            // Test mode: create a mock panel so workspace has a surface for socket tests
+            const panel = try ws.createMockPanel(.terminal);
+            ws.root_node = try split_tree.createLeaf(ws.alloc, panel.id, panel.widget);
+            ws.content_widget = split_tree.buildWidget(ws.root_node.?);
         }
 
         // Add to workspace list

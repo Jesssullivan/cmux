@@ -225,6 +225,9 @@ const methods = .{
     .{ "notification.create", handleNotificationCreate },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
+    .{ "debug.app.activate", handleDebugAppActivate },
+    .{ "debug.flash.count", handleDebugFlashCount },
+    .{ "debug.flash.reset", handleDebugFlashReset },
 };
 
 /// Parse and dispatch a JSON-RPC request, return the full response line.
@@ -293,6 +296,10 @@ fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const
         if (ws.id == target_id) return .{ .ws = ws, .index = i };
     }
     return null;
+}
+
+fn isNoSurface() bool {
+    return std.posix.getenv("CMUX_NO_SURFACE") != null;
 }
 
 fn getParamString(params: json.Value, key: []const u8) ?[]const u8 {
@@ -518,8 +525,11 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     else
         .horizontal;
 
-    // Create new panel
-    const panel = ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
+    // Create new panel (mock in test mode to avoid GL crash)
+    const panel = if (isNoSurface())
+        ws.createMockPanel(.terminal) catch return "{\"error\":\"create mock panel failed\"}"
+    else
+        ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
 
     // Split the focused pane (or root)
     if (ws.root_node) |root| {
@@ -660,7 +670,10 @@ fn handleWindowFocus(_: Allocator, _: json.Value) []const u8 {
 fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
-    const panel = ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
+    const panel = if (isNoSurface())
+        ws.createMockPanel(.terminal) catch return "{\"error\":\"create mock panel failed\"}"
+    else
+        ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
 
     // Add to split tree
     if (ws.root_node) |root| {
@@ -744,8 +757,26 @@ fn handleSurfaceHealth(alloc: Allocator, params: json.Value) []const u8 {
     return buf.toOwnedSlice(alloc) catch "{\"surfaces\":[]}";
 }
 
-fn handleSurfaceTriggerFlash(_: Allocator, _: json.Value) []const u8 {
-    return "{}"; // Visual feedback stub
+fn handleSurfaceTriggerFlash(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    const id_str = getParamString(params, "surface_id") orelse {
+        // Flash the focused surface
+        const ws = tm.selectedWorkspace() orelse return "{}";
+        if (ws.focused_panel_id) |fid| {
+            if (ws.panels.getPtr(fid)) |panel_ptr| {
+                panel_ptr.*.flash_count += 1;
+            }
+        }
+        return "{}";
+    };
+    const target_id = parseId(id_str) orelse return "{}";
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.getPtr(target_id)) |panel_ptr| {
+            panel_ptr.*.flash_count += 1;
+            return "{}";
+        }
+    }
+    return "{}";
 }
 
 fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
@@ -904,7 +935,10 @@ fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
     const url = getParamString(params, "url");
 
-    const panel = ws.createBrowserPanel(url) catch return "{\"error\":\"create browser failed\"}";
+    const panel = if (isNoSurface())
+        ws.createMockPanel(.browser) catch return "{\"error\":\"create mock browser failed\"}"
+    else
+        ws.createBrowserPanel(url) catch return "{\"error\":\"create browser failed\"}";
 
     // Add to split tree
     if (ws.root_node) |root| {
@@ -1157,5 +1191,35 @@ fn handleNotificationList(_: Allocator, _: json.Value) []const u8 {
 }
 
 fn handleNotificationClear(_: Allocator, _: json.Value) []const u8 {
+    return "{}";
+}
+
+// ── Debug/Test Helpers ────────────────────────────────────────────────
+
+fn handleDebugAppActivate(_: Allocator, _: json.Value) []const u8 {
+    // No-op on Linux (macOS activates NSApp)
+    return "{}";
+}
+
+fn handleDebugFlashCount(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"count\":0}";
+    const id_str = getParamString(params, "surface_id") orelse return "{\"count\":0}";
+    const target_id = parseId(id_str) orelse return "{\"count\":0}";
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            return std.fmt.allocPrint(alloc, "{{\"count\":{d}}}", .{panel.flash_count}) catch "{\"count\":0}";
+        }
+    }
+    return "{\"count\":0}";
+}
+
+fn handleDebugFlashReset(_: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    for (tm.workspaces.items) |ws| {
+        var it = ws.panels.valueIterator();
+        while (it.next()) |panel_ptr| {
+            panel_ptr.*.flash_count = 0;
+        }
+    }
     return "{}";
 }
