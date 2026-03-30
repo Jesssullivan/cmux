@@ -21,17 +21,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Environment — prepend ghostty lib; keep Nix's library paths for glibc + GTK + WebKit
+# Environment — prepend ghostty lib; Nix's LD_LIBRARY_PATH has the rest
 export LD_LIBRARY_PATH="$REPO_ROOT/ghostty/zig-out/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-# Nix's ld-linux must be used for the binary (host ld-linux has older glibc).
-# Find and use the Nix interpreter if available.
-NIX_LD=$(find /nix/store -maxdepth 1 -name '*glibc*' -type d 2>/dev/null | head -1)
+# patchelf the binary to use Nix's interpreter (avoids glibc mismatch at runtime)
+NIX_LD=$(find /nix/store -maxdepth 1 -name '*glibc-2*' -type d 2>/dev/null | sort -V | tail -1)
 if [ -n "$NIX_LD" ] && [ -f "$NIX_LD/lib/ld-linux-x86-64.so.2" ]; then
-  NIX_INTERP="$NIX_LD/lib/ld-linux-x86-64.so.2"
-  echo "Using Nix interpreter: $NIX_INTERP"
-  BINARY_CMD="$NIX_INTERP --library-path $LD_LIBRARY_PATH $BINARY"
-else
-  BINARY_CMD="$BINARY"
+  echo "Patching binary interpreter to: $NIX_LD/lib/ld-linux-x86-64.so.2"
+  if command -v patchelf &>/dev/null; then
+    patchelf --set-interpreter "$NIX_LD/lib/ld-linux-x86-64.so.2" "$BINARY" 2>/dev/null || true
+  fi
 fi
 export DISPLAY=:99
 export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
@@ -49,7 +47,9 @@ sleep 1
 # Start cmux daemon in test mode (no surface creation, no GL crash)
 echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
 export CMUX_NO_SURFACE=1
-timeout 120 $BINARY_CMD 2>"$STDERR_LOG" &
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" | head -c 200
+echo "..."
+timeout 120 "$BINARY" 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
 # Wait for socket (Nix interpreter adds startup latency)
