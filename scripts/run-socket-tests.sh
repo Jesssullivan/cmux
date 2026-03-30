@@ -19,7 +19,7 @@ trap cleanup EXIT
 # Prepend ghostty lib
 export LD_LIBRARY_PATH="$REPO_ROOT/ghostty/zig-out/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # patchelf the binary to use Nix's glibc interpreter (host glibc is too old for WebKitGTK)
-NIX_INTERP=$(find /nix/store -maxdepth 2 -path '*/lib/ld-linux-x86-64.so.2' 2>/dev/null | sort | tail -1)
+NIX_INTERP=$(ls /nix/store/*glibc*/lib/ld-linux-x86-64.so.2 2>/dev/null | tail -1)
 if [ -n "$NIX_INTERP" ] && command -v patchelf &>/dev/null; then
   echo "Patching interpreter: $NIX_INTERP"
   patchelf --set-interpreter "$NIX_INTERP" "$BINARY" 2>/dev/null || true
