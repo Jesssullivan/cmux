@@ -1030,7 +1030,7 @@ fn handleBrowserFocusWebview(_: Allocator, params: json.Value) []const u8 {
     for (tm.workspaces.items) |ws| {
         if (ws.panels.get(target_id)) |panel| {
             if (panel.widget) |widget| {
-                c.gtk.gtk_widget_grab_focus(widget);
+                _ = c.gtk.gtk_widget_grab_focus(widget);
                 return "{}";
             }
         }
