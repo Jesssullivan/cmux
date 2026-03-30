@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
-# Socket/API test runner for cmux-linux on Linux.
-# Runs platform-agnostic Python tests against the Unix socket interface.
-# Usage: nix develop --command bash scripts/run-socket-tests.sh
-# Environment: TEST_FILTER — optional glob (e.g., "test_workspace_*.py")
+# Socket test runner for cmux-linux. Run inside: nix develop --command bash scripts/run-socket-tests.sh
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BINARY="$REPO_ROOT/cmux-linux/zig-out/bin/cmux"
 TESTS_DIR="$REPO_ROOT/tests_v2"
 FILTER="${TEST_FILTER:-}"
-
-# Output
-TAP_FILE="/tmp/socket-tests-results.tap"
 STDERR_LOG="/tmp/socket-tests-stderr.log"
+TAP_FILE="/tmp/socket-tests-results.tap"
 
 cleanup() {
   [ -n "${CMUX_PID:-}" ] && kill -9 "$CMUX_PID" 2>/dev/null || true
@@ -21,16 +16,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Environment — prepend ghostty lib; Nix's LD_LIBRARY_PATH has the rest
+# Minimal environment — just prepend ghostty lib, let nix develop handle the rest
 export LD_LIBRARY_PATH="$REPO_ROOT/ghostty/zig-out/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-# patchelf the binary to use Nix's interpreter (avoids glibc mismatch at runtime)
-NIX_LD=$(find /nix/store -maxdepth 1 -name '*glibc-2*' -type d 2>/dev/null | sort -V | tail -1)
-if [ -n "$NIX_LD" ] && [ -f "$NIX_LD/lib/ld-linux-x86-64.so.2" ]; then
-  echo "Patching binary interpreter to: $NIX_LD/lib/ld-linux-x86-64.so.2"
-  if command -v patchelf &>/dev/null; then
-    patchelf --set-interpreter "$NIX_LD/lib/ld-linux-x86-64.so.2" "$BINARY" 2>/dev/null || true
-  fi
-fi
 export DISPLAY=:99
 export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
 export MESA_GLSL_VERSION_OVERRIDE=460
@@ -44,67 +31,34 @@ Xvfb :99 -screen 0 1280x720x24 +extension GLX &
 XVFB_PID=$!
 sleep 1
 
-# Start cmux daemon with full surface (tests need workspace state)
-# Daemon crashes after ~30s on Nix Xvfb software GL, but tests complete faster
+# Start daemon — run directly (nix develop provides correct LD_LIBRARY_PATH)
 echo "=== Starting cmux daemon ==="
-echo "Binary: $BINARY"
-echo "XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
-file "$BINARY" | head -1
-readelf -l "$BINARY" 2>/dev/null | grep interpreter || echo "(no readelf)"
-timeout 45 "$BINARY" 2>"$STDERR_LOG" &
+timeout 30 "$BINARY" 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
 # Wait for socket
-for i in $(seq 1 40); do
+for i in $(seq 1 20); do
   [ -S "$CMUX_SOCKET" ] && break
-  # Check if daemon is still alive
-  if ! kill -0 "$CMUX_PID" 2>/dev/null; then
-    echo "WARN: Daemon died (PID $CMUX_PID) at iteration $i"
-    echo "Stderr:" && cat "$STDERR_LOG" 2>/dev/null
-    break
-  fi
-  sleep 0.5
+  sleep 0.25
 done
 
 if [ ! -S "$CMUX_SOCKET" ]; then
-  echo "FAIL: Socket not created within 20s"
-  echo "Expected: $CMUX_SOCKET"
-  ls -la "$XDG_RUNTIME_DIR/" 2>/dev/null || echo "(dir not found)"
-  echo "Daemon stderr:"
+  echo "FAIL: Socket not created"
   cat "$STDERR_LOG" 2>/dev/null
   exit 1
 fi
+echo "Socket ready"
 
-echo "Socket ready: $CMUX_SOCKET"
-
-# Discover tests (skip browser and interactive tests)
+# Discover tests
 TESTS=()
 for f in "$TESTS_DIR"/test_*.py; do
   [ -f "$f" ] || continue
   name=$(basename "$f")
-
-  # Apply filter if set
-  if [ -n "$FILTER" ]; then
-    case "$name" in $FILTER) ;; *) continue ;; esac
-  fi
-
-  # Skip browser tests (need WebKit DOM interaction we haven't wired)
-  case "$name" in test_browser_*) continue ;; esac
-  # Skip CLI tests (need cmux CLI binary, macOS-specific paths)
-  case "$name" in test_cli_*) continue ;; esac
-  # Skip interactive tests (need TTY)
-  case "$name" in test_ctrl_interactive*) continue ;; esac
-  # Skip SSH remote tests (need SSH infrastructure)
-  case "$name" in test_ssh_*) continue ;; esac
-  # Skip visual/screenshot tests (need display capture)
-  case "$name" in test_visual_*) continue ;; esac
-  # Skip lint tests (macOS source checks)
-  case "$name" in test_lint_*) continue ;; esac
-  # Skip command palette tests (need macOS UI simulation)
-  case "$name" in test_command_palette_*) continue ;; esac
-  # Skip tmux tests (need tmux binary)
-  case "$name" in test_tmux_*) continue ;; esac
-
+  [ -n "$FILTER" ] && case "$name" in $FILTER) ;; *) continue ;; esac
+  case "$name" in
+    test_browser_*|test_cli_*|test_ctrl_interactive*|test_ssh_*) continue ;;
+    test_visual_*|test_lint_*|test_command_palette_*|test_tmux_*) continue ;;
+  esac
   TESTS+=("$f")
 done
 
@@ -113,14 +67,10 @@ echo "=== Running $TOTAL tests ==="
 echo "TAP version 13" > "$TAP_FILE"
 echo "1..$TOTAL" >> "$TAP_FILE"
 
-PASS=0
-FAIL=0
-NUM=0
-
+PASS=0 FAIL=0 NUM=0
 for test_file in "${TESTS[@]}"; do
   NUM=$((NUM + 1))
   name=$(basename "$test_file" .py)
-
   if timeout 5 python3 "$test_file" > "/tmp/socket-tests-${name}.log" 2>&1; then
     PASS=$((PASS + 1))
     echo "ok $NUM $name" >> "$TAP_FILE"
@@ -128,19 +78,12 @@ for test_file in "${TESTS[@]}"; do
   else
     FAIL=$((FAIL + 1))
     echo "not ok $NUM $name" >> "$TAP_FILE"
-    echo "  # $(tail -1 "/tmp/socket-tests-${name}.log" 2>/dev/null)" >> "$TAP_FILE"
     echo "FAIL: $name"
   fi
 done
 
 echo ""
 echo "=== Results: $PASS/$TOTAL passed, $FAIL failed ==="
-echo ""
-
-# Show daemon stderr
 echo "=== Daemon stderr ==="
-head -10 "$STDERR_LOG" 2>/dev/null
-
-if [ $FAIL -gt 0 ]; then
-  exit 1
-fi
+head -5 "$STDERR_LOG" 2>/dev/null
+[ $FAIL -gt 0 ] && exit 1 || exit 0
