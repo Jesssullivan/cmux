@@ -88,6 +88,16 @@ pub const BrowserView = struct {
             0,
         );
 
+        // Handle media permission requests (camera/microphone for Google Meet, Zoom)
+        _ = c.gtk.g_signal_connect_data(
+            @ptrCast(@alignCast(web_view)),
+            "permission-request",
+            @ptrCast(&onPermissionRequest),
+            view,
+            null,
+            0,
+        );
+
         // Install WebAuthn bridge for FIDO2/YubiKey support
         const webauthn = alloc.create(WebAuthnBridge) catch null;
         if (webauthn) |wa| {
@@ -151,6 +161,57 @@ pub const BrowserView = struct {
         return c.webkit.webkit_web_view_can_go_forward(self.web_view) != 0;
     }
 
+    // ── DevTools (Inspector) ───────────────────────────────────────────
+
+    /// Show the web inspector (F12 developer tools).
+    pub fn showInspector(self: *BrowserView) void {
+        const inspector = c.webkit.webkit_web_view_get_inspector(self.web_view) orelse return;
+        c.webkit.webkit_web_inspector_show(inspector);
+    }
+
+    /// Close the web inspector.
+    pub fn closeInspector(self: *BrowserView) void {
+        const inspector = c.webkit.webkit_web_view_get_inspector(self.web_view) orelse return;
+        c.webkit.webkit_web_inspector_close(inspector);
+    }
+
+    /// Attach the inspector to the web view (inline).
+    pub fn attachInspector(self: *BrowserView) void {
+        const inspector = c.webkit.webkit_web_view_get_inspector(self.web_view) orelse return;
+        c.webkit.webkit_web_inspector_attach(inspector);
+    }
+
+    // ── Find in Page ────────────────────────────────────────────────────
+
+    /// Start a find-in-page search.
+    pub fn findText(self: *BrowserView, query: [*:0]const u8) void {
+        const controller = c.webkit.webkit_web_view_get_find_controller(self.web_view) orelse return;
+        c.webkit.webkit_find_controller_search(
+            controller,
+            query,
+            c.webkit.WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE | c.webkit.WEBKIT_FIND_OPTIONS_WRAP_AROUND,
+            0, // max_match_count (0 = unlimited)
+        );
+    }
+
+    /// Find the next match.
+    pub fn findNext(self: *BrowserView) void {
+        const controller = c.webkit.webkit_web_view_get_find_controller(self.web_view) orelse return;
+        c.webkit.webkit_find_controller_search_next(controller);
+    }
+
+    /// Find the previous match.
+    pub fn findPrevious(self: *BrowserView) void {
+        const controller = c.webkit.webkit_web_view_get_find_controller(self.web_view) orelse return;
+        c.webkit.webkit_find_controller_search_previous(controller);
+    }
+
+    /// Clear the find highlighting.
+    pub fn findFinish(self: *BrowserView) void {
+        const controller = c.webkit.webkit_web_view_get_find_controller(self.web_view) orelse return;
+        c.webkit.webkit_find_controller_search_finish(controller);
+    }
+
     // ── Signal Handlers ─────────────────────────────────────────────────
 
     fn onLoadChanged(_: *c.WebKitWebView, load_event: c_uint, view: *BrowserView) callconv(.c) void {
@@ -164,6 +225,24 @@ pub const BrowserView = struct {
 
     fn onUriChanged(_: *c.WebKitWebView, _: ?*anyopaque, view: *BrowserView) callconv(.c) void {
         view.current_url = c.webkit.webkit_web_view_get_uri(view.web_view);
+    }
+
+    /// Handle media permission requests (camera/microphone).
+    /// Auto-allows for now — a permission dialog can be added later.
+    fn onPermissionRequest(
+        _: *c.WebKitWebView,
+        request: ?*anyopaque,
+        _: *BrowserView,
+    ) callconv(.c) c.gtk.gboolean {
+        if (request) |req| {
+            // Check if this is a user media (camera/mic) request
+            if (c.webkit.WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(req) != 0) {
+                log.info("Media permission requested — granting", .{});
+                c.webkit.webkit_permission_request_allow(@ptrCast(req));
+                return 1; // handled
+            }
+        }
+        return 0; // not handled, use default behavior
     }
 };
 
