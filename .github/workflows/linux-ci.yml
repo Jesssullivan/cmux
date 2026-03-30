@@ -161,7 +161,7 @@ jobs:
       - name: Tier 1 — Headless smoke test (Xvfb)
         continue-on-error: true
         run: |
-          sudo apt-get install -y xvfb socat
+          sudo apt-get install -y xvfb socat mesa-utils libgl1-mesa-dri
 
           # Start virtual framebuffer
           export DISPLAY=:99
@@ -178,6 +178,13 @@ jobs:
 
           # libghostty.so is in ghostty/zig-out/lib
           export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
+
+          # Force software OpenGL (Xvfb has no GPU)
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_GL_VERSION_OVERRIDE=3.3
+
+          echo "=== OpenGL info ==="
+          glxinfo 2>/dev/null | grep -E "OpenGL version|OpenGL renderer|direct rendering" || echo "glxinfo not available"
 
           echo "=== Starting cmux-linux under Xvfb ==="
           timeout 8 "$BINARY" 2>/tmp/cmux-smoke-stderr.log &
