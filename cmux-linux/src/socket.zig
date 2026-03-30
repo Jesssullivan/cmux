@@ -76,8 +76,9 @@ pub const SocketServer = struct {
 
         try posix.bind(self.listen_fd, @ptrCast(&addr), @sizeOf(posix.sockaddr.un));
 
-        // Set permissions (0600 — owner only)
-        std.fs.cwd().chmod(path, 0o600) catch {};
+        // Set permissions (0600 — owner only).
+        // Note: fchmod on socket fd works on Linux to set the socket file permissions.
+        posix.fchmod(self.listen_fd, 0o600) catch {};
 
         // Listen
         try posix.listen(self.listen_fd, 8);
