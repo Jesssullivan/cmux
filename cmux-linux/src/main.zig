@@ -25,16 +25,7 @@ fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
         log.warn("Socket server failed to start: {}", .{err});
     };
 
-    // CMUX_NO_SURFACE=1: skip window/surface creation for socket-only testing.
-    // Hold the application to prevent g_application_run() from exiting
-    // (GtkApplication auto-quits when no windows are presented).
-    if (posix.getenv("CMUX_NO_SURFACE") != null) {
-        log.info("Test mode: surface creation skipped (CMUX_NO_SURFACE=1)", .{});
-        c.gtk.g_application_hold(@ptrCast(gtk_app));
-        return;
-    }
-
-    // Create the main window
+    // Create the main window (always — needed for tab manager, sidebar, event loop)
     window.createWindow(gtk_app, ghostty_app);
 }
 
