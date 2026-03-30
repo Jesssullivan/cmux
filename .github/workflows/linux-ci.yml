@@ -340,6 +340,7 @@ jobs:
             pkg-config \
             gtk4 \
             libadwaita \
+            webkitgtk-6.0 \
             libsecret \
             libnotify \
             wayland \
