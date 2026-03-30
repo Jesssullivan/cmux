@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const c = @import("c_api.zig");
+const WebAuthnBridge = @import("webauthn_bridge.zig").WebAuthnBridge;
 
 const log = std.log.scoped(.browser);
 
@@ -20,6 +21,8 @@ pub const BrowserView = struct {
     current_title: ?[*:0]const u8 = null,
     /// Whether a page is currently loading.
     is_loading: bool = false,
+    /// WebAuthn bridge (FIDO2/YubiKey support).
+    webauthn_bridge: ?*WebAuthnBridge = null,
 
     /// Create a new browser view and optionally navigate to a URL.
     pub fn create(initial_url: ?[]const u8) !*c.GtkWidget {
@@ -84,6 +87,15 @@ pub const BrowserView = struct {
             null,
             0,
         );
+
+        // Install WebAuthn bridge for FIDO2/YubiKey support
+        const webauthn = alloc.create(WebAuthnBridge) catch null;
+        if (webauthn) |wa| {
+            wa.install(web_view) catch |err| {
+                log.warn("WebAuthn bridge install failed: {}", .{err});
+            };
+            view.webauthn_bridge = wa;
+        }
 
         // Navigate to initial URL if provided
         if (initial_url) |url| {
