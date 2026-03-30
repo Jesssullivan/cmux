@@ -206,7 +206,7 @@ jobs:
             ls -la "$XDG_RUNTIME_DIR/cmux.sock"
 
             echo "=== JSON-RPC ping test ==="
-            RESPONSE=$(echo '{"jsonrpc":"2.0","method":"ping","id":1}' | \
+            RESPONSE=$(echo '{"id":1,"method":"system.ping","params":{}}' | \
               socat -t2 - UNIX-CONNECT:"$XDG_RUNTIME_DIR/cmux.sock" 2>/dev/null || true)
             echo "Response: $RESPONSE"
             if echo "$RESPONSE" | grep -q "pong"; then
