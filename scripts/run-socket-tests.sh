@@ -44,14 +44,14 @@ Xvfb :99 -screen 0 1280x720x24 +extension GLX &
 XVFB_PID=$!
 sleep 1
 
-# Start cmux daemon in test mode (no surface creation, no GL crash)
-echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
-export CMUX_NO_SURFACE=1
+# Start cmux daemon with full surface (tests need workspace state)
+# Daemon crashes after ~30s on Nix Xvfb software GL, but tests complete faster
+echo "=== Starting cmux daemon ==="
 echo "Binary: $BINARY"
 echo "XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
 file "$BINARY" | head -1
 readelf -l "$BINARY" 2>/dev/null | grep interpreter || echo "(no readelf)"
-timeout 120 "$BINARY" 2>"$STDERR_LOG" &
+timeout 45 "$BINARY" 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
 # Wait for socket
@@ -115,7 +115,7 @@ for test_file in "${TESTS[@]}"; do
   NUM=$((NUM + 1))
   name=$(basename "$test_file" .py)
 
-  if timeout 10 python3 "$test_file" > "/tmp/socket-tests-${name}.log" 2>&1; then
+  if timeout 5 python3 "$test_file" > "/tmp/socket-tests-${name}.log" 2>&1; then
     PASS=$((PASS + 1))
     echo "ok $NUM $name" >> "$TAP_FILE"
     echo "PASS: $name"
