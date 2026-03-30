@@ -10,6 +10,13 @@ const split_tree = @import("split_tree.zig");
 
 const Allocator = std.mem.Allocator;
 
+/// Generate a random 128-bit ID (UUID-like).
+fn generateId() u128 {
+    var buf: [16]u8 = undefined;
+    std.crypto.random.bytes(&buf);
+    return std.mem.readInt(u128, &buf, .little);
+}
+
 pub const TabManager = struct {
     alloc: Allocator,
     workspaces: std.ArrayList(*Workspace),
@@ -42,6 +49,7 @@ pub const TabManager = struct {
     pub fn createWorkspace(self: *TabManager) !*Workspace {
         const ws = try self.alloc.create(Workspace);
         ws.* = Workspace.init(self.alloc);
+        ws.id = generateId();
 
         // Create initial terminal panel
         const panel = try ws.createTerminalPanel(self.ghostty_app);

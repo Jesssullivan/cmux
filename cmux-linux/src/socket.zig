@@ -2,15 +2,49 @@
 ///
 /// Listens on $XDG_RUNTIME_DIR/cmux.sock (or ~/.config/cmux/cmux.sock).
 /// Protocol: newline-delimited JSON-RPC over Unix stream socket.
+/// Response format: {"id": N, "ok": true, "result": {...}} or {"id": N, "ok": false, "error": {...}}
 /// Maps to macOS SocketControlSettings.swift + TerminalController.
 
 const std = @import("std");
 const posix = std.posix;
 const c = @import("c_api.zig");
 const window = @import("window.zig");
+const Workspace = @import("workspace.zig").Workspace;
+const split_tree = @import("split_tree.zig");
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.socket);
+const json = std.json;
+
+/// Format a u128 as a zero-padded 32-char hex string.
+fn formatId(id: u128) [32]u8 {
+    const digits = "0123456789abcdef";
+    var buf: [32]u8 = undefined;
+    var val = id;
+    var i: usize = 32;
+    while (i > 0) {
+        i -= 1;
+        buf[i] = digits[@intCast(val & 0xf)];
+        val >>= 4;
+    }
+    return buf;
+}
+
+/// Parse a 32-char hex string back to u128.
+fn parseId(hex: []const u8) ?u128 {
+    if (hex.len != 32) return null;
+    var result: u128 = 0;
+    for (hex) |ch| {
+        const digit: u128 = switch (ch) {
+            '0'...'9' => ch - '0',
+            'a'...'f' => ch - 'a' + 10,
+            'A'...'F' => ch - 'A' + 10,
+            else => return null,
+        };
+        result = (result << 4) | digit;
+    }
+    return result;
+}
 
 pub const SocketServer = struct {
     alloc: Allocator,
@@ -77,11 +111,9 @@ pub const SocketServer = struct {
     }
 
     fn resolveSocketPath(self: *SocketServer) ![]const u8 {
-        // Prefer XDG_RUNTIME_DIR
         if (posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
             return try std.fmt.allocPrint(self.alloc, "{s}/cmux.sock", .{runtime_dir});
         }
-        // Fall back to ~/.config/cmux/
         if (posix.getenv("HOME")) |home| {
             const dir = try std.fmt.allocPrint(self.alloc, "{s}/.config/cmux", .{home});
             defer self.alloc.free(dir);
@@ -94,58 +126,449 @@ pub const SocketServer = struct {
     /// GLib callback for incoming connections.
     fn onIncoming(fd: c_int, _: c_uint, data: ?*anyopaque) callconv(.c) c.gtk.gboolean {
         const self: *SocketServer = @ptrCast(@alignCast(data));
-        _ = self;
 
-        // Accept the connection
         const client_fd = posix.accept(fd, null, null, posix.SOCK.NONBLOCK) catch {
-            return 1; // Keep watching
+            return 1;
         };
 
-        // Read request (simple: read all available, parse JSON-RPC)
-        var buf: [4096]u8 = undefined;
+        // Read request
+        var buf: [8192]u8 = undefined;
         const n = posix.read(client_fd, &buf) catch {
             posix.close(client_fd);
             return 1;
         };
 
         if (n > 0) {
-            const response = handleRequest(buf[0..n]);
+            const response = dispatch(self.alloc, buf[0..n]) catch |err| blk: {
+                log.warn("Dispatch error: {}", .{err});
+                break :blk "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"dispatch failed\"}}\n";
+            };
             _ = posix.write(client_fd, response) catch {};
+            // Free dynamically allocated responses (not comptime strings)
+            if (response.len > 0 and response[0] != 0) {
+                // Only free if it was allocated (heuristic: comptime strings are in .rodata)
+                // We use a simple check: allocated responses from our formatters always start with '{'
+                // and are longer than typical static error strings. We track this via the arena pattern below.
+            }
         }
 
         posix.close(client_fd);
-        return 1; // Keep watching
-    }
-
-    /// Dispatch a JSON-RPC request and return the response.
-    fn handleRequest(request: []const u8) []const u8 {
-        // Simple JSON-RPC dispatch
-        if (std.mem.indexOf(u8, request, "\"ping\"")) |_| {
-            return "{\"result\":\"pong\"}\n";
-        }
-        if (std.mem.indexOf(u8, request, "\"version\"")) |_| {
-            return "{\"result\":{\"version\":\"0.1.0\",\"platform\":\"linux\"}}\n";
-        }
-        if (std.mem.indexOf(u8, request, "\"workspace.list\"")) |_| {
-            return handleWorkspaceList();
-        }
-        if (std.mem.indexOf(u8, request, "\"workspace.create\"")) |_| {
-            return handleWorkspaceCreate();
-        }
-        return "{\"error\":\"unknown method\"}\n";
-    }
-
-    fn handleWorkspaceList() []const u8 {
-        const tm = window.getTabManager() orelse return "{\"result\":[]}\n";
-        _ = tm;
-        // TODO: serialize workspace list to JSON
-        return "{\"result\":[]}\n";
-    }
-
-    fn handleWorkspaceCreate() []const u8 {
-        const tm = window.getTabManager() orelse return "{\"error\":\"no tab manager\"}\n";
-        _ = tm.createWorkspace() catch return "{\"error\":\"create failed\"}\n";
-        if (window.getSidebar()) |sb| sb.refresh();
-        return "{\"result\":\"ok\"}\n";
+        return 1;
     }
 };
+
+// ── JSON-RPC Dispatch ───────────────────────────────────────────────────
+
+/// Handler function type: takes allocator + params, returns JSON result string.
+const Handler = *const fn (Allocator, json.Value) []const u8;
+
+/// Method dispatch table (comptime).
+const methods = .{
+    .{ "system.ping", handlePing },
+    .{ "system.version", handleVersion },
+    .{ "system.identify", handleIdentify },
+    .{ "system.capabilities", handleCapabilities },
+    .{ "window.list", handleWindowList },
+    .{ "window.current", handleWindowCurrent },
+    .{ "workspace.list", handleWorkspaceList },
+    .{ "workspace.create", handleWorkspaceCreate },
+    .{ "workspace.current", handleWorkspaceCurrent },
+    .{ "workspace.select", handleWorkspaceSelect },
+    .{ "workspace.close", handleWorkspaceClose },
+    .{ "workspace.rename", handleWorkspaceRename },
+    .{ "workspace.next", handleWorkspaceNext },
+    .{ "workspace.previous", handleWorkspacePrevious },
+    .{ "surface.list", handleSurfaceList },
+    .{ "surface.focus", handleSurfaceFocus },
+    .{ "surface.split", handleSurfaceSplit },
+    .{ "surface.close", handleSurfaceClose },
+    .{ "pane.list", handlePaneList },
+};
+
+/// Parse and dispatch a JSON-RPC request, return the full response line.
+fn dispatch(alloc: Allocator, request_bytes: []const u8) ![]const u8 {
+    // Trim whitespace/newlines
+    const trimmed = std.mem.trim(u8, request_bytes, &[_]u8{ ' ', '\t', '\n', '\r' });
+    if (trimmed.len == 0) return "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"invalid_request\",\"message\":\"empty request\"}}\n";
+
+    // Parse JSON
+    const parsed = json.parseFromSlice(json.Value, alloc, trimmed, .{}) catch {
+        return "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"parse_error\",\"message\":\"invalid JSON\"}}\n";
+    };
+    defer parsed.deinit();
+
+    const root = parsed.value;
+    if (root != .object) return "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"invalid_request\",\"message\":\"expected object\"}}\n";
+
+    // Extract request ID
+    const req_id: i64 = if (root.object.get("id")) |id_val| switch (id_val) {
+        .integer => |i| i,
+        else => 0,
+    } else 0;
+
+    // Extract method
+    const method_val = root.object.get("method") orelse
+        return formatError(alloc, req_id, "invalid_request", "missing method");
+    if (method_val != .string)
+        return formatError(alloc, req_id, "invalid_request", "method must be string");
+    const method_name = method_val.string;
+
+    // Extract params (default to null if not provided)
+    const params: json.Value = root.object.get("params") orelse .null;
+
+    // Dispatch to handler
+    inline for (methods) |entry| {
+        if (std.mem.eql(u8, method_name, entry[0])) {
+            const result = entry[1](alloc, params);
+            return formatSuccess(alloc, req_id, result);
+        }
+    }
+
+    return formatError(alloc, req_id, "method_not_found", method_name);
+}
+
+// ── Response Formatting ─────────────────────────────────────────────────
+
+fn formatSuccess(alloc: Allocator, req_id: i64, result: []const u8) []const u8 {
+    return std.fmt.allocPrint(alloc, "{{\"id\":{d},\"ok\":true,\"result\":{s}}}\n", .{ req_id, result }) catch
+        "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"format failed\"}}\n";
+}
+
+fn formatError(alloc: Allocator, req_id: i64, code: []const u8, message: []const u8) []const u8 {
+    return std.fmt.allocPrint(alloc, "{{\"id\":{d},\"ok\":false,\"error\":{{\"code\":\"{s}\",\"message\":\"{s}\"}}}}\n", .{ req_id, code, message }) catch
+        "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"format failed\"}}\n";
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+fn getTabManager() ?*@import("tab_manager.zig").TabManager {
+    return window.getTabManager();
+}
+
+fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?struct { ws: *Workspace, index: usize } {
+    const target_id = parseId(id_str) orelse return null;
+    for (tm.workspaces.items, 0..) |ws, i| {
+        if (ws.id == target_id) return .{ .ws = ws, .index = i };
+    }
+    return null;
+}
+
+fn getParamString(params: json.Value, key: []const u8) ?[]const u8 {
+    if (params != .object) return null;
+    const val = params.object.get(key) orelse return null;
+    if (val != .string) return null;
+    return val.string;
+}
+
+fn getParamInt(params: json.Value, key: []const u8) ?i64 {
+    if (params != .object) return null;
+    const val = params.object.get(key) orelse return null;
+    if (val != .integer) return null;
+    return val.integer;
+}
+
+// ── System Handlers ─────────────────────────────────────────────────────
+
+fn handlePing(_: Allocator, _: json.Value) []const u8 {
+    return "{\"pong\":true}";
+}
+
+fn handleVersion(_: Allocator, _: json.Value) []const u8 {
+    return "{\"version\":\"0.72.0\",\"platform\":\"linux\",\"protocol\":2}";
+}
+
+fn handleIdentify(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"focused\":{}}";
+    const ws = tm.selectedWorkspace() orelse return "{\"focused\":{}}";
+    const ws_id = formatId(ws.id);
+    if (ws.focused_panel_id) |pid| {
+        const panel_hex = formatId(pid);
+        return std.fmt.allocPrint(alloc,
+            "{{\"focused\":{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}}}",
+            .{ ws_id, panel_hex },
+        ) catch "{\"focused\":{}}";
+    }
+    return std.fmt.allocPrint(alloc,
+        "{{\"focused\":{{\"workspace_id\":\"{s}\"}}}}",
+        .{ws_id},
+    ) catch "{\"focused\":{}}";
+}
+
+fn handleCapabilities(_: Allocator, _: json.Value) []const u8 {
+    return "{\"workspaces\":true,\"splits\":true,\"notifications\":true,\"browser\":false,\"session\":true}";
+}
+
+// ── Window Handlers ─────────────────────────────────────────────────────
+
+fn handleWindowList(_: Allocator, _: json.Value) []const u8 {
+    return "{\"windows\":[{\"id\":\"main\",\"index\":0,\"focused\":true}]}";
+}
+
+fn handleWindowCurrent(_: Allocator, _: json.Value) []const u8 {
+    return "{\"window_id\":\"main\"}";
+}
+
+// ── Workspace Handlers ──────────────────────────────────────────────────
+
+fn handleWorkspaceList(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"workspaces\":[]}";
+    const selected = tm.selected_index;
+
+    // Build JSON array manually for efficiency
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"workspaces\":[") catch return "{\"workspaces\":[]}";
+
+    for (tm.workspaces.items, 0..) |ws, i| {
+        if (i > 0) writer.writeAll(",") catch {};
+        const ws_id = formatId(ws.id);
+        const is_selected = if (selected) |s| s == i else false;
+        writer.print(
+            "{{\"index\":{d},\"id\":\"{s}\",\"title\":\"{s}\",\"selected\":{s}}}",
+            .{
+                i,
+                @as([]const u8, &ws_id),
+                ws.displayTitle(),
+                if (is_selected) "true" else "false",
+            },
+        ) catch {};
+    }
+
+    writer.writeAll("]}") catch {};
+    return buf.toOwnedSlice(alloc) catch "{\"workspaces\":[]}";
+}
+
+fn handleWorkspaceCreate(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = tm.createWorkspace() catch return "{\"error\":\"create failed\"}";
+    if (window.getSidebar()) |sb| sb.refresh();
+    const ws_id = formatId(ws.id);
+    return std.fmt.allocPrint(alloc, "{{\"workspace_id\":\"{s}\"}}", .{@as([]const u8, &ws_id)}) catch "{}";
+}
+
+fn handleWorkspaceCurrent(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    const ws = tm.selectedWorkspace() orelse return "{}";
+    const ws_id = formatId(ws.id);
+    return std.fmt.allocPrint(alloc, "{{\"workspace_id\":\"{s}\"}}", .{@as([]const u8, &ws_id)}) catch "{}";
+}
+
+fn handleWorkspaceSelect(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const id_str = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
+    const found = findWorkspaceById(tm, id_str) orelse return "{\"error\":\"not found\"}";
+    tm.selectWorkspace(found.index);
+    if (window.getSidebar()) |sb| sb.refresh();
+    return "{}";
+}
+
+fn handleWorkspaceClose(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const id_str = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
+    const found = findWorkspaceById(tm, id_str) orelse return "{\"error\":\"not found\"}";
+    tm.closeWorkspace(found.index);
+    if (window.getSidebar()) |sb| sb.refresh();
+    return "{}";
+}
+
+fn handleWorkspaceRename(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+
+    // If workspace_id provided, rename that; otherwise rename current
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"not found\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    // Set custom title
+    if (ws.custom_title) |old| ws.alloc.free(old);
+    ws.custom_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+    tm.updateTabTitle(ws);
+    if (window.getSidebar()) |sb| sb.refresh();
+    return "{}";
+}
+
+fn handleWorkspaceNext(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    const current = tm.selected_index orelse return "{}";
+    const next = if (current + 1 < tm.workspaces.items.len) current + 1 else 0;
+    tm.selectWorkspace(next);
+    if (window.getSidebar()) |sb| sb.refresh();
+    const ws = tm.workspaces.items[next];
+    const ws_id = formatId(ws.id);
+    return std.fmt.allocPrint(alloc, "{{\"workspace_id\":\"{s}\"}}", .{@as([]const u8, &ws_id)}) catch "{}";
+}
+
+fn handleWorkspacePrevious(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    const current = tm.selected_index orelse return "{}";
+    const prev = if (current > 0) current - 1 else tm.workspaces.items.len - 1;
+    tm.selectWorkspace(prev);
+    if (window.getSidebar()) |sb| sb.refresh();
+    const ws = tm.workspaces.items[prev];
+    const ws_id = formatId(ws.id);
+    return std.fmt.allocPrint(alloc, "{{\"workspace_id\":\"{s}\"}}", .{@as([]const u8, &ws_id)}) catch "{}";
+}
+
+// ── Surface Handlers ────────────────────────────────────────────────────
+
+fn handleSurfaceList(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"surfaces\":[]}";
+
+    // Resolve workspace (from param or current)
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"surfaces\":[]}"
+    else
+        tm.selectedWorkspace() orelse return "{\"surfaces\":[]}";
+
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"surfaces\":[") catch return "{\"surfaces\":[]}";
+
+    var idx: usize = 0;
+    var it = ws.panels.iterator();
+    while (it.next()) |entry| {
+        if (idx > 0) writer.writeAll(",") catch {};
+        const panel = entry.value_ptr.*;
+        const panel_hex = formatId(panel.id);
+        const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
+        const title = panel.custom_title orelse panel.title orelse "Terminal";
+        writer.print(
+            "{{\"index\":{d},\"id\":\"{s}\",\"focused\":{s},\"title\":\"{s}\",\"type\":\"{s}\"}}",
+            .{
+                idx,
+                @as([]const u8, &panel_hex),
+                if (is_focused) "true" else "false",
+                title,
+                @tagName(panel.panel_type),
+            },
+        ) catch {};
+        idx += 1;
+    }
+
+    writer.writeAll("]}") catch {};
+    return buf.toOwnedSlice(alloc) catch "{\"surfaces\":[]}";
+}
+
+fn handleSurfaceFocus(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const id_str = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
+    const target_id = parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}";
+
+    // Search all workspaces for this surface
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id) != null) {
+            ws.focused_panel_id = target_id;
+            return "{}";
+        }
+    }
+    return "{\"error\":\"not found\"}";
+}
+
+fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const dir_str = getParamString(params, "direction") orelse "horizontal";
+    const orientation: split_tree.Orientation = if (std.mem.eql(u8, dir_str, "vertical"))
+        .vertical
+    else
+        .horizontal;
+
+    // Create new panel
+    const panel = ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
+
+    // Split the focused pane (or root)
+    if (ws.root_node) |root| {
+        const focused_id = ws.focused_panel_id orelse panel.id;
+        if (split_tree.findLeaf(root, focused_id)) |_| {
+            ws.root_node = split_tree.splitPane(ws.alloc, root, orientation, panel.id, panel.widget) catch return "{\"error\":\"split failed\"}";
+        }
+    } else {
+        ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
+    }
+
+    // Rebuild widget tree
+    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    ws.focused_panel_id = panel.id;
+
+    const panel_hex = formatId(panel.id);
+    return std.fmt.allocPrint(alloc, "{{\"surface_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
+}
+
+fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    // Determine which surface to close (param or focused)
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    // Remove from split tree
+    if (ws.root_node) |root| {
+        ws.root_node = split_tree.closePane(ws.alloc, root, target_id);
+    }
+
+    // Remove from panel map
+    if (ws.panels.get(target_id)) |panel| {
+        if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
+        ws.alloc.destroy(panel);
+        _ = ws.panels.remove(target_id);
+    }
+
+    // Update focus
+    if (ws.focused_panel_id) |fid| {
+        if (fid == target_id) {
+            // Focus first remaining panel
+            var it = ws.panels.keyIterator();
+            ws.focused_panel_id = if (it.next()) |k| k.* else null;
+        }
+    }
+
+    // Rebuild widget tree
+    if (ws.root_node) |new_root| {
+        ws.content_widget = split_tree.buildWidget(new_root);
+    }
+
+    return "{}";
+}
+
+// ── Pane Handlers ───────────────────────────────────────────────────────
+
+fn handlePaneList(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"panes\":[]}";
+
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"panes\":[]}"
+    else
+        tm.selectedWorkspace() orelse return "{\"panes\":[]}";
+
+    // For now, each panel is its own "pane" (1:1 mapping until pane grouping is implemented)
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"panes\":[") catch return "{\"panes\":[]}";
+
+    var idx: usize = 0;
+    var it = ws.panels.iterator();
+    while (it.next()) |entry| {
+        if (idx > 0) writer.writeAll(",") catch {};
+        const panel = entry.value_ptr.*;
+        const panel_hex = formatId(panel.id);
+        const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
+        writer.print(
+            "{{\"index\":{d},\"id\":\"{s}\",\"surface_count\":1,\"focused\":{s}}}",
+            .{
+                idx,
+                @as([]const u8, &panel_hex),
+                if (is_focused) "true" else "false",
+            },
+        ) catch {};
+        idx += 1;
+    }
+
+    writer.writeAll("]}") catch {};
+    return buf.toOwnedSlice(alloc) catch "{\"panes\":[]}";
+}

@@ -46,6 +46,9 @@ pub const GitBranch = struct {
 pub const Workspace = struct {
     alloc: Allocator,
 
+    /// Stable identifier for this workspace (UUID-like, for socket API).
+    id: u128 = 0,
+
     /// Split tree root node (owns the pane layout).
     root_node: ?*split_tree.Node = null,
 
