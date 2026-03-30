@@ -46,9 +46,10 @@ Xvfb :99 -screen 0 1280x720x24 +extension GLX &
 XVFB_PID=$!
 sleep 1
 
-# Start cmux daemon
-echo "=== Starting cmux daemon ==="
-timeout 60 $BINARY_CMD 2>"$STDERR_LOG" &
+# Start cmux daemon in test mode (no surface creation, no GL crash)
+echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
+export CMUX_NO_SURFACE=1
+timeout 120 $BINARY_CMD 2>"$STDERR_LOG" &
 CMUX_PID=$!
 
 # Wait for socket

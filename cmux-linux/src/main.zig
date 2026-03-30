@@ -4,6 +4,7 @@
 /// libghostty, and runs the main event loop.
 
 const std = @import("std");
+const posix = std.posix;
 const c = @import("c_api.zig");
 const app_mod = @import("app.zig");
 const window = @import("window.zig");
@@ -23,6 +24,13 @@ fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
     socket_server.start() catch |err| {
         log.warn("Socket server failed to start: {}", .{err});
     };
+
+    // CMUX_NO_SURFACE=1: skip window/surface creation for socket-only testing.
+    // The daemon stays alive with just the socket server and GLib event loop.
+    if (posix.getenv("CMUX_NO_SURFACE") != null) {
+        log.info("Test mode: surface creation skipped (CMUX_NO_SURFACE=1)", .{});
+        return;
+    }
 
     // Create the main window
     window.createWindow(gtk_app, ghostty_app);
