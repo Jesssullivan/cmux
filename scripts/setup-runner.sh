@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Setup a self-hosted GitHub Actions runner for cmux-linux GPU testing.
 #
+# SECURITY:
+#   - Creates a dedicated unprivileged 'github-runner' user
+#   - Runner only accessible via push triggers (no fork PR execution)
+#   - GPU workflow requires 'gpu-tests' environment approval in GitHub
+#   - No secrets stored on disk; use GitHub encrypted secrets only
+#   - Runner registered with --replace to prevent stale registrations
+#
 # Prerequisites:
 #   - Linux x86_64 with AMD GPU (RDNA 2+ for OpenGL 4.6)
-#   - User in 'render' and 'video' groups for GPU access
+#   - sudo access to create user and install packages
 #   - Network access to GitHub API
 #
 # Usage:
@@ -11,6 +18,9 @@
 #
 # The token needs 'repo' scope. Generate at:
 #   https://github.com/Jesssullivan/cmux/settings/actions/runners/new
+#
+# After setup, create the 'gpu-tests' environment in GitHub repo settings
+# (Settings > Environments > New) with required reviewers enabled.
 
 set -euo pipefail
 

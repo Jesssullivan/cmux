@@ -29,6 +29,10 @@ jobs:
   gpu-smoke:
     name: GPU smoke test (honey)
     runs-on: [self-hosted, linux, gpu, cmux-test]
+    # Require approval via GitHub Environment protection rules.
+    # Create "gpu-tests" environment at Settings > Environments with
+    # required reviewers before this will run automatically.
+    environment: gpu-tests
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
