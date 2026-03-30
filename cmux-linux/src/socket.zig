@@ -912,8 +912,10 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused pane\"}";
     };
 
-    // Create a new workspace for the broken pane
+    // Create a new workspace for the broken pane, preserving current selection
+    const prev_selected = tm.selected_index;
     const new_ws = tm.createWorkspace() catch return "{\"error\":\"create workspace failed\"}";
+    tm.selected_index = prev_selected;
     if (window.getSidebar()) |sb| sb.refresh();
 
     // TODO: actually transfer the panel from old workspace to new
