@@ -1294,8 +1294,23 @@ fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []co
     const title = getParamString(params, "title") orelse "notification";
     const sid_str = getParamString(params, "surface_id");
 
+    // Suppress only if app focused AND target surface is the focused surface
     if (app_focus_override) |focused| {
-        if (focused) return "{}";
+        if (focused) {
+            if (sid_str) |s| {
+                const sid = parseId(s);
+                if (sid) |target_sid| {
+                    const tm = getTabManager();
+                    if (tm) |tmgr| {
+                        if (tmgr.selectedWorkspace()) |ws| {
+                            if (ws.focused_panel_id) |fid| {
+                                if (fid == target_sid) return "{}";
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (notification_count >= notification_store_buf.len) notification_count = notification_store_buf.len - 1;
