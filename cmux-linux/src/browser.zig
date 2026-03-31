@@ -167,10 +167,11 @@ pub const BrowserView = struct {
 
     // ── Cookie Management ─────────────────────────────────────────────
 
-    /// Configure persistent cookie storage for the default web context.
+    /// Configure persistent cookie storage via the default network session.
     fn configureCookieStorage() void {
-        const context = c.webkit.webkit_web_context_get_default() orelse return;
-        const cookie_manager = c.webkit.webkit_web_context_get_cookie_manager(context) orelse return;
+        // WebKitGTK 6.0: cookie manager is on WebKitNetworkSession, not WebKitWebContext
+        const session = c.webkit.webkit_network_session_get_default() orelse return;
+        const cookie_manager = c.webkit.webkit_network_session_get_cookie_manager(session) orelse return;
 
         const alloc = std.heap.c_allocator;
         const home = posix.getenv("HOME") orelse return;
