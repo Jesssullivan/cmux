@@ -52,29 +52,17 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Zig compiles and runs build-time tools (framegen) which get linked
-      # against /lib64/ld-linux-x86-64.so.2. In Nix sandbox this doesn't
-      # exist. Wrap zig to patchelf any freshly-compiled ELF before Zig
-      # tries to execute it.
-      REAL_ZIG="$(which zig)"
-      mkdir -p "$TMPDIR/wrapbin"
-      cat > "$TMPDIR/wrapbin/zig" <<WRAPPER
-      #!/usr/bin/env bash
-      # Run real zig, then if it produced executables in zig-cache, patchelf them
-      "\$REAL_ZIG" "\$@"
-      ret=\$?
-      # Patchelf any new ELFs in zig-cache (best effort, ignore failures)
-      find "$TMPDIR/zig-cache" -type f -executable -newer "$TMPDIR/.zig-stamp" 2>/dev/null | while read f; do
-        file "\$f" 2>/dev/null | grep -q "ELF" && patchelf --set-interpreter ${dynamicLinker} "\$f" 2>/dev/null || true
-      done
-      exit \$ret
-      WRAPPER
-      chmod +x "$TMPDIR/wrapbin/zig"
-      touch "$TMPDIR/.zig-stamp"
-
-      # Use system spirv-cross and glslang (avoids C++ in Zig's sandbox)
+      # NOTE: Zig compiles and runs build-time tools (framegen) which need
+      # /lib64/ld-linux-x86-64.so.2. In the Nix sandbox this doesn't exist.
+      # This derivation requires either:
+      # 1. nix-ld on the build host, or
+      # 2. sandbox = false / __noChroot, or
+      # 3. A future Zig version that uses static linking for build tools
+      # See: https://github.com/NixOS/nixpkgs/issues/XXX (Zig sandbox dynamic linker)
+      #
+      # Use system spirv-cross and glslang (avoids C++ musl/glibc conflict)
       # Disable SIMD (avoids simdutf/highway C++ deps)
-      PATH="$TMPDIR/wrapbin:$PATH" zig build \
+      zig build \
         --system ${deps} \
         -Dapp-runtime=none \
         -Drenderer=opengl \
