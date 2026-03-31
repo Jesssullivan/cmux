@@ -42,6 +42,11 @@ in
     dontConfigure = true;
     dontInstall = true;
 
+    # Zig compiles and executes build-time tools (framegen) which need
+    # the dynamic linker at /lib64/ld-linux-x86-64.so.2. This doesn't
+    # exist in Nix's pure sandbox. Allow impure build for this derivation.
+    __noChroot = true;
+
     buildPhase = ''
       runHook preBuild
 
