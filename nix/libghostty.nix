@@ -49,10 +49,6 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Point Zig's C compiler at the Nix-provided glibc headers
-      export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} -isystem ${pkgs.glibc.dev}/include"
-      export NIX_LDFLAGS="''${NIX_LDFLAGS:-} -L${pkgs.glibc}/lib"
-
       zig build \
         --system ${deps} \
         -Dapp-runtime=none \
@@ -60,7 +56,8 @@ in
         -Dgtk-wayland=true \
         -Dcpu=baseline \
         -Doptimize=${optimize} \
-        -Dpie=true
+        -Dpie=true \
+        -Dtarget=native-native-gnu
 
       runHook postBuild
     '';
