@@ -149,7 +149,9 @@
         vm = import ./nix/vm/create.nix {
           inherit (pkgs.stdenv.hostPlatform) system;
           inherit module nixpkgs;
-          overlay = self.overlays.default;
+          # Empty overlay for interactive VMs — cmux packages are only
+          # needed in test checks, not in manual desktop environments.
+          overlay = _final: _prev: {};
         };
         program = pkgs.writeShellScript "run-cmux-vm" ''
           SHARED_DIR=$(pwd)
