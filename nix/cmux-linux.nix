@@ -33,6 +33,10 @@ in
 
     GI_TYPELIB_PATH = gi_typelib_path;
 
+    # Same as libghostty: Zig build-time tools need /lib64 dynamic linker.
+    # See: ziglang/zig#6350
+    __noChroot = true;
+
     dontConfigure = true;
     dontUseZigBuild = true;
     dontUseZigInstall = true;
