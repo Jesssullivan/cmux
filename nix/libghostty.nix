@@ -32,7 +32,7 @@ in
     src = ghosttySrc;
 
     nativeBuildInputs = [
-      git ncurses pkg-config zig_0_15 pkgs.pandoc pkgs.autoPatchelfHook
+      git ncurses pkg-config zig_0_15 pkgs.pandoc
       gobject-introspection wayland-scanner wayland-protocols
     ];
     inherit buildInputs;
@@ -49,9 +49,23 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Ensure Zig-compiled build-time binaries can find the dynamic linker
-      export NIX_LDFLAGS="''${NIX_LDFLAGS:-} -rpath ${pkgs.glibc}/lib"
-      export LD_LIBRARY_PATH="${pkgs.glibc}/lib:''${LD_LIBRARY_PATH:-}"
+      # Zig's bundled libcxx includes musl's bits/alltypes.h which doesn't
+      # exist on glibc systems. Provide a minimal shim with the types that
+      # libcxx's __mbstate_t.h needs.
+      mkdir -p "$TMPDIR/zig-shim/bits"
+      cat > "$TMPDIR/zig-shim/bits/alltypes.h" <<'EOF'
+      #ifndef _BITS_ALLTYPES_H
+      #define _BITS_ALLTYPES_H
+      #include <stddef.h>
+      #include <stdint.h>
+      typedef unsigned wint_t;
+      typedef struct { unsigned __opaque1, __opaque2; } mbstate_t;
+      typedef long blksize_t;
+      typedef long blkcnt_t;
+      #endif
+      EOF
+      export C_INCLUDE_PATH="$TMPDIR/zig-shim''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+      export CPLUS_INCLUDE_PATH="$TMPDIR/zig-shim''${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
 
       zig build \
         --system ${deps} \
@@ -60,8 +74,7 @@ in
         -Dgtk-wayland=true \
         -Dcpu=baseline \
         -Doptimize=${optimize} \
-        -Dpie=true \
-        -Dtarget=native-native-gnu
+        -Dpie=true
 
       runHook postBuild
     '';
