@@ -1,6 +1,6 @@
 # Build libghostty as a static/shared library from the ghostty source.
 # Uses -Dapp-runtime=none to produce library outputs only (no executable).
-# Pattern follows ghostty/nix/package.nix closely.
+# Reuses ghostty's build.zig.zon.nix for Zig dependency resolution.
 {
   lib,
   stdenv,
@@ -25,49 +25,43 @@ let
     inherit zig_0_15;
     name = "ghostty-cache";
   };
-  strip = optimize != "Debug" && optimize != "ReleaseSafe";
 in
-  stdenv.mkDerivation (finalAttrs: {
+  stdenv.mkDerivation {
     pname = "libghostty";
     version = "1.3.0-dev";
-
-    # ghosttySrc is a flake input (store path), use directly as src
     src = ghosttySrc;
 
-    inherit deps;
-
     nativeBuildInputs = [
-      git
-      ncurses
-      pkg-config
-      zig_0_15
-      gobject-introspection
-      wayland-scanner
-      wayland-protocols
+      git ncurses pkg-config zig_0_15
+      gobject-introspection wayland-scanner wayland-protocols
     ];
-
     inherit buildInputs;
-
-    dontStrip = !strip;
 
     GI_TYPELIB_PATH = gi_typelib_path;
 
-    dontSetZigDefaultFlags = true;
+    dontConfigure = true;
+    dontInstall = true;
 
-    # Use zigBuildFlags (processed by stdenv Zig hook) instead of manual buildPhase
-    zigBuildFlags = [
-      "--system"
-      "${finalAttrs.deps}"
-      "-Dapp-runtime=none"
-      "-Drenderer=opengl"
-      "-Dgtk-wayland=true"
-      "-Dcpu=baseline"
-      "-Doptimize=${optimize}"
-      "-Dstrip=${lib.boolToString strip}"
-    ];
+    buildPhase = ''
+      runHook preBuild
 
-    # libghostty outputs go to zig-out/ — copy to $out
-    postInstall = ''
+      export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
+      export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+      export HOME="$TMPDIR"
+
+      zig build \
+        --system ${deps} \
+        -Dapp-runtime=none \
+        -Drenderer=opengl \
+        -Dgtk-wayland=true \
+        -Dcpu=baseline \
+        -Doptimize=${optimize} \
+        -Dpie=true
+
+      runHook postBuild
+    '';
+
+    postBuild = ''
       mkdir -p $out/lib $out/include
       cp zig-out/lib/libghostty.a $out/lib/ 2>/dev/null || true
       cp zig-out/lib/libghostty.so $out/lib/ 2>/dev/null || true
@@ -80,4 +74,4 @@ in
       license = lib.licenses.mit;
       platforms = ["x86_64-linux" "aarch64-linux"];
     };
-  })
+  }
