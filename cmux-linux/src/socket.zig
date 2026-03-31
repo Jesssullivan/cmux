@@ -496,11 +496,10 @@ fn handleSurfaceList(alloc: Allocator, params: json.Value) []const u8 {
     const writer = buf.writer(alloc);
     writer.writeAll("{\"surfaces\":[") catch return "{\"surfaces\":[]}";
 
-    var idx: usize = 0;
-    var it = ws.panels.iterator();
-    while (it.next()) |entry| {
+    // Use ordered_panels for deterministic insertion-order indexing
+    for (ws.ordered_panels.items, 0..) |panel_id, idx| {
+        const panel = ws.panels.get(panel_id) orelse continue;
         if (idx > 0) writer.writeAll(",") catch {};
-        const panel = entry.value_ptr.*;
         const panel_hex = formatId(panel.id);
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
         const title = panel.custom_title orelse panel.title orelse "Terminal";
@@ -514,7 +513,6 @@ fn handleSurfaceList(alloc: Allocator, params: json.Value) []const u8 {
                 @tagName(panel.panel_type),
             },
         ) catch {};
-        idx += 1;
     }
 
     writer.writeAll("]}") catch {};
@@ -587,21 +585,34 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
         ws.root_node = split_tree.closePane(ws.alloc, root, target_id);
     }
 
-    // Remove from panel map
-    if (ws.panels.get(target_id)) |panel| {
-        if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
-        ws.alloc.destroy(panel);
-        _ = ws.panels.remove(target_id);
-    }
-
-    // Update focus
+    // Update focus before removal: pick next surface at same index, or previous if last
     if (ws.focused_panel_id) |fid| {
         if (fid == target_id) {
-            // Focus first remaining panel
-            var it = ws.panels.keyIterator();
-            ws.focused_panel_id = if (it.next()) |k| k.* else null;
+            var closed_idx: ?usize = null;
+            for (ws.ordered_panels.items, 0..) |id, i| {
+                if (id == target_id) {
+                    closed_idx = i;
+                    break;
+                }
+            }
+            if (closed_idx) |ci| {
+                // After removal, the panel count will be ordered_panels.len - 1
+                const remaining = ws.ordered_panels.items.len - 1;
+                if (remaining == 0) {
+                    ws.focused_panel_id = null;
+                } else if (ci < remaining) {
+                    // Focus the panel that will slide into this index (the one after)
+                    ws.focused_panel_id = ws.ordered_panels.items[ci + 1];
+                } else {
+                    // Was last — focus previous
+                    ws.focused_panel_id = ws.ordered_panels.items[ci - 1];
+                }
+            }
         }
     }
+
+    // Remove from both panel map and ordered list
+    ws.removePanel(target_id);
 
     // Rebuild widget tree (skip GTK calls in test mode)
     if (!isNoSurface()) {
@@ -628,11 +639,10 @@ fn handlePaneList(alloc: Allocator, params: json.Value) []const u8 {
     const writer = buf.writer(alloc);
     writer.writeAll("{\"panes\":[") catch return "{\"panes\":[]}";
 
-    var idx: usize = 0;
-    var it = ws.panels.iterator();
-    while (it.next()) |entry| {
+    // Use ordered_panels for deterministic indexing
+    for (ws.ordered_panels.items, 0..) |panel_id, idx| {
+        const panel = ws.panels.get(panel_id) orelse continue;
         if (idx > 0) writer.writeAll(",") catch {};
-        const panel = entry.value_ptr.*;
         const panel_hex = formatId(panel.id);
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
         writer.print(
@@ -643,7 +653,6 @@ fn handlePaneList(alloc: Allocator, params: json.Value) []const u8 {
                 if (is_focused) "true" else "false",
             },
         ) catch {};
-        idx += 1;
     }
 
     writer.writeAll("]}") catch {};
