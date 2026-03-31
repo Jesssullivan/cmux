@@ -33,30 +33,32 @@ in
 
     GI_TYPELIB_PATH = gi_typelib_path;
 
-    # Use zig hook for cache management
-    dontSetZigDefaultFlags = true;
+    dontConfigure = true;
+    dontUseZigBuild = true;
+    dontUseZigInstall = true;
 
-    # Symlink libghostty before the zig hook's build phase runs
-    preBuild = ''
+    buildPhase = ''
+      runHook preBuild
+
+      export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
+      export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+
+      # Symlink libghostty into expected relative path for build.zig
       mkdir -p ghostty/zig-out/lib ghostty/include
       ln -sf ${libghostty}/lib/* ghostty/zig-out/lib/
       ln -sf ${libghostty}/include/* ghostty/include/
+
       cd cmux-linux
+      zig build -Doptimize=ReleaseFast -j$NIX_BUILD_CORES
+
+      runHook postBuild
     '';
-
-    zigBuildFlags = [
-      "-Doptimize=ReleaseFast"
-    ];
-
-    # Custom install: zig hook installs to wrong path since we cd'd
-    dontUseZigInstall = true;
 
     installPhase = ''
       runHook preInstall
 
       mkdir -p $out/bin
-      cp zig-out/bin/cmux $out/bin/cmux-linux 2>/dev/null || \
-        cp cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux
+      cp cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux
 
       runHook postInstall
     '';
