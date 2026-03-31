@@ -57,6 +57,9 @@ pub const Workspace = struct {
     /// All panels in this workspace, keyed by panel ID.
     panels: std.AutoHashMapUnmanaged(u128, *Panel),
 
+    /// Insertion-ordered panel IDs for deterministic surface indexing.
+    ordered_panels: std.ArrayListUnmanaged(u128) = .{},
+
     /// Display metadata.
     title: ?[]const u8 = null,
     custom_title: ?[]const u8 = null,
@@ -90,7 +93,8 @@ pub const Workspace = struct {
             self.alloc.destroy(panel);
         }
         self.panels.deinit(self.alloc);
-        self.status_entries.deinit(self.alloc);  // ArrayList needs allocator
+        self.ordered_panels.deinit(self.alloc);
+        self.status_entries.deinit(self.alloc);
 
         if (self.root_node) |node| split_tree.destroy(self.alloc, node);
     }
@@ -109,6 +113,7 @@ pub const Workspace = struct {
         panel.widget = widget;
 
         try self.panels.put(self.alloc, id, panel);
+        try self.ordered_panels.append(self.alloc, id);
         self.focused_panel_id = id;
         return panel;
     }
@@ -128,6 +133,7 @@ pub const Workspace = struct {
         panel.widget = widget;
 
         try self.panels.put(self.alloc, id, panel);
+        try self.ordered_panels.append(self.alloc, id);
         self.focused_panel_id = id;
         return panel;
     }
@@ -142,8 +148,25 @@ pub const Workspace = struct {
             .panel_type = panel_type,
         };
         try self.panels.put(self.alloc, id, panel);
+        try self.ordered_panels.append(self.alloc, id);
         self.focused_panel_id = id;
         return panel;
+    }
+
+    /// Remove a panel by ID from both maps.
+    pub fn removePanel(self: *Workspace, panel_id: u128) void {
+        if (self.panels.get(panel_id)) |panel| {
+            if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
+            self.alloc.destroy(panel);
+            _ = self.panels.remove(panel_id);
+        }
+        // Remove from ordered list
+        for (self.ordered_panels.items, 0..) |id, i| {
+            if (id == panel_id) {
+                _ = self.ordered_panels.orderedRemove(i);
+                break;
+            }
+        }
     }
 
     /// Get the number of panels.
