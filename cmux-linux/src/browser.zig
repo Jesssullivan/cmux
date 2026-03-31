@@ -173,25 +173,26 @@ pub const BrowserView = struct {
         const session = c.webkit.webkit_network_session_get_default() orelse return;
         const cookie_manager = c.webkit.webkit_network_session_get_cookie_manager(session) orelse return;
 
-        const alloc = std.heap.c_allocator;
         const home = posix.getenv("HOME") orelse return;
-        const config_dir = std.fmt.allocPrintZ(alloc, "{s}/.config/cmux", .{home}) catch return;
-        defer alloc.free(config_dir);
-        std.fs.makeDirAbsolute(config_dir) catch {};
 
-        const cookie_path = std.fmt.allocPrintZ(alloc, "{s}/.config/cmux/cookies.sqlite", .{home}) catch return;
-        defer alloc.free(cookie_path);
+        // Build null-terminated paths for C API
+        var config_buf: [512]u8 = undefined;
+        const config_dir = std.fmt.bufPrint(&config_buf, "{s}/.config/cmux\x00", .{home}) catch return;
+        std.fs.makeDirAbsolute(config_dir[0 .. config_dir.len - 1]) catch {};
+
+        var cookie_buf: [512]u8 = undefined;
+        const cookie_path = std.fmt.bufPrint(&cookie_buf, "{s}/.config/cmux/cookies.sqlite\x00", .{home}) catch return;
 
         c.webkit.webkit_cookie_manager_set_persistent_storage(
             cookie_manager,
-            cookie_path.ptr,
+            @ptrCast(cookie_path.ptr),
             c.webkit.WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE,
         );
         c.webkit.webkit_cookie_manager_set_accept_policy(
             cookie_manager,
             c.webkit.WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY,
         );
-        log.info("Cookie storage: {s}", .{cookie_path});
+        log.info("Cookie storage configured", .{});
     }
 
     // ── DevTools (Inspector) ───────────────────────────────────────────
