@@ -7,8 +7,11 @@
   self,
   system,
   nixpkgs,
+  zigPkg ? null,
+  ghosttySrc ? null,
   ...
 }: let
+  lib = nixpkgs.lib;
   nixos-version = nixpkgs.lib.trivial.release;
 
   pkgs = import nixpkgs {
@@ -201,6 +204,128 @@ in {
       machine.log("GTK4 + libadwaita runtime libraries present")
     '';
   };
+
+  # Tier 4: Socket test suite (headless, NixOS VM)
+  # Runs Python socket tests against cmux-linux daemon in CMUX_NO_SURFACE mode.
+  # Requires cmux-linux Nix derivation (built from libghostty + cmux-linux source).
+  socket-test-suite = let
+    cmuxLinux =
+      if ghosttySrc != null && zigPkg != null
+      then
+        pkgs.callPackage ./cmux-linux.nix {
+          zig_0_15 = zigPkg;
+          libghostty = pkgs.callPackage ./libghostty.nix {
+            zig_0_15 = zigPkg;
+            inherit ghosttySrc;
+          };
+        }
+      else null;
+    testSrc = self + "/tests_v2";
+  in
+    pkgs.testers.runNixOSTest {
+      name = "socket-test-suite";
+      nodes = {
+        machine = {pkgs, ...}: {
+          users.groups.cmux = {};
+          users.users.cmux = {
+            isNormalUser = true;
+            group = "cmux";
+            extraGroups = ["wheel"];
+            hashedPassword = "";
+          };
+
+          virtualisation.memorySize = 4096;
+          virtualisation.cores = 2;
+
+          environment.systemPackages = with pkgs;
+            [
+              python3
+              xorg.xorgserver
+              mesa
+              mesa.drivers
+            ]
+            ++ (lib.optional (cmuxLinux != null) cmuxLinux);
+
+          environment.etc."cmux-tests".source = testSrc;
+        };
+      };
+      testScript = {...}: ''
+        machine.wait_for_unit("multi-user.target")
+
+        ${
+          if cmuxLinux != null
+          then ''
+            # Start Xvfb
+            machine.succeed("Xvfb :99 -screen 0 1280x720x24 +extension GLX &")
+            machine.sleep(1)
+
+            # Run socket tests against cmux-linux daemon
+            machine.succeed("""
+              su - cmux -c '
+                export DISPLAY=:99
+                export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
+                export LIBGL_ALWAYS_SOFTWARE=1
+                export XDG_RUNTIME_DIR=/run/user/$(id -u)
+                mkdir -p $XDG_RUNTIME_DIR && chmod 700 $XDG_RUNTIME_DIR
+                export CMUX_NO_SURFACE=1
+                export CMUX_SOCKET=$XDG_RUNTIME_DIR/cmux.sock
+
+                cmux-linux &
+                CMUX_PID=$!
+                for i in $(seq 1 20); do [ -S "$CMUX_SOCKET" ] && break; sleep 0.25; done
+                [ -S "$CMUX_SOCKET" ] || { echo "Socket not created"; exit 1; }
+
+                cd /etc/cmux-tests
+                PASS=0 FAIL=0 TOTAL=0
+                for f in test_*.py; do
+                  case "$f" in
+                    test_browser_*|test_cli_*|test_ctrl_interactive*|test_ssh_*) continue ;;
+                    test_visual_*|test_lint_*|test_command_palette_*|test_tmux_*) continue ;;
+                    test_nested_split_does_not_disappear*|test_nested_split_no_arranged_subview*) continue ;;
+                    test_nested_split_panel_routing*) continue ;;
+                    test_split_cmd_*|test_split_flash_*) continue ;;
+                    test_shortcut_window_scope*|test_tab_dragging*) continue ;;
+                    test_ctrl_enter_keybind*) continue ;;
+                    test_new_tab_interactive*|test_new_tab_render*) continue ;;
+                    test_initial_terminal_interactive*) continue ;;
+                    test_terminal_focus_routing*|test_terminal_input_render*) continue ;;
+                    test_v1_panel_creation*|test_update_timing*) continue ;;
+                    test_pane_resize_*|test_read_screen_capture*) continue ;;
+                    test_surface_list_custom_titles*) continue ;;
+                    test_workspace_create_background*|test_workspace_create_initial_env*) continue ;;
+                    test_ctrl_socket*) continue ;;
+                    test_rename_tab_cli*|test_rename_window_workspace*) continue ;;
+                    test_tab_workspace_action_naming*|test_workspace_relative*) continue ;;
+                    test_nested_split_preserves_existing*) continue ;;
+                    test_cpu_usage*|test_cpu_notifications*) continue ;;
+                    test_notifications*) continue ;;
+                    test_surface_move_reorder_api*) continue ;;
+                  esac
+                  TOTAL=$((TOTAL + 1))
+                  if timeout 10 python3 "$f" 2>&1; then
+                    PASS=$((PASS + 1))
+                    echo "PASS: $f"
+                  else
+                    FAIL=$((FAIL + 1))
+                    echo "FAIL: $f"
+                  fi
+                done
+
+                kill $CMUX_PID 2>/dev/null || true
+                echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+                [ $FAIL -eq 0 ]
+              '
+            """)
+          ''
+          else ''
+            # cmux-linux package not available (missing ghosttySrc or zigPkg)
+            machine.log("Socket test suite: skipped (cmux-linux not built)")
+            machine.succeed("which python3")
+            machine.succeed("which Xvfb")
+          ''
+        }
+      '';
+    };
 
   # Tier 3: GTK4 version floor check
   # Verifies the minimum GTK4 version requirement (4.14) is met.

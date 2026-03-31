@@ -18,6 +18,12 @@
       url = "github:numtide/nix-vm-test";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Ghostty source for libghostty Nix derivation
+    ghostty-src = {
+      url = "github:Jesssullivan/ghostty";
+      flake = false;
+    };
   };
 
   outputs = {
@@ -26,6 +32,7 @@
     flake-utils,
     zig,
     nix-vm-test,
+    ghostty-src,
     ...
   }: let
     inherit (nixpkgs) lib legacyPackages;
@@ -120,6 +127,16 @@
         if pkgs.stdenv.isDarwin
         then self.packages.${pkgs.stdenv.hostPlatform.system}.cmux-darwin
         else self.packages.${pkgs.stdenv.hostPlatform.system}.cmux-rpm;
+    }
+    // lib.optionalAttrs pkgs.stdenv.isLinux {
+      libghostty = pkgs.callPackage ./nix/libghostty.nix {
+        zig_0_15 = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
+        ghosttySrc = ghostty-src;
+      };
+      cmux-linux = pkgs.callPackage ./nix/cmux-linux.nix {
+        zig_0_15 = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
+        libghostty = self.packages.${pkgs.stdenv.hostPlatform.system}.libghostty;
+      };
     });
 
     # ── Interactive VM Apps ──────────────────────────────────────────
@@ -157,13 +174,24 @@
       import ./nix/tests.nix {
         inherit nixpkgs self;
         inherit (pkgs.stdenv.hostPlatform) system;
+        zigPkg = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
+        ghosttySrc = ghostty-src;
       });
 
     # ── Overlays ─────────────────────────────────────────────────────
     overlays = {
-      # Placeholder overlay. Once cmux-linux GTK4 package exists (#77),
-      # ghostty and cmux-linux will be wired here.
-      default = final: prev: {};
+      default = final: prev:
+        lib.optionalAttrs final.stdenv.isLinux {
+          libghostty = final.callPackage ./nix/libghostty.nix {
+            zig_0_15 = zig.packages.${final.stdenv.hostPlatform.system}."0.15.2";
+            inherit ghostty-src;
+            ghosttySrc = ghostty-src;
+          };
+          cmux-linux = final.callPackage ./nix/cmux-linux.nix {
+            zig_0_15 = zig.packages.${final.stdenv.hostPlatform.system}."0.15.2";
+            inherit (final) libghostty;
+          };
+        };
     };
 
     # ── Formatter ────────────────────────────────────────────────────
