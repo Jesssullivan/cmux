@@ -244,8 +244,10 @@ const methods = .{
     .{ "browser.find_previous", handleBrowserFindPrevious },
     .{ "browser.find_finish", handleBrowserFindFinish },
     .{ "notification.create", handleNotificationCreate },
+    .{ "notification.create_for_surface", handleNotificationCreateForSurface },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
+    .{ "app.focus_override.set", handleAppFocusOverrideSet },
     .{ "debug.app.activate", handleDebugAppActivate },
     .{ "debug.flash.count", handleDebugFlashCount },
     .{ "debug.flash.reset", handleDebugFlashReset },
@@ -351,8 +353,27 @@ fn handleIdentify(alloc: Allocator, _: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"focused\":{}}";
     const ws = tm.selectedWorkspace() orelse return "{\"focused\":{}}";
     const ws_id = formatId(ws.id);
+
+    // Find which window this workspace belongs to
+    ensureDefaultWindow();
+    var win_hex: [32]u8 = undefined;
+    var has_win = false;
+    for (window_store[0..window_count]) |w| {
+        if (w.hasWorkspace(ws.id)) {
+            win_hex = formatId(w.id);
+            has_win = true;
+            break;
+        }
+    }
+
     if (ws.focused_panel_id) |pid| {
         const panel_hex = formatId(pid);
+        if (has_win) {
+            return std.fmt.allocPrint(alloc,
+                "{{\"focused\":{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\",\"window_id\":\"{s}\"}}}}",
+                .{ ws_id, panel_hex, @as([]const u8, &win_hex) },
+            ) catch "{\"focused\":{}}";
+        }
         return std.fmt.allocPrint(alloc,
             "{{\"focused\":{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}}}",
             .{ ws_id, panel_hex },
@@ -370,48 +391,87 @@ fn handleCapabilities(_: Allocator, _: json.Value) []const u8 {
 
 // ── Window Handlers ─────────────────────────────────────────────────────
 
-fn handleWindowList(_: Allocator, _: json.Value) []const u8 {
-    return "{\"windows\":[{\"id\":\"main\",\"index\":0,\"focused\":true}]}";
+fn handleWindowList(alloc: Allocator, _: json.Value) []const u8 {
+    ensureDefaultWindow();
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"windows\":[") catch return "{\"windows\":[]}";
+    for (window_store[0..window_count], 0..) |w, i| {
+        if (i > 0) writer.writeAll(",") catch {};
+        const hex = formatId(w.id);
+        writer.print(
+            "{{\"id\":\"{s}\",\"index\":{d},\"focused\":{s}}}",
+            .{ @as([]const u8, &hex), i, if (i == 0) "true" else "false" },
+        ) catch {};
+    }
+    writer.writeAll("]}") catch {};
+    return buf.toOwnedSlice(alloc) catch "{\"windows\":[]}";
 }
 
-fn handleWindowCurrent(_: Allocator, _: json.Value) []const u8 {
-    return "{\"window_id\":\"main\"}";
+fn handleWindowCurrent(alloc: Allocator, _: json.Value) []const u8 {
+    ensureDefaultWindow();
+    const hex = formatId(window_store[0].id);
+    return std.fmt.allocPrint(alloc, "{{\"window_id\":\"{s}\"}}", .{@as([]const u8, &hex)}) catch "{}";
 }
 
 // ── Workspace Handlers ──────────────────────────────────────────────────
 
-fn handleWorkspaceList(alloc: Allocator, _: json.Value) []const u8 {
+fn handleWorkspaceList(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"workspaces\":[]}";
     const selected = tm.selected_index;
+
+    // Optional window_id filter
+    const win_filter: ?*const WindowEntry = if (getParamString(params, "window_id")) |wid_str| blk: {
+        ensureDefaultWindow();
+        if (parseId(wid_str)) |wid| {
+            break :blk if (findWindowById(wid)) |w| w else null;
+        }
+        break :blk null;
+    } else null;
 
     // Build JSON array manually for efficiency
     var buf: std.ArrayList(u8) = .empty;
     const writer = buf.writer(alloc);
     writer.writeAll("{\"workspaces\":[") catch return "{\"workspaces\":[]}";
 
+    var out_idx: usize = 0;
     for (tm.workspaces.items, 0..) |ws, i| {
-        if (i > 0) writer.writeAll(",") catch {};
+        // Filter by window if specified
+        if (win_filter) |wf| {
+            if (!wf.hasWorkspace(ws.id)) continue;
+        }
+        if (out_idx > 0) writer.writeAll(",") catch {};
         const ws_id = formatId(ws.id);
         const is_selected = if (selected) |s| s == i else false;
         writer.print(
             "{{\"index\":{d},\"id\":\"{s}\",\"title\":\"{s}\",\"selected\":{s}}}",
             .{
-                i,
+                out_idx,
                 @as([]const u8, &ws_id),
                 ws.displayTitle(),
                 if (is_selected) "true" else "false",
             },
         ) catch {};
+        out_idx += 1;
     }
 
     writer.writeAll("]}") catch {};
     return buf.toOwnedSlice(alloc) catch "{\"workspaces\":[]}";
 }
 
-fn handleWorkspaceCreate(alloc: Allocator, _: json.Value) []const u8 {
+fn handleWorkspaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const ws = tm.createWorkspace() catch return "{\"error\":\"create failed\"}";
     if (window.getSidebar()) |sb| sb.refresh();
+
+    // Register in window model
+    ensureDefaultWindow();
+    const target_win = if (getParamString(params, "window_id")) |wid_str|
+        if (parseId(wid_str)) |wid| findWindowById(wid) else null
+    else
+        if (window_count > 0) &window_store[0] else null;
+    if (target_win) |w| w.addWorkspace(ws.id);
+
     const ws_id = formatId(ws.id);
     return std.fmt.allocPrint(alloc, "{{\"workspace_id\":\"{s}\"}}", .{@as([]const u8, &ws_id)}) catch "{}";
 }
@@ -528,6 +588,12 @@ fn handleSurfaceFocus(_: Allocator, params: json.Value) []const u8 {
     for (tm.workspaces.items) |ws| {
         if (ws.panels.get(target_id) != null) {
             ws.focused_panel_id = target_id;
+            // Mark notifications for this surface as read
+            for (0..notification_count) |i| {
+                if (notification_store_buf[i].surface_id) |sid| {
+                    if (sid == target_id) notification_store_buf[i].is_read = true;
+                }
+            }
             return "{}";
         }
     }
@@ -682,21 +748,116 @@ fn handleWorkspaceReorder(_: Allocator, params: json.Value) []const u8 {
             const ws = tm.workspaces.orderedRemove(found.index);
             tm.workspaces.insertAssumeCapacity(tidx, ws);
         }
+    } else if (getParamString(params, "before_workspace_id")) |before_str| {
+        const before_id = parseId(before_str) orelse return "{\"error\":\"invalid before_workspace_id\"}";
+        // Find target position and move source before it
+        for (tm.workspaces.items, 0..) |ws, i| {
+            if (ws.id == before_id) {
+                if (i != found.index) {
+                    const src = tm.workspaces.orderedRemove(found.index);
+                    const insert_at = if (found.index < i) i - 1 else i;
+                    tm.workspaces.insertAssumeCapacity(insert_at, src);
+                }
+                break;
+            }
+        }
+    } else if (getParamString(params, "after_workspace_id")) |after_str| {
+        const after_id = parseId(after_str) orelse return "{\"error\":\"invalid after_workspace_id\"}";
+        for (tm.workspaces.items, 0..) |ws, i| {
+            if (ws.id == after_id) {
+                if (i != found.index) {
+                    const src = tm.workspaces.orderedRemove(found.index);
+                    const insert_at = if (found.index <= i) i else i + 1;
+                    tm.workspaces.insertAssumeCapacity(insert_at, src);
+                }
+                break;
+            }
+        }
     }
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
 }
 
-fn handleWindowCreate(_: Allocator, _: json.Value) []const u8 {
-    return "{\"window_id\":\"main\"}"; // Single-window stub
+// ── In-Memory Window Model ────────────────────────────────────────────
+
+const WindowEntry = struct {
+    id: u128,
+    workspace_ids: [32]u128 = undefined,
+    ws_count: usize = 0,
+
+    fn addWorkspace(self: *WindowEntry, ws_id: u128) void {
+        if (self.ws_count < self.workspace_ids.len) {
+            self.workspace_ids[self.ws_count] = ws_id;
+            self.ws_count += 1;
+        }
+    }
+
+    fn removeWorkspace(self: *WindowEntry, ws_id: u128) void {
+        for (0..self.ws_count) |i| {
+            if (self.workspace_ids[i] == ws_id) {
+                // Shift remaining
+                var j = i;
+                while (j + 1 < self.ws_count) : (j += 1) {
+                    self.workspace_ids[j] = self.workspace_ids[j + 1];
+                }
+                self.ws_count -= 1;
+                return;
+            }
+        }
+    }
+
+    fn hasWorkspace(self: *const WindowEntry, ws_id: u128) bool {
+        for (self.workspace_ids[0..self.ws_count]) |id| {
+            if (id == ws_id) return true;
+        }
+        return false;
+    }
+};
+
+var window_store: [8]WindowEntry = undefined;
+var window_count: usize = 0;
+
+fn ensureDefaultWindow() void {
+    if (window_count > 0) return;
+    // Lazy-init: create the "main" window with all current workspaces
+    var buf: [16]u8 = undefined;
+    std.crypto.random.bytes(&buf);
+    window_store[0] = .{ .id = std.mem.readInt(u128, &buf, .little) };
+    const tm = getTabManager() orelse {
+        window_count = 1;
+        return;
+    };
+    for (tm.workspaces.items) |ws| {
+        window_store[0].addWorkspace(ws.id);
+    }
+    window_count = 1;
+}
+
+fn findWindowById(id: u128) ?*WindowEntry {
+    for (window_store[0..window_count]) |*w| {
+        if (w.id == id) return w;
+    }
+    return null;
+}
+
+fn handleWindowCreate(alloc: Allocator, _: json.Value) []const u8 {
+    ensureDefaultWindow();
+    if (window_count >= window_store.len) return "{\"error\":\"max windows\"}";
+    var buf: [16]u8 = undefined;
+    std.crypto.random.bytes(&buf);
+    const id = std.mem.readInt(u128, &buf, .little);
+    window_store[window_count] = .{ .id = id };
+    window_count += 1;
+    const hex = formatId(id);
+    return std.fmt.allocPrint(alloc, "{{\"window_id\":\"{s}\"}}", .{@as([]const u8, &hex)}) catch "{}";
 }
 
 fn handleWindowClose(_: Allocator, _: json.Value) []const u8 {
-    return "{}"; // Single-window stub
+    return "{}";
 }
 
 fn handleWindowFocus(_: Allocator, _: json.Value) []const u8 {
-    return "{}"; // Single-window stub
+    return "{}";
 }
 
 // ── Batch 2: Additional Surface Operations ──────────────────────────────
@@ -777,17 +938,14 @@ fn handleSurfaceHealth(alloc: Allocator, params: json.Value) []const u8 {
     const writer = buf.writer(alloc);
     writer.writeAll("{\"surfaces\":[") catch return "{\"surfaces\":[]}";
 
-    var idx: usize = 0;
-    var it = ws.panels.iterator();
-    while (it.next()) |entry| {
+    for (ws.ordered_panels.items, 0..) |panel_id, idx| {
+        const panel = ws.panels.get(panel_id) orelse continue;
         if (idx > 0) writer.writeAll(",") catch {};
-        const panel = entry.value_ptr.*;
         const panel_hex = formatId(panel.id);
         writer.print(
-            "{{\"id\":\"{s}\",\"in_window\":true,\"hidden\":false}}",
-            .{@as([]const u8, &panel_hex)},
+            "{{\"id\":\"{s}\",\"index\":{d},\"type\":\"{s}\",\"in_window\":true,\"hidden\":false}}",
+            .{ @as([]const u8, &panel_hex), idx, @tagName(panel.panel_type) },
         ) catch {};
-        idx += 1;
     }
     writer.writeAll("]}") catch {};
     return buf.toOwnedSlice(alloc) catch "{\"surfaces\":[]}";
@@ -942,9 +1100,21 @@ fn handlePaneJoin(_: Allocator, params: json.Value) []const u8 {
 }
 
 fn handleWorkspaceMoveToWindow(_: Allocator, params: json.Value) []const u8 {
-    _ = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
-    _ = getParamString(params, "window_id") orelse return "{\"error\":\"missing window_id\"}";
-    return "{}"; // Single-window stub
+    const ws_str = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
+    const win_str = getParamString(params, "window_id") orelse return "{\"error\":\"missing window_id\"}";
+    const ws_id = parseId(ws_str) orelse return "{\"error\":\"invalid workspace_id\"}";
+    const win_id = parseId(win_str) orelse return "{\"error\":\"invalid window_id\"}";
+
+    ensureDefaultWindow();
+    // Remove from all windows
+    for (window_store[0..window_count]) |*w| {
+        w.removeWorkspace(ws_id);
+    }
+    // Add to target window
+    if (findWindowById(win_id)) |w| {
+        w.addWorkspace(ws_id);
+    }
+    return "{}";
 }
 
 fn handleSurfaceMove(_: Allocator, params: json.Value) []const u8 {
@@ -1220,17 +1390,137 @@ fn browserViewAction(params: json.Value, action: BrowserViewAction) []const u8 {
     return "{\"error\":\"surface not found\"}";
 }
 
-// ── Batch 5: Notification Stubs ─────────────────────────────────────────
+// ── Notification State ─────────────────────────────────────────────────
 
-fn handleNotificationCreate(_: Allocator, _: json.Value) []const u8 {
+const StoredNotification = struct {
+    id: u128,
+    title: [128]u8 = undefined,
+    title_len: usize = 0,
+    body: [256]u8 = undefined,
+    body_len: usize = 0,
+    surface_id: ?u128 = null,
+    is_read: bool = false,
+};
+
+var notification_store_buf: [64]StoredNotification = undefined;
+var notification_count: usize = 0;
+var app_focus_override: ?bool = null;
+
+fn handleNotificationCreate(alloc: Allocator, params: json.Value) []const u8 {
+    _ = alloc;
+    const title = getParamString(params, "title") orelse "notification";
+
+    // If app is "focused", suppress
+    if (app_focus_override) |focused| {
+        if (focused) return "{}";
+    }
+
+    // Replace existing (latest-one-wins)
+    notification_count = 1;
+    var notif = &notification_store_buf[0];
+    notif.* = .{ .id = blk: {
+        var id_buf: [16]u8 = undefined;
+        std.crypto.random.bytes(&id_buf);
+        break :blk std.mem.readInt(u128, &id_buf, .little);
+    } };
+    const tlen = @min(title.len, notif.title.len);
+    @memcpy(notif.title[0..tlen], title[0..tlen]);
+    notif.title_len = tlen;
     return "{}";
 }
 
-fn handleNotificationList(_: Allocator, _: json.Value) []const u8 {
-    return "{\"notifications\":[]}";
+fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []const u8 {
+    _ = alloc;
+    const title = getParamString(params, "title") orelse "notification";
+    const sid_str = getParamString(params, "surface_id");
+
+    // Suppress only if app focused AND target surface is the focused surface
+    if (app_focus_override) |focused| {
+        if (focused) {
+            if (sid_str) |s| {
+                const sid = parseId(s);
+                if (sid) |target_sid| {
+                    const tm = getTabManager();
+                    if (tm) |tmgr| {
+                        if (tmgr.selectedWorkspace()) |ws| {
+                            if (ws.focused_panel_id) |fid| {
+                                if (fid == target_sid) return "{}";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (notification_count >= notification_store_buf.len) notification_count = notification_store_buf.len - 1;
+    var notif = &notification_store_buf[notification_count];
+    notif.* = .{ .id = blk: {
+        var id_buf: [16]u8 = undefined;
+        std.crypto.random.bytes(&id_buf);
+        break :blk std.mem.readInt(u128, &id_buf, .little);
+    } };
+    const tlen = @min(title.len, notif.title.len);
+    @memcpy(notif.title[0..tlen], title[0..tlen]);
+    notif.title_len = tlen;
+    if (sid_str) |s| {
+        const sid = parseId(s);
+        notif.surface_id = sid;
+        // Trigger flash on the notified surface
+        if (sid) |target_sid| {
+            const tm = getTabManager() orelse return "{}";
+            for (tm.workspaces.items) |ws| {
+                if (ws.panels.getPtr(target_sid)) |panel_ptr| {
+                    panel_ptr.*.flash_count += 1;
+                }
+            }
+        }
+    }
+    notification_count += 1;
+    return "{}";
+}
+
+fn handleNotificationList(alloc: Allocator, _: json.Value) []const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"notifications\":[") catch return "{\"notifications\":[]}";
+
+    for (0..notification_count) |i| {
+        if (i > 0) writer.writeAll(",") catch {};
+        const notif = &notification_store_buf[i];
+        const title = notif.title[0..notif.title_len];
+        writer.print(
+            "{{\"title\":\"{s}\",\"is_read\":{s}",
+            .{
+                title,
+                if (notif.is_read) "true" else "false",
+            },
+        ) catch {};
+        if (notif.surface_id) |sid| {
+            const sid_hex = formatId(sid);
+            writer.print(",\"surface_id\":\"{s}\"", .{@as([]const u8, &sid_hex)}) catch {};
+        }
+        writer.writeAll("}") catch {};
+    }
+
+    writer.writeAll("]}") catch {};
+    return buf.toOwnedSlice(alloc) catch "{\"notifications\":[]}";
 }
 
 fn handleNotificationClear(_: Allocator, _: json.Value) []const u8 {
+    notification_count = 0;
+    return "{}";
+}
+
+fn handleAppFocusOverrideSet(_: Allocator, params: json.Value) []const u8 {
+    const state = getParamString(params, "state") orelse return "{\"error\":\"missing state\"}";
+    if (std.mem.eql(u8, state, "active")) {
+        app_focus_override = true;
+    } else if (std.mem.eql(u8, state, "inactive")) {
+        app_focus_override = false;
+    } else if (std.mem.eql(u8, state, "clear")) {
+        app_focus_override = null;
+    }
     return "{}";
 }
 

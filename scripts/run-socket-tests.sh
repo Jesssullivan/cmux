@@ -88,10 +88,8 @@ for f in "$TESTS_DIR"/test_*.py; do
     test_nested_split_preserves_existing*) continue ;;
     # Require macOS process patterns (pgrep .app/Contents/MacOS)
     test_cpu_usage*|test_cpu_notifications*) continue ;;
-    # Require multi-window (not implemented on Linux)
-    test_windows_api*) continue ;;
-    # Require notification system + app.focus_override.set + terminal send
-    test_focus_notification_dismiss*|test_notifications*) continue ;;
+    # Require terminal send + OSC sequences for notification tests
+    test_notifications*) continue ;;
     # Require real surface.move/reorder implementation
     test_surface_move_reorder_api*) continue ;;
   esac
