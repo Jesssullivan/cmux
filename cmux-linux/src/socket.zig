@@ -244,8 +244,10 @@ const methods = .{
     .{ "browser.find_previous", handleBrowserFindPrevious },
     .{ "browser.find_finish", handleBrowserFindFinish },
     .{ "notification.create", handleNotificationCreate },
+    .{ "notification.create_for_surface", handleNotificationCreateForSurface },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
+    .{ "app.focus_override.set", handleAppFocusOverrideSet },
     .{ "debug.app.activate", handleDebugAppActivate },
     .{ "debug.flash.count", handleDebugFlashCount },
     .{ "debug.flash.reset", handleDebugFlashReset },
@@ -528,6 +530,12 @@ fn handleSurfaceFocus(_: Allocator, params: json.Value) []const u8 {
     for (tm.workspaces.items) |ws| {
         if (ws.panels.get(target_id) != null) {
             ws.focused_panel_id = target_id;
+            // Mark notifications for this surface as read
+            for (0..notification_count) |i| {
+                if (notification_store_buf[i].surface_id) |sid| {
+                    if (sid == target_id) notification_store_buf[i].is_read = true;
+                }
+            }
             return "{}";
         }
     }
@@ -802,17 +810,14 @@ fn handleSurfaceHealth(alloc: Allocator, params: json.Value) []const u8 {
     const writer = buf.writer(alloc);
     writer.writeAll("{\"surfaces\":[") catch return "{\"surfaces\":[]}";
 
-    var idx: usize = 0;
-    var it = ws.panels.iterator();
-    while (it.next()) |entry| {
+    for (ws.ordered_panels.items, 0..) |panel_id, idx| {
+        const panel = ws.panels.get(panel_id) orelse continue;
         if (idx > 0) writer.writeAll(",") catch {};
-        const panel = entry.value_ptr.*;
         const panel_hex = formatId(panel.id);
         writer.print(
-            "{{\"id\":\"{s}\",\"in_window\":true,\"hidden\":false}}",
-            .{@as([]const u8, &panel_hex)},
+            "{{\"id\":\"{s}\",\"index\":{d},\"type\":\"{s}\",\"in_window\":true,\"hidden\":false}}",
+            .{ @as([]const u8, &panel_hex), idx, @tagName(panel.panel_type) },
         ) catch {};
-        idx += 1;
     }
     writer.writeAll("]}") catch {};
     return buf.toOwnedSlice(alloc) catch "{\"surfaces\":[]}";
@@ -1245,17 +1250,122 @@ fn browserViewAction(params: json.Value, action: BrowserViewAction) []const u8 {
     return "{\"error\":\"surface not found\"}";
 }
 
-// ── Batch 5: Notification Stubs ─────────────────────────────────────────
+// ── Notification State ─────────────────────────────────────────────────
 
-fn handleNotificationCreate(_: Allocator, _: json.Value) []const u8 {
+const StoredNotification = struct {
+    id: u128,
+    title: [128]u8 = undefined,
+    title_len: usize = 0,
+    body: [256]u8 = undefined,
+    body_len: usize = 0,
+    surface_id: ?u128 = null,
+    is_read: bool = false,
+};
+
+var notification_store_buf: [64]StoredNotification = undefined;
+var notification_count: usize = 0;
+var app_focus_override: ?bool = null;
+
+fn handleNotificationCreate(alloc: Allocator, params: json.Value) []const u8 {
+    _ = alloc;
+    const title = getParamString(params, "title") orelse "notification";
+
+    // If app is "focused", suppress
+    if (app_focus_override) |focused| {
+        if (focused) return "{}";
+    }
+
+    // Replace existing (latest-one-wins)
+    notification_count = 1;
+    var notif = &notification_store_buf[0];
+    notif.* = .{ .id = blk: {
+        var id_buf: [16]u8 = undefined;
+        std.crypto.random.bytes(&id_buf);
+        break :blk std.mem.readInt(u128, &id_buf, .little);
+    } };
+    const tlen = @min(title.len, notif.title.len);
+    @memcpy(notif.title[0..tlen], title[0..tlen]);
+    notif.title_len = tlen;
     return "{}";
 }
 
-fn handleNotificationList(_: Allocator, _: json.Value) []const u8 {
-    return "{\"notifications\":[]}";
+fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []const u8 {
+    _ = alloc;
+    const title = getParamString(params, "title") orelse "notification";
+    const sid_str = getParamString(params, "surface_id");
+
+    if (app_focus_override) |focused| {
+        if (focused) return "{}";
+    }
+
+    if (notification_count >= notification_store_buf.len) notification_count = notification_store_buf.len - 1;
+    var notif = &notification_store_buf[notification_count];
+    notif.* = .{ .id = blk: {
+        var id_buf: [16]u8 = undefined;
+        std.crypto.random.bytes(&id_buf);
+        break :blk std.mem.readInt(u128, &id_buf, .little);
+    } };
+    const tlen = @min(title.len, notif.title.len);
+    @memcpy(notif.title[0..tlen], title[0..tlen]);
+    notif.title_len = tlen;
+    if (sid_str) |s| {
+        const sid = parseId(s);
+        notif.surface_id = sid;
+        // Trigger flash on the notified surface
+        if (sid) |target_sid| {
+            const tm = getTabManager() orelse return "{}";
+            for (tm.workspaces.items) |ws| {
+                if (ws.panels.getPtr(target_sid)) |panel_ptr| {
+                    panel_ptr.*.flash_count += 1;
+                }
+            }
+        }
+    }
+    notification_count += 1;
+    return "{}";
+}
+
+fn handleNotificationList(alloc: Allocator, _: json.Value) []const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"notifications\":[") catch return "{\"notifications\":[]}";
+
+    for (0..notification_count) |i| {
+        if (i > 0) writer.writeAll(",") catch {};
+        const notif = &notification_store_buf[i];
+        const title = notif.title[0..notif.title_len];
+        writer.print(
+            "{{\"title\":\"{s}\",\"is_read\":{s}",
+            .{
+                title,
+                if (notif.is_read) "true" else "false",
+            },
+        ) catch {};
+        if (notif.surface_id) |sid| {
+            const sid_hex = formatId(sid);
+            writer.print(",\"surface_id\":\"{s}\"", .{@as([]const u8, &sid_hex)}) catch {};
+        }
+        writer.writeAll("}") catch {};
+    }
+
+    writer.writeAll("]}") catch {};
+    return buf.toOwnedSlice(alloc) catch "{\"notifications\":[]}";
 }
 
 fn handleNotificationClear(_: Allocator, _: json.Value) []const u8 {
+    notification_count = 0;
+    return "{}";
+}
+
+fn handleAppFocusOverrideSet(_: Allocator, params: json.Value) []const u8 {
+    const state = getParamString(params, "state") orelse return "{\"error\":\"missing state\"}";
+    if (std.mem.eql(u8, state, "active")) {
+        app_focus_override = true;
+    } else if (std.mem.eql(u8, state, "inactive")) {
+        app_focus_override = false;
+    } else if (std.mem.eql(u8, state, "clear")) {
+        app_focus_override = null;
+    }
     return "{}";
 }
 
