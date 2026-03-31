@@ -25,6 +25,9 @@ let
     inherit zig_0_15;
     name = "ghostty-cache";
   };
+
+  # Get the Nix dynamic linker path for the build platform
+  dynamicLinker = "${stdenv.cc.libc}/lib/ld-linux-x86-64.so.2";
 in
   stdenv.mkDerivation {
     pname = "libghostty";
@@ -32,7 +35,7 @@ in
     src = ghosttySrc;
 
     nativeBuildInputs = [
-      git ncurses pkg-config zig_0_15 pkgs.pandoc
+      git ncurses pkg-config zig_0_15 pkgs.pandoc pkgs.patchelf
       gobject-introspection wayland-scanner wayland-protocols
     ];
     inherit buildInputs;
@@ -42,11 +45,6 @@ in
     dontConfigure = true;
     dontInstall = true;
 
-    # Zig compiles and executes build-time tools (framegen) which need
-    # the dynamic linker at /lib64/ld-linux-x86-64.so.2. This doesn't
-    # exist in Nix's pure sandbox. Allow impure build for this derivation.
-    __noChroot = true;
-
     buildPhase = ''
       runHook preBuild
 
@@ -54,10 +52,29 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Use system-provided C++ libraries to avoid Zig's bundled libcxx
-      # hitting musl's bits/alltypes.h in the Nix sandbox (glibc doesn't
-      # provide this file). System packages are pre-compiled by Nix.
-      zig build \
+      # Zig compiles and runs build-time tools (framegen) which get linked
+      # against /lib64/ld-linux-x86-64.so.2. In Nix sandbox this doesn't
+      # exist. Wrap zig to patchelf any freshly-compiled ELF before Zig
+      # tries to execute it.
+      REAL_ZIG="$(which zig)"
+      mkdir -p "$TMPDIR/wrapbin"
+      cat > "$TMPDIR/wrapbin/zig" <<WRAPPER
+      #!/usr/bin/env bash
+      # Run real zig, then if it produced executables in zig-cache, patchelf them
+      "\$REAL_ZIG" "\$@"
+      ret=\$?
+      # Patchelf any new ELFs in zig-cache (best effort, ignore failures)
+      find "$TMPDIR/zig-cache" -type f -executable -newer "$TMPDIR/.zig-stamp" 2>/dev/null | while read f; do
+        file "\$f" 2>/dev/null | grep -q "ELF" && patchelf --set-interpreter ${dynamicLinker} "\$f" 2>/dev/null || true
+      done
+      exit \$ret
+      WRAPPER
+      chmod +x "$TMPDIR/wrapbin/zig"
+      touch "$TMPDIR/.zig-stamp"
+
+      # Use system spirv-cross and glslang (avoids C++ in Zig's sandbox)
+      # Disable SIMD (avoids simdutf/highway C++ deps)
+      PATH="$TMPDIR/wrapbin:$PATH" zig build \
         --system ${deps} \
         -Dapp-runtime=none \
         -Drenderer=opengl \
