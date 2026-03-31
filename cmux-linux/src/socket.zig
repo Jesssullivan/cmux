@@ -682,6 +682,31 @@ fn handleWorkspaceReorder(_: Allocator, params: json.Value) []const u8 {
             const ws = tm.workspaces.orderedRemove(found.index);
             tm.workspaces.insertAssumeCapacity(tidx, ws);
         }
+    } else if (getParamString(params, "before_workspace_id")) |before_str| {
+        const before_id = parseId(before_str) orelse return "{\"error\":\"invalid before_workspace_id\"}";
+        // Find target position and move source before it
+        for (tm.workspaces.items, 0..) |ws, i| {
+            if (ws.id == before_id) {
+                if (i != found.index) {
+                    const src = tm.workspaces.orderedRemove(found.index);
+                    const insert_at = if (found.index < i) i - 1 else i;
+                    tm.workspaces.insertAssumeCapacity(insert_at, src);
+                }
+                break;
+            }
+        }
+    } else if (getParamString(params, "after_workspace_id")) |after_str| {
+        const after_id = parseId(after_str) orelse return "{\"error\":\"invalid after_workspace_id\"}";
+        for (tm.workspaces.items, 0..) |ws, i| {
+            if (ws.id == after_id) {
+                if (i != found.index) {
+                    const src = tm.workspaces.orderedRemove(found.index);
+                    const insert_at = if (found.index <= i) i else i + 1;
+                    tm.workspaces.insertAssumeCapacity(insert_at, src);
+                }
+                break;
+            }
+        }
     }
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
