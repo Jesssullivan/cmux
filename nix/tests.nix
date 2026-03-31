@@ -224,6 +224,11 @@ in {
   in
     pkgs.testers.runNixOSTest {
       name = "socket-test-suite";
+
+      # 30 min global timeout (default is 15 min, too short for
+      # free GitHub runners without KVM acceleration)
+      globalTimeout = 1800;
+
       nodes = {
         machine = {pkgs, ...}: {
           users.groups.cmux = {};
@@ -247,6 +252,11 @@ in {
             ++ (lib.optional (cmuxLinux != null) cmuxLinux);
 
           environment.etc."cmux-tests".source = testSrc;
+
+          # LD_LIBRARY_PATH for cmux-linux runtime deps (libghostty.so)
+          environment.variables.LD_LIBRARY_PATH =
+            lib.optionalString (cmuxLinux != null)
+            (lib.makeLibraryPath [cmuxLinux]);
         };
       };
       testScript = {...}: ''
@@ -255,11 +265,16 @@ in {
         ${
           if cmuxLinux != null
           then ''
+            # Diagnostic: verify cmux-linux is installed
+            machine.succeed("which cmux-linux")
+            machine.succeed("cmux-linux --version 2>&1 || true")
+
             # Start Xvfb
             machine.succeed("Xvfb :99 -screen 0 1280x720x24 +extension GLX &")
-            machine.sleep(1)
+            machine.sleep(2)
+            machine.succeed("test -e /tmp/.X99-lock")
 
-            # Run socket tests against cmux-linux daemon
+            # Start cmux-linux daemon with timeout wrapper
             machine.succeed("""
               su - cmux -c '
                 export DISPLAY=:99
@@ -270,10 +285,23 @@ in {
                 export CMUX_NO_SURFACE=1
                 export CMUX_SOCKET=$XDG_RUNTIME_DIR/cmux.sock
 
-                cmux-linux &
+                echo "Starting cmux-linux daemon..."
+                timeout 30 cmux-linux &
                 CMUX_PID=$!
-                for i in $(seq 1 20); do [ -S "$CMUX_SOCKET" ] && break; sleep 0.25; done
-                [ -S "$CMUX_SOCKET" ] || { echo "Socket not created"; exit 1; }
+                echo "cmux-linux PID: $CMUX_PID"
+
+                echo "Waiting for socket at $CMUX_SOCKET..."
+                for i in $(seq 1 40); do [ -S "$CMUX_SOCKET" ] && break; sleep 0.25; done
+
+                if [ ! -S "$CMUX_SOCKET" ]; then
+                  echo "ERROR: Socket not created after 10s"
+                  echo "Process status:"
+                  kill -0 $CMUX_PID 2>/dev/null && echo "  PID $CMUX_PID alive" || echo "  PID $CMUX_PID dead"
+                  echo "XDG_RUNTIME_DIR contents:"
+                  ls -la $XDG_RUNTIME_DIR/ 2>/dev/null || true
+                  exit 1
+                fi
+                echo "Socket ready"
 
                 cd /etc/cmux-tests
                 PASS=0 FAIL=0 TOTAL=0
@@ -332,7 +360,11 @@ in {
   gtk4-version-check = pkgs.testers.runNixOSTest {
     name = "gtk4-version-check";
     nodes = {
-      machine = {pkgs, lib, ...}: {
+      machine = {
+        pkgs,
+        lib,
+        ...
+      }: {
         users.groups.cmux = {};
         users.users.cmux = {
           isNormalUser = true;

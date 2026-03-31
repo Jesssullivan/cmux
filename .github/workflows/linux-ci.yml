@@ -56,10 +56,12 @@ jobs:
 
       - name: Run socket test suite check (best-effort)
         continue-on-error: true
+        timeout-minutes: 45
         run: nix build .#checks.x86_64-linux.socket-test-suite --print-build-logs
 
       - name: Run graphical flake check (best-effort)
         continue-on-error: true
+        timeout-minutes: 30
         run: nix build .#checks.x86_64-linux.basic-window-check-gnome --print-build-logs
 
   # ── Zig vendor libraries on Linux ──────────────────────────────────
