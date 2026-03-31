@@ -7,8 +7,10 @@
   self,
   system,
   nixpkgs,
+  zigPkg ? null,
   ...
 }: let
+  lib = nixpkgs.lib;
   nixos-version = nixpkgs.lib.trivial.release;
 
   pkgs = import nixpkgs {
@@ -201,6 +203,128 @@ in {
       machine.log("GTK4 + libadwaita runtime libraries present")
     '';
   };
+
+  # Tier 4: Socket test suite (headless, NixOS VM)
+  # Verifies all build deps for cmux-linux socket tests are available.
+  # Once cmux-linux is packaged as a Nix derivation, this will run
+  # the full Python socket test suite against the daemon.
+  # Note: Only available on Linux (NixOS VM tests can't run on Darwin).
+  socket-test-suite = pkgs.testers.runNixOSTest {
+    name = "socket-test-suite";
+    nodes = {
+      machine = {pkgs, lib, ...}: {
+        users.groups.cmux = {};
+        users.users.cmux = {
+          isNormalUser = true;
+          group = "cmux";
+          extraGroups = ["wheel"];
+          hashedPassword = "";
+        };
+
+        # Generous resources for Zig compilation
+        virtualisation.memorySize = 8192;
+        virtualisation.cores = 4;
+
+        environment.systemPackages = with pkgs; [
+          # Build tools
+          pkg-config
+          git
+          python3
+
+          # Display
+          xorg.xorgserver  # Xvfb
+
+          # Rendering
+          mesa
+          mesa.drivers
+
+          # GTK4 stack
+          gtk4
+          gtk4.dev
+          libadwaita
+          libadwaita.dev
+          webkitgtk_6_0
+          webkitgtk_6_0.dev
+          libGL
+
+          # Other deps
+          libsecret
+          libsecret.dev
+          libnotify
+          libnotify.dev
+          fontconfig
+          fontconfig.dev
+          freetype
+          freetype.dev
+          harfbuzz
+          harfbuzz.dev
+          libpng
+          libpng.dev
+          oniguruma
+          zlib
+          zlib.dev
+          bzip2
+          bzip2.dev
+          expat
+          expat.dev
+          libxml2
+          libxml2.dev
+          libxkbcommon
+          libxkbcommon.dev
+          simdutf
+          glslang
+          spirv-cross
+
+          # Wayland
+          wayland
+          wayland.dev
+          wayland-protocols
+          wayland-scanner
+          glib
+          glib.dev
+        ];
+
+        environment.variables.PKG_CONFIG_PATH = lib.makeSearchPath "lib/pkgconfig" [
+          pkgs.gtk4.dev
+          pkgs.libadwaita.dev
+          pkgs.webkitgtk_6_0.dev
+          pkgs.libGL.dev
+          pkgs.libsecret.dev
+          pkgs.libnotify.dev
+          pkgs.fontconfig.dev
+          pkgs.freetype.dev
+          pkgs.harfbuzz.dev
+          pkgs.libpng.dev
+          pkgs.zlib.dev
+          pkgs.bzip2.dev
+          pkgs.expat.dev
+          pkgs.libxml2.dev
+          pkgs.libxkbcommon.dev
+          pkgs.wayland.dev
+          pkgs.glib.dev
+        ];
+      };
+    };
+    testScript = {...}: ''
+      machine.wait_for_unit("multi-user.target")
+      machine.log("Socket test suite starting")
+
+      # TODO: Once cmux-linux is packaged as a Nix derivation,
+      # replace this with a pre-built binary reference.
+      # For now, this test verifies the VM environment has all
+      # required dependencies for building and testing cmux-linux.
+
+      # Verify critical build deps
+      machine.succeed("pkg-config --modversion gtk4")
+      machine.succeed("pkg-config --modversion libadwaita-1")
+      machine.succeed("pkg-config --modversion webkitgtk-6.0")
+      machine.succeed("which python3")
+      machine.succeed("which Xvfb")
+
+      machine.log("Socket test suite: all build deps verified")
+      machine.log("NOTE: Full socket test execution requires cmux-linux Nix package (Phase 6b)")
+    '';
+  });
 
   # Tier 3: GTK4 version floor check
   # Verifies the minimum GTK4 version requirement (4.14) is met.

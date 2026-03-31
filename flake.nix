@@ -157,6 +157,7 @@
       import ./nix/tests.nix {
         inherit nixpkgs self;
         inherit (pkgs.stdenv.hostPlatform) system;
+        zigPkg = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
       });
 
     # ── Overlays ─────────────────────────────────────────────────────
