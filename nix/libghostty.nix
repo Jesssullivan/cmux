@@ -26,15 +26,20 @@ in
     src = ghosttySrc;
 
     nativeBuildInputs = [zig_0_15 pkg-config git ncurses];
-    inherit buildInputs;
+    buildInputs = buildInputs ++ [pkgs.glibc.dev];
 
     dontConfigure = true;
     dontSetZigDefaultFlags = true;
 
+    # Zig needs to find the C library headers in the Nix sandbox
+    env.ZIG_LOCAL_CACHE_DIR = "/tmp/zig-cache";
+    env.ZIG_GLOBAL_CACHE_DIR = "/tmp/zig-global";
+
     buildPhase = ''
-      export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
-      export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
+
+      # Help Zig find the C compiler and sysroot in Nix sandbox
+      export CC="${stdenv.cc}/bin/cc"
 
       zig build \
         --system ${deps} \
@@ -42,7 +47,8 @@ in
         -Drenderer=opengl \
         -Dgtk-wayland=true \
         -Dcpu=baseline \
-        -Doptimize=${optimize}
+        -Doptimize=${optimize} \
+        -Dpie=true
     '';
 
     installPhase = ''
