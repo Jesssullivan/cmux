@@ -34,6 +34,22 @@
         "type": "github"
       }
     },
+    "ghostty-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1774890054,
+        "narHash": "sha256-ha6notgMtleIXsnBzA64p0Rn5nNaEyOlDLopqF2W3ck=",
+        "owner": "Jesssullivan",
+        "repo": "ghostty",
+        "rev": "961f58d46ab38438afd5bf03de3788d7d712a554",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Jesssullivan",
+        "repo": "ghostty",
+        "type": "github"
+      }
+    },
     "nix-vm-test": {
       "inputs": {
         "nixpkgs": [
@@ -70,6 +86,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "ghostty-src": "ghostty-src",
         "nix-vm-test": "nix-vm-test",
         "nixpkgs": "nixpkgs",
         "zig": "zig"

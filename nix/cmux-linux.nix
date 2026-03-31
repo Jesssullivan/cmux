@@ -1,6 +1,9 @@
 # Build cmux-linux GTK4 terminal binary.
 # Links against a pre-built libghostty derivation.
 # No build.zig.zon — only system library linkage.
+#
+# Uses the nixpkgs zig hook for cache management and build phase,
+# with custom source layout to provide libghostty at the expected path.
 {
   lib,
   stdenv,
@@ -8,13 +11,16 @@
   zig_0_15,
   libghostty,
   pkgs,
-}:
-let
+}: let
   buildInputs = import ./build-support/build-inputs.nix {inherit pkgs lib stdenv;};
+  gi_typelib_path = import ./build-support/gi-typelib-path.nix {
+    inherit pkgs lib stdenv;
+  };
 in
   stdenv.mkDerivation {
     pname = "cmux-linux";
     version = "0.73.0-lab";
+
     src = lib.fileset.toSource {
       root = ../.;
       fileset = lib.fileset.unions [
@@ -25,31 +31,40 @@ in
     nativeBuildInputs = [zig_0_15 pkg-config];
     buildInputs = buildInputs ++ [libghostty];
 
-    dontConfigure = true;
+    GI_TYPELIB_PATH = gi_typelib_path;
+
+    # Use zig hook for cache management
     dontSetZigDefaultFlags = true;
 
-    buildPhase = ''
-      export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
-      export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
-      export HOME="$TMPDIR"
-
-      # Symlink libghostty into expected relative path for build.zig
+    # Symlink libghostty before the zig hook's build phase runs
+    preBuild = ''
       mkdir -p ghostty/zig-out/lib ghostty/include
       ln -sf ${libghostty}/lib/* ghostty/zig-out/lib/
       ln -sf ${libghostty}/include/* ghostty/include/
-
       cd cmux-linux
-      zig build -Doptimize=ReleaseFast
     '';
 
+    zigBuildFlags = [
+      "-Doptimize=ReleaseFast"
+    ];
+
+    # Custom install: zig hook installs to wrong path since we cd'd
+    dontUseZigInstall = true;
+
     installPhase = ''
+      runHook preInstall
+
       mkdir -p $out/bin
-      cp cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux
+      cp zig-out/bin/cmux $out/bin/cmux-linux 2>/dev/null || \
+        cp cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux
+
+      runHook postInstall
     '';
 
     meta = with lib; {
       description = "cmux Linux GTK4 terminal multiplexer";
       homepage = "https://github.com/Jesssullivan/cmux";
+      license = licenses.mit;
       platforms = platforms.linux;
     };
   }

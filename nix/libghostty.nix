@@ -1,6 +1,9 @@
 # Build libghostty as a static/shared library from the ghostty source.
 # Uses -Dapp-runtime=none to produce library outputs only (no executable).
 # Reuses ghostty's build.zig.zon.nix for Zig dependency resolution.
+#
+# Aligned with upstream ghostty/nix/package.nix — uses the nixpkgs zig hook
+# (zigBuildFlags + --system) instead of a manual buildPhase.
 {
   lib,
   stdenv,
@@ -12,76 +15,75 @@
   gobject-introspection,
   wayland-protocols,
   wayland-scanner,
+  libxml2,
+  gettext,
+  pandoc,
   ghosttySrc,
   optimize ? "ReleaseFast",
   pkgs,
-}:
-let
+}: let
   gi_typelib_path = import ./build-support/gi-typelib-path.nix {
     inherit pkgs lib stdenv;
   };
   buildInputs = import ./build-support/build-inputs.nix {inherit pkgs lib stdenv;};
-  deps = callPackage (ghosttySrc + "/build.zig.zon.nix") {
-    inherit zig_0_15;
-    name = "ghostty-cache";
-  };
-
-  # Get the Nix dynamic linker path for the build platform
-  dynamicLinker = "${stdenv.cc.libc}/lib/ld-linux-x86-64.so.2";
+  strip = optimize != "Debug" && optimize != "ReleaseSafe";
 in
-  stdenv.mkDerivation {
+  stdenv.mkDerivation (finalAttrs: {
     pname = "libghostty";
     version = "1.3.0-dev";
+
     src = ghosttySrc;
 
+    deps = callPackage (ghosttySrc + "/build.zig.zon.nix") {
+      inherit zig_0_15;
+      name = "ghostty-cache-${finalAttrs.version}";
+    };
+
     nativeBuildInputs = [
-      git ncurses pkg-config zig_0_15 pkgs.pandoc pkgs.patchelf
-      gobject-introspection wayland-scanner wayland-protocols
+      git
+      ncurses
+      pandoc
+      pkg-config
+      zig_0_15
+      gobject-introspection
+      wayland-scanner
+      wayland-protocols
+      libxml2
+      gettext
     ];
+
     inherit buildInputs;
+
+    dontStrip = !strip;
 
     GI_TYPELIB_PATH = gi_typelib_path;
 
-    dontConfigure = true;
-    dontInstall = true;
+    # Use the nixpkgs zig hook (matches upstream ghostty/nix/package.nix)
+    dontSetZigDefaultFlags = true;
 
-    buildPhase = ''
-      runHook preBuild
+    zigBuildFlags = [
+      "--system"
+      "${finalAttrs.deps}"
+      "-Dapp-runtime=none"
+      "-Dgtk-wayland=true"
+      "-Dcpu=baseline"
+      "-Doptimize=${optimize}"
+      "-Dstrip=${lib.boolToString strip}"
+      "-Dpie=true"
+    ];
 
-      export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
-      export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
-      export HOME="$TMPDIR"
+    # Custom install: extract library + headers (not a full app)
+    dontUseZigInstall = true;
 
-      # NOTE: Zig compiles and runs build-time tools (framegen) which need
-      # /lib64/ld-linux-x86-64.so.2. In the Nix sandbox this doesn't exist.
-      # This derivation requires either:
-      # 1. nix-ld on the build host, or
-      # 2. sandbox = false / __noChroot, or
-      # 3. A future Zig version that uses static linking for build tools
-      # See: https://github.com/NixOS/nixpkgs/issues/XXX (Zig sandbox dynamic linker)
-      #
-      # Use system spirv-cross and glslang (avoids C++ musl/glibc conflict)
-      # Disable SIMD (avoids simdutf/highway C++ deps)
-      zig build \
-        --system ${deps} \
-        -Dapp-runtime=none \
-        -Drenderer=opengl \
-        -Dgtk-wayland=true \
-        -Dcpu=baseline \
-        -Doptimize=${optimize} \
-        -Dpie=true \
-        -Dsimd=false \
-        -fsys=spirv-cross \
-        -fsys=glslang
+    installPhase = ''
+      runHook preInstall
 
-      runHook postBuild
-    '';
-
-    postBuild = ''
       mkdir -p $out/lib $out/include
       cp zig-out/lib/libghostty.a $out/lib/ 2>/dev/null || true
       cp zig-out/lib/libghostty.so $out/lib/ 2>/dev/null || true
       cp -r include/* $out/include/
+
+      runHook postInstall
     '';
 
     meta = {
@@ -90,4 +92,4 @@ in
       license = lib.licenses.mit;
       platforms = ["x86_64-linux" "aarch64-linux"];
     };
-  }
+  })
