@@ -49,24 +49,9 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Zig 0.15 + Nix sandbox: C++ deps need glibc but Zig defaults to musl.
-      # Use --libc config + -Dtarget=native-native-gnu for correct headers.
-      # Symlink the dynamic linker so build-time binaries (framegen) can run.
-      cat > "$TMPDIR/zig-libc.conf" <<LIBC
-include_dir=${pkgs.glibc.dev}/include
-sys_include_dir=${pkgs.glibc.dev}/include
-crt_dir=${pkgs.glibc}/lib
-msvc_lib_dir=
-kernel32_lib_dir=
-gcc_dir=
-LIBC
-      mkdir -p "$TMPDIR/lib64"
-      ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 "$TMPDIR/lib64/"
-
-      # Tell the Nix sandbox to bind-mount our fake /lib64
-      export LD_LIBRARY_PATH="${pkgs.glibc}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-      export NIX_ENFORCE_PURITY=0
-
+      # Skip C++ deps that cause musl/glibc header conflicts in Nix sandbox.
+      # simdutf and highway are optional performance optimizations in ghostty;
+      # the build succeeds without them (falls back to scalar implementations).
       zig build \
         --system ${deps} \
         -Dapp-runtime=none \
@@ -75,8 +60,7 @@ LIBC
         -Dcpu=baseline \
         -Doptimize=${optimize} \
         -Dpie=true \
-        -Dtarget=native-native-gnu \
-        --libc "$TMPDIR/zig-libc.conf"
+        -Dsimd=false
 
       runHook postBuild
     '';
