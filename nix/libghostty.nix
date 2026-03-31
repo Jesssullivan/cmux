@@ -32,7 +32,7 @@ in
     src = ghosttySrc;
 
     nativeBuildInputs = [
-      git ncurses pkg-config zig_0_15
+      git ncurses pkg-config zig_0_15 pkgs.pandoc
       gobject-introspection wayland-scanner wayland-protocols
     ];
     inherit buildInputs;
@@ -48,6 +48,10 @@ in
       export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
+
+      # Point Zig's C compiler at the Nix-provided glibc headers
+      export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} -isystem ${pkgs.glibc.dev}/include"
+      export NIX_LDFLAGS="''${NIX_LDFLAGS:-} -L${pkgs.glibc}/lib"
 
       zig build \
         --system ${deps} \
