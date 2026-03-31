@@ -49,9 +49,9 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Skip C++ deps that cause musl/glibc header conflicts in Nix sandbox.
-      # simdutf and highway are optional performance optimizations in ghostty;
-      # the build succeeds without them (falls back to scalar implementations).
+      # Use system-provided C++ libraries to avoid Zig's bundled libcxx
+      # hitting musl's bits/alltypes.h in the Nix sandbox (glibc doesn't
+      # provide this file). System packages are pre-compiled by Nix.
       zig build \
         --system ${deps} \
         -Dapp-runtime=none \
@@ -60,7 +60,9 @@ in
         -Dcpu=baseline \
         -Doptimize=${optimize} \
         -Dpie=true \
-        -Dsimd=false
+        -Dsimd=false \
+        -fsys=spirv-cross \
+        -fsys=glslang
 
       runHook postBuild
     '';
