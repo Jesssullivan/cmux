@@ -62,7 +62,10 @@ in
       runHook preInstall
 
       mkdir -p $out/bin
-      cp cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux
+      # After cd cmux-linux in buildPhase, cwd is cmux-linux/
+      cp zig-out/bin/cmux $out/bin/cmux-linux || \
+        cp ../cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux || \
+        { echo "ERROR: cmux binary not found"; find . -name cmux -type f 2>/dev/null; exit 1; }
 
       runHook postInstall
     '';
