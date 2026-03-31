@@ -58,6 +58,15 @@ in
 
     GI_TYPELIB_PATH = gi_typelib_path;
 
+    # WORKAROUND: Zig compiles and executes build-time tools (framegen,
+    # helpgen, mdgen, props-unigen, symbols-unigen, uucode_build_tables)
+    # which are dynamically-linked ELF binaries with /lib64/ld-linux-x86-64.so.2
+    # as interpreter. This path doesn't exist in the Nix sandbox.
+    # See: https://github.com/ziglang/zig/issues/6350 (still open)
+    # __noChroot allows the build to access the host /lib64.
+    # TODO: Remove when Zig supports configurable build-time dynamic linker.
+    __noChroot = true;
+
     # The zig overlay doesn't provide a setup hook, so we use explicit phases.
     # Flags aligned with upstream ghostty/nix/package.nix.
     dontConfigure = true;
