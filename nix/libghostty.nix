@@ -1,6 +1,6 @@
 # Build libghostty as a static/shared library from the ghostty source.
 # Uses -Dapp-runtime=none to produce library outputs only (no executable).
-# Reuses ghostty's build.zig.zon.nix for Zig dependency resolution.
+# Pattern follows ghostty/nix/package.nix closely.
 {
   lib,
   stdenv,
@@ -9,58 +9,87 @@
   zig_0_15,
   git,
   ncurses,
+  gobject-introspection,
+  wayland-protocols,
+  wayland-scanner,
   ghosttySrc,
   optimize ? "ReleaseFast",
   pkgs,
 }:
 let
+  gi_typelib_path = import ./build-support/gi-typelib-path.nix {
+    inherit pkgs lib stdenv;
+  };
   buildInputs = import ./build-support/build-inputs.nix {inherit pkgs lib stdenv;};
   deps = callPackage (ghosttySrc + "/build.zig.zon.nix") {
     inherit zig_0_15;
     name = "ghostty-cache";
   };
+  strip = optimize != "Debug" && optimize != "ReleaseSafe";
 in
-  stdenv.mkDerivation {
+  stdenv.mkDerivation (finalAttrs: {
     pname = "libghostty";
     version = "1.3.0-dev";
-    src = ghosttySrc;
 
-    nativeBuildInputs = [zig_0_15 pkg-config git ncurses];
-    buildInputs = buildInputs ++ [pkgs.glibc.dev];
+    src = lib.fileset.toSource {
+      root = ghosttySrc;
+      fileset = lib.fileset.intersection (lib.fileset.fromSource (lib.sources.cleanSource ghosttySrc)) (
+        lib.fileset.unions [
+          (ghosttySrc + "/include")
+          (ghosttySrc + "/pkg")
+          (ghosttySrc + "/src")
+          (ghosttySrc + "/vendor")
+          (ghosttySrc + "/build.zig")
+          (ghosttySrc + "/build.zig.zon")
+          (ghosttySrc + "/build.zig.zon.nix")
+        ]
+      );
+    };
 
-    dontConfigure = true;
+    inherit deps;
+
+    nativeBuildInputs = [
+      git
+      ncurses
+      pkg-config
+      zig_0_15
+      gobject-introspection
+      wayland-scanner
+      wayland-protocols
+    ];
+
+    inherit buildInputs;
+
+    dontStrip = !strip;
+
+    GI_TYPELIB_PATH = gi_typelib_path;
+
     dontSetZigDefaultFlags = true;
 
-    # Zig needs to find the C library headers in the Nix sandbox
-    env.ZIG_LOCAL_CACHE_DIR = "/tmp/zig-cache";
-    env.ZIG_GLOBAL_CACHE_DIR = "/tmp/zig-global";
+    # Use zigBuildFlags (processed by stdenv Zig hook) instead of manual buildPhase
+    zigBuildFlags = [
+      "--system"
+      "${finalAttrs.deps}"
+      "-Dapp-runtime=none"
+      "-Drenderer=opengl"
+      "-Dgtk-wayland=true"
+      "-Dcpu=baseline"
+      "-Doptimize=${optimize}"
+      "-Dstrip=${lib.boolToString strip}"
+    ];
 
-    buildPhase = ''
-      export HOME="$TMPDIR"
-
-      # Help Zig find the C compiler and sysroot in Nix sandbox
-      export CC="${stdenv.cc}/bin/cc"
-
-      zig build \
-        --system ${deps} \
-        -Dapp-runtime=none \
-        -Drenderer=opengl \
-        -Dgtk-wayland=true \
-        -Dcpu=baseline \
-        -Doptimize=${optimize} \
-        -Dpie=true
-    '';
-
-    installPhase = ''
+    # libghostty outputs go to zig-out/ — copy to $out
+    postInstall = ''
       mkdir -p $out/lib $out/include
       cp zig-out/lib/libghostty.a $out/lib/ 2>/dev/null || true
       cp zig-out/lib/libghostty.so $out/lib/ 2>/dev/null || true
       cp -r include/* $out/include/
     '';
 
-    meta = with lib; {
+    meta = {
       description = "Ghostty terminal emulation library (libghostty)";
       homepage = "https://github.com/Jesssullivan/ghostty";
-      platforms = platforms.linux;
+      license = lib.licenses.mit;
+      platforms = ["x86_64-linux" "aarch64-linux"];
     };
-  }
+  })
