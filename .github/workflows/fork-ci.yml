@@ -76,6 +76,10 @@ jobs:
         with:
           submodules: recursive
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # relaxed sandbox allows __noChroot derivations (needed for
+          # libghostty: Zig build-time tools require /lib64 dynamic linker)
+          extra-conf: "sandbox = relaxed"
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check --print-build-logs
       - run: nix develop --command bash -c 'echo "zig $(zig version) — dev shell OK"'
