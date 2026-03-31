@@ -31,20 +31,8 @@ in
     pname = "libghostty";
     version = "1.3.0-dev";
 
-    src = lib.fileset.toSource {
-      root = ghosttySrc;
-      fileset = lib.fileset.intersection (lib.fileset.fromSource (lib.sources.cleanSource ghosttySrc)) (
-        lib.fileset.unions [
-          (ghosttySrc + "/include")
-          (ghosttySrc + "/pkg")
-          (ghosttySrc + "/src")
-          (ghosttySrc + "/vendor")
-          (ghosttySrc + "/build.zig")
-          (ghosttySrc + "/build.zig.zon")
-          (ghosttySrc + "/build.zig.zon.nix")
-        ]
-      );
-    };
+    # ghosttySrc is a flake input (store path), use directly as src
+    src = ghosttySrc;
 
     inherit deps;
 
