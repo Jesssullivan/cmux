@@ -35,7 +35,7 @@ def main() -> int:
 
         # Rename the second created workspace
         target_ws = created[1]
-        c.rename_workspace(target_ws, "Renamed-WS")
+        c.rename_workspace("Renamed-WS", workspace=target_ws)
         time.sleep(0.05)
 
         ws_list = c.list_workspaces()
