@@ -32,6 +32,10 @@ jobs:
           submodules: recursive
 
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # relaxed sandbox allows __noChroot derivations (needed for
+          # libghostty: Zig build-time tools require /lib64 dynamic linker)
+          extra-conf: "sandbox = relaxed"
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Verify dev shell
