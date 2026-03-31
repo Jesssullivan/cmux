@@ -58,32 +58,41 @@ in
 
     GI_TYPELIB_PATH = gi_typelib_path;
 
-    # Use the nixpkgs zig hook (matches upstream ghostty/nix/package.nix)
-    dontSetZigDefaultFlags = true;
+    # The zig overlay doesn't provide a setup hook, so we use explicit phases.
+    # Flags aligned with upstream ghostty/nix/package.nix.
+    dontConfigure = true;
+    dontInstall = true;
 
-    zigBuildFlags = [
-      "--system"
-      "${finalAttrs.deps}"
-      "-Dapp-runtime=none"
-      "-Dgtk-wayland=true"
-      "-Dcpu=baseline"
-      "-Doptimize=${optimize}"
-      "-Dstrip=${lib.boolToString strip}"
-      "-Dpie=true"
-    ];
+    buildPhase = ''
+      runHook preBuild
 
-    # Custom install: extract library + headers (not a full app)
-    dontUseZigInstall = true;
+      export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-cache"
+      export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+      export HOME="$TMPDIR"
 
-    installPhase = ''
-      runHook preInstall
+      zig build \
+        --system ${finalAttrs.deps} \
+        -Dapp-runtime=none \
+        -Dgtk-wayland=true \
+        -Dcpu=baseline \
+        -Doptimize=${optimize} \
+        -Dstrip=${lib.boolToString strip} \
+        -Dpie=true \
+        -j$NIX_BUILD_CORES
 
+      runHook postBuild
+    '';
+
+    postBuild = ''
       mkdir -p $out/lib $out/include
-      cp zig-out/lib/libghostty.a $out/lib/ 2>/dev/null || true
-      cp zig-out/lib/libghostty.so $out/lib/ 2>/dev/null || true
+      # Library outputs from zig build (static and/or shared)
+      cp zig-out/lib/libghostty.a $out/lib/ || echo "WARN: no static lib"
+      cp zig-out/lib/libghostty.so $out/lib/ || echo "WARN: no shared lib"
+      # Headers for downstream consumers
       cp -r include/* $out/include/
-
-      runHook postInstall
+      # Verify at least one library was produced
+      test -f $out/lib/libghostty.a || test -f $out/lib/libghostty.so || \
+        { echo "ERROR: no libghostty library produced"; exit 1; }
     '';
 
     meta = {
