@@ -70,6 +70,9 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
+      # -fsys: use system spirv-cross and glslang (avoids C++ compilation
+      #   errors from building these complex C++ libs in Nix sandbox)
+      # -Dsimd=false: skip simdutf/highway C++ deps (musl/glibc conflict)
       zig build \
         --system ${finalAttrs.deps} \
         -Dapp-runtime=none \
@@ -78,6 +81,9 @@ in
         -Doptimize=${optimize} \
         -Dstrip=${lib.boolToString strip} \
         -Dpie=true \
+        -Dsimd=false \
+        -fsys=spirv-cross \
+        -fsys=glslang \
         -j$NIX_BUILD_CORES
 
       runHook postBuild
