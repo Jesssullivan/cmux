@@ -132,29 +132,50 @@ pub const SocketServer = struct {
             return 1;
         };
 
-        // Read request
+        // Register client fd for persistent reading via GLib main loop
+        _ = c.gtk.g_unix_fd_add(client_fd, c.gtk.G_IO_IN, &onClientData, self);
+        return 1;
+    }
+
+    /// GLib callback for data on a connected client.
+    fn onClientData(fd: c_int, _: c_uint, data: ?*anyopaque) callconv(.c) c.gtk.gboolean {
+        const self: *SocketServer = @ptrCast(@alignCast(data));
+
         var buf: [8192]u8 = undefined;
-        const n = posix.read(client_fd, &buf) catch {
-            posix.close(client_fd);
-            return 1;
+        const n = posix.read(fd, &buf) catch {
+            posix.close(fd);
+            return 0; // Remove source
         };
 
-        if (n > 0) {
-            const response = dispatch(self.alloc, buf[0..n]) catch |err| blk: {
-                log.warn("Dispatch error: {}", .{err});
-                break :blk "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"dispatch failed\"}}\n";
-            };
-            _ = posix.write(client_fd, response) catch {};
-            // Free dynamically allocated responses (not comptime strings)
-            if (response.len > 0 and response[0] != 0) {
-                // Only free if it was allocated (heuristic: comptime strings are in .rodata)
-                // We use a simple check: allocated responses from our formatters always start with '{'
-                // and are longer than typical static error strings. We track this via the arena pattern below.
+        if (n == 0) {
+            // Client disconnected
+            posix.close(fd);
+            return 0; // Remove source
+        }
+
+        // Process each newline-delimited request in the buffer
+        var remaining = buf[0..n];
+        while (remaining.len > 0) {
+            const newline = std.mem.indexOf(u8, remaining, "\n");
+            const line = if (newline) |nl| remaining[0..nl] else remaining;
+            if (line.len > 0) {
+                const response = dispatch(self.alloc, line) catch |err| blk: {
+                    log.warn("Dispatch error: {}", .{err});
+                    break :blk "{\"id\":0,\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"dispatch failed\"}}\n";
+                };
+                _ = posix.write(fd, response) catch {
+                    posix.close(fd);
+                    return 0;
+                };
+            }
+            if (newline) |nl| {
+                remaining = remaining[nl + 1 ..];
+            } else {
+                break;
             }
         }
 
-        posix.close(client_fd);
-        return 1;
+        return 1; // Keep watching
     }
 };
 
@@ -225,6 +246,9 @@ const methods = .{
     .{ "notification.create", handleNotificationCreate },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
+    .{ "debug.app.activate", handleDebugAppActivate },
+    .{ "debug.flash.count", handleDebugFlashCount },
+    .{ "debug.flash.reset", handleDebugFlashReset },
 };
 
 /// Parse and dispatch a JSON-RPC request, return the full response line.
@@ -293,6 +317,10 @@ fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const
         if (ws.id == target_id) return .{ .ws = ws, .index = i };
     }
     return null;
+}
+
+fn isNoSurface() bool {
+    return std.posix.getenv("CMUX_NO_SURFACE") != null;
 }
 
 fn getParamString(params: json.Value, key: []const u8) ?[]const u8 {
@@ -518,8 +546,11 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     else
         .horizontal;
 
-    // Create new panel
-    const panel = ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
+    // Create new panel (mock in test mode to avoid GL crash)
+    const panel = if (isNoSurface())
+        ws.createMockPanel(.terminal) catch return "{\"error\":\"create mock panel failed\"}"
+    else
+        ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
 
     // Split the focused pane (or root)
     if (ws.root_node) |root| {
@@ -531,8 +562,10 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
 
-    // Rebuild widget tree
-    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    // Rebuild widget tree (skip GTK calls in test mode — not thread-safe)
+    if (!isNoSurface()) {
+        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    }
     ws.focused_panel_id = panel.id;
 
     const panel_hex = formatId(panel.id);
@@ -570,9 +603,11 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
         }
     }
 
-    // Rebuild widget tree
-    if (ws.root_node) |new_root| {
-        ws.content_widget = split_tree.buildWidget(new_root);
+    // Rebuild widget tree (skip GTK calls in test mode)
+    if (!isNoSurface()) {
+        if (ws.root_node) |new_root| {
+            ws.content_widget = split_tree.buildWidget(new_root);
+        }
     }
 
     return "{}";
@@ -660,7 +695,10 @@ fn handleWindowFocus(_: Allocator, _: json.Value) []const u8 {
 fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
-    const panel = ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
+    const panel = if (isNoSurface())
+        ws.createMockPanel(.terminal) catch return "{\"error\":\"create mock panel failed\"}"
+    else
+        ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
 
     // Add to split tree
     if (ws.root_node) |root| {
@@ -672,7 +710,9 @@ fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
-    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    if (!isNoSurface()) {
+        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    }
     ws.focused_panel_id = panel.id;
 
     const panel_hex = formatId(panel.id);
@@ -744,8 +784,26 @@ fn handleSurfaceHealth(alloc: Allocator, params: json.Value) []const u8 {
     return buf.toOwnedSlice(alloc) catch "{\"surfaces\":[]}";
 }
 
-fn handleSurfaceTriggerFlash(_: Allocator, _: json.Value) []const u8 {
-    return "{}"; // Visual feedback stub
+fn handleSurfaceTriggerFlash(_: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    const id_str = getParamString(params, "surface_id") orelse {
+        // Flash the focused surface
+        const ws = tm.selectedWorkspace() orelse return "{}";
+        if (ws.focused_panel_id) |fid| {
+            if (ws.panels.getPtr(fid)) |panel_ptr| {
+                panel_ptr.*.flash_count += 1;
+            }
+        }
+        return "{}";
+    };
+    const target_id = parseId(id_str) orelse return "{}";
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.getPtr(target_id)) |panel_ptr| {
+            panel_ptr.*.flash_count += 1;
+            return "{}";
+        }
+    }
+    return "{}";
 }
 
 fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
@@ -854,8 +912,10 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused pane\"}";
     };
 
-    // Create a new workspace for the broken pane
+    // Create a new workspace for the broken pane, preserving current selection
+    const prev_selected = tm.selected_index;
     const new_ws = tm.createWorkspace() catch return "{\"error\":\"create workspace failed\"}";
+    tm.selected_index = prev_selected;
     if (window.getSidebar()) |sb| sb.refresh();
 
     // TODO: actually transfer the panel from old workspace to new
@@ -904,7 +964,10 @@ fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
     const url = getParamString(params, "url");
 
-    const panel = ws.createBrowserPanel(url) catch return "{\"error\":\"create browser failed\"}";
+    const panel = if (isNoSurface())
+        ws.createMockPanel(.browser) catch return "{\"error\":\"create mock browser failed\"}"
+    else
+        ws.createBrowserPanel(url) catch return "{\"error\":\"create browser failed\"}";
 
     // Add to split tree
     if (ws.root_node) |root| {
@@ -915,9 +978,11 @@ fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
-    ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+    if (!isNoSurface()) {
+        ws.content_widget = split_tree.buildWidget(ws.root_node.?);
+        if (window.getSidebar()) |sb| sb.refresh();
+    }
     ws.focused_panel_id = panel.id;
-    if (window.getSidebar()) |sb| sb.refresh();
 
     const panel_hex = formatId(panel.id);
     return std.fmt.allocPrint(alloc, "{{\"surface_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
@@ -1157,5 +1222,35 @@ fn handleNotificationList(_: Allocator, _: json.Value) []const u8 {
 }
 
 fn handleNotificationClear(_: Allocator, _: json.Value) []const u8 {
+    return "{}";
+}
+
+// ── Debug/Test Helpers ────────────────────────────────────────────────
+
+fn handleDebugAppActivate(_: Allocator, _: json.Value) []const u8 {
+    // No-op on Linux (macOS activates NSApp)
+    return "{}";
+}
+
+fn handleDebugFlashCount(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"count\":0}";
+    const id_str = getParamString(params, "surface_id") orelse return "{\"count\":0}";
+    const target_id = parseId(id_str) orelse return "{\"count\":0}";
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id)) |panel| {
+            return std.fmt.allocPrint(alloc, "{{\"count\":{d}}}", .{panel.flash_count}) catch "{\"count\":0}";
+        }
+    }
+    return "{\"count\":0}";
+}
+
+fn handleDebugFlashReset(_: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{}";
+    for (tm.workspaces.items) |ws| {
+        var it = ws.panels.valueIterator();
+        while (it.next()) |panel_ptr| {
+            panel_ptr.*.flash_count = 0;
+        }
+    }
     return "{}";
 }

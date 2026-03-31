@@ -29,6 +29,7 @@ pub const Panel = struct {
     tty_name: ?[]const u8 = null,
     surface: c.ghostty.ghostty_surface_t = null,
     widget: ?*c.GtkWidget = null,
+    flash_count: u32 = 0,
 };
 
 pub const StatusEntry = struct {
@@ -126,6 +127,20 @@ pub const Workspace = struct {
         const widget = try @import("browser.zig").BrowserView.create(url);
         panel.widget = widget;
 
+        try self.panels.put(self.alloc, id, panel);
+        self.focused_panel_id = id;
+        return panel;
+    }
+
+    /// Create a mock panel for test mode (no GL surface, no GTK widget).
+    /// Used when CMUX_NO_SURFACE is set to avoid GL and GTK thread-safety crashes.
+    pub fn createMockPanel(self: *Workspace, panel_type: PanelType) !*Panel {
+        const id = generateId();
+        const panel = try self.alloc.create(Panel);
+        panel.* = .{
+            .id = id,
+            .panel_type = panel_type,
+        };
         try self.panels.put(self.alloc, id, panel);
         self.focused_panel_id = id;
         return panel;

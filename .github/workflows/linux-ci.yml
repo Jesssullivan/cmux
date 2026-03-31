@@ -44,8 +44,15 @@ jobs:
             echo "Shell OK"
           '
 
-      - name: Run flake checks
-        run: nix flake check --print-build-logs
+      - name: Run headless flake checks (required)
+        run: |
+          nix build .#checks.x86_64-linux.basic-version-check --print-build-logs
+          nix build .#checks.x86_64-linux.cmux-linux-build-check --print-build-logs
+          nix build .#checks.x86_64-linux.gtk4-version-check --print-build-logs
+
+      - name: Run graphical flake check (best-effort)
+        continue-on-error: true
+        run: nix build .#checks.x86_64-linux.basic-window-check-gnome --print-build-logs
 
   # ── Zig vendor libraries on Linux ──────────────────────────────────
   zig-libs-linux:

@@ -82,6 +82,8 @@ pub const Sidebar = struct {
 
     /// Rebuild sidebar rows from the tab manager's workspace list.
     pub fn refresh(self: *Sidebar) void {
+        // Skip GTK widget operations in test mode (not thread-safe from socket handler)
+        if (std.posix.getenv("CMUX_NO_SURFACE") != null) return;
         const list_box = self.list_box orelse return;
         const tm = self.tab_manager orelse return;
 

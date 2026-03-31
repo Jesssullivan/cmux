@@ -60,20 +60,24 @@ pub const TabManager = struct {
             ws.root_node = try split_tree.createLeaf(self.alloc, panel.id, panel.widget);
             ws.content_widget = split_tree.buildWidget(ws.root_node.?);
         } else {
-            // Empty workspace — use a placeholder label widget
-            ws.content_widget = @ptrCast(c.gtk.gtk_label_new("cmux test mode"));
+            // Test mode: create a mock panel so workspace has a surface for socket tests
+            const panel = try ws.createMockPanel(.terminal);
+            ws.root_node = try split_tree.createLeaf(ws.alloc, panel.id, panel.widget);
+            ws.content_widget = split_tree.buildWidget(ws.root_node.?);
         }
 
         // Add to workspace list
         try self.workspaces.append(self.alloc, ws);
         const idx = self.workspaces.items.len - 1;
 
-        // Add tab page in AdwTabView
-        if (self.tab_view) |tv| {
-            if (ws.content_widget) |widget| {
-                const page = c.gtk.adw_tab_view_append(tv, widget);
-                if (page) |p| {
-                    c.gtk.adw_tab_page_set_title(p, ws.displayTitle().ptr);
+        // Add tab page in AdwTabView (skip in test mode — GTK calls must be on main thread)
+        if (!no_surface) {
+            if (self.tab_view) |tv| {
+                if (ws.content_widget) |widget| {
+                    const page = c.gtk.adw_tab_view_append(tv, widget);
+                    if (page) |p| {
+                        c.gtk.adw_tab_page_set_title(p, ws.displayTitle().ptr);
+                    }
                 }
             }
         }
@@ -88,12 +92,15 @@ pub const TabManager = struct {
 
         const ws = self.workspaces.orderedRemove(index);
 
-        // Remove from AdwTabView
-        if (self.tab_view) |tv| {
-            if (ws.content_widget) |widget| {
-                const page = c.gtk.adw_tab_view_get_page(tv, widget);
-                if (page) |p| {
-                    c.gtk.adw_tab_view_close_page(tv, p);
+        // Remove from AdwTabView (skip in test mode — GTK calls must be on main thread)
+        const no_surface = std.posix.getenv("CMUX_NO_SURFACE") != null;
+        if (!no_surface) {
+            if (self.tab_view) |tv| {
+                if (ws.content_widget) |widget| {
+                    const page = c.gtk.adw_tab_view_get_page(tv, widget);
+                    if (page) |p| {
+                        c.gtk.adw_tab_view_close_page(tv, p);
+                    }
                 }
             }
         }
@@ -116,12 +123,16 @@ pub const TabManager = struct {
         if (index >= self.workspaces.items.len) return;
         self.selected_index = index;
 
-        if (self.tab_view) |tv| {
-            const ws = self.workspaces.items[index];
-            if (ws.content_widget) |widget| {
-                const page = c.gtk.adw_tab_view_get_page(tv, widget);
-                if (page) |p| {
-                    c.gtk.adw_tab_view_set_selected_page(tv, p);
+        // Skip GTK calls in test mode — not thread-safe from socket handler
+        const no_surface = std.posix.getenv("CMUX_NO_SURFACE") != null;
+        if (!no_surface) {
+            if (self.tab_view) |tv| {
+                const ws = self.workspaces.items[index];
+                if (ws.content_widget) |widget| {
+                    const page = c.gtk.adw_tab_view_get_page(tv, widget);
+                    if (page) |p| {
+                        c.gtk.adw_tab_view_set_selected_page(tv, p);
+                    }
                 }
             }
         }
@@ -142,6 +153,7 @@ pub const TabManager = struct {
     /// Update tab title for a workspace.
     pub fn updateTabTitle(self: *TabManager, ws: *Workspace) void {
         if (self.tab_view == null) return;
+        if (std.posix.getenv("CMUX_NO_SURFACE") != null) return;
         const tv = self.tab_view.?;
         if (ws.content_widget) |widget| {
             const page = c.gtk.adw_tab_view_get_page(tv, widget);
