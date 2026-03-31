@@ -49,23 +49,23 @@ in
       export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
       export HOME="$TMPDIR"
 
-      # Zig's bundled libcxx includes musl's bits/alltypes.h which doesn't
-      # exist on glibc systems. Provide a minimal shim with the types that
-      # libcxx's __mbstate_t.h needs.
-      mkdir -p "$TMPDIR/zig-shim/bits"
-      cat > "$TMPDIR/zig-shim/bits/alltypes.h" <<'EOF'
-      #ifndef _BITS_ALLTYPES_H
-      #define _BITS_ALLTYPES_H
-      #include <stddef.h>
-      #include <stdint.h>
-      typedef unsigned wint_t;
-      typedef struct { unsigned __opaque1, __opaque2; } mbstate_t;
-      typedef long blksize_t;
-      typedef long blkcnt_t;
-      #endif
-      EOF
-      export C_INCLUDE_PATH="$TMPDIR/zig-shim''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
-      export CPLUS_INCLUDE_PATH="$TMPDIR/zig-shim''${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
+      # Zig 0.15 + Nix sandbox: C++ deps need glibc but Zig defaults to musl.
+      # Use --libc config + -Dtarget=native-native-gnu for correct headers.
+      # Symlink the dynamic linker so build-time binaries (framegen) can run.
+      cat > "$TMPDIR/zig-libc.conf" <<LIBC
+include_dir=${pkgs.glibc.dev}/include
+sys_include_dir=${pkgs.glibc.dev}/include
+crt_dir=${pkgs.glibc}/lib
+msvc_lib_dir=
+kernel32_lib_dir=
+gcc_dir=
+LIBC
+      mkdir -p "$TMPDIR/lib64"
+      ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 "$TMPDIR/lib64/"
+
+      # Tell the Nix sandbox to bind-mount our fake /lib64
+      export LD_LIBRARY_PATH="${pkgs.glibc}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      export NIX_ENFORCE_PURITY=0
 
       zig build \
         --system ${deps} \
@@ -74,7 +74,9 @@ in
         -Dgtk-wayland=true \
         -Dcpu=baseline \
         -Doptimize=${optimize} \
-        -Dpie=true
+        -Dpie=true \
+        -Dtarget=native-native-gnu \
+        --libc "$TMPDIR/zig-libc.conf"
 
       runHook postBuild
     '';
