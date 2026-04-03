@@ -19,14 +19,11 @@ pub fn onAction(
 }
 
 /// Read clipboard callback: libghostty wants clipboard contents.
-/// Returns false when clipboard data is not available.
 pub fn onReadClipboard(
     _: ?*anyopaque,
     _: c_uint,
     _: ?*anyopaque,
-) callconv(.c) bool {
-    return false;
-}
+) callconv(.c) void {}
 
 /// Confirm read clipboard callback.
 pub fn onConfirmReadClipboard(
