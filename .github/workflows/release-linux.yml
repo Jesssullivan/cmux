@@ -106,9 +106,9 @@ jobs:
           cat > "${PKG}/DEBIAN/postinst" <<'POSTINST'
           #!/bin/sh
           set -e
-          udevadm control --reload-rules 2>/dev/null || true
-          udevadm trigger 2>/dev/null || true
           gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+          udevadm control --reload-rules 2>/dev/null || true
+          udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
           POSTINST
           sed -i 's/^          //' "${PKG}/DEBIAN/postinst"
           chmod 755 "${PKG}/DEBIAN/postinst"
@@ -127,13 +127,13 @@ jobs:
             "${PKG}/usr/share/applications/com.jesssullivan.cmux.desktop"
           install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml \
             "${PKG}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
-          for size in 128 256; do
+          for size in 16 128 256 512; do
             install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
               "${PKG}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
           done
 
           # udev rules for FIDO2/U2F hardware keys
-          install -Dm644 dist/linux/70-u2f.rules "${PKG}/etc/udev/rules.d/70-u2f.rules"
+          install -Dm644 dist/linux/70-u2f.rules "${PKG}/usr/lib/udev/rules.d/70-u2f.rules"
 
           dpkg-deb --build "${PKG}"
           echo "Built: ${PKG}.deb ($(du -h "${PKG}.deb" | cut -f1))"
@@ -142,7 +142,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           STAGING="cmux-${VERSION}-linux-amd64"
-          mkdir -p "${STAGING}"/{bin,lib,share/{applications,metainfo,icons/hicolor/{128x128,256x256}/apps},etc/udev/rules.d}
+          mkdir -p "${STAGING}"/{bin,lib,share/{applications,metainfo,icons/hicolor/{16x16,128x128,256x256,512x512}/apps},lib/udev/rules.d}
 
           cp cmux-linux/zig-out/bin/cmux "${STAGING}/bin/"
           cp ghostty/zig-out/lib/libghostty.so "${STAGING}/lib/"
@@ -151,9 +151,11 @@ jobs:
           fi
           cp dist/linux/com.jesssullivan.cmux.desktop "${STAGING}/share/applications/"
           cp dist/linux/com.jesssullivan.cmux.metainfo.xml "${STAGING}/share/metainfo/"
-          cp dist/linux/icons/com.jesssullivan.cmux_128x128.png "${STAGING}/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png"
-          cp dist/linux/icons/com.jesssullivan.cmux_256x256.png "${STAGING}/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png"
-          cp dist/linux/70-u2f.rules "${STAGING}/etc/udev/rules.d/"
+          for size in 16 128 256 512; do
+            cp "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${STAGING}/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          cp dist/linux/70-u2f.rules "${STAGING}/lib/udev/rules.d/"
 
           cat > "${STAGING}/install.sh" <<'INSTALL'
           #!/bin/sh
@@ -164,9 +166,11 @@ jobs:
           [ -f bin/cmuxd ] && install -Dm755 bin/cmuxd "$PREFIX/bin/cmuxd"
           install -Dm644 share/applications/com.jesssullivan.cmux.desktop "$PREFIX/share/applications/com.jesssullivan.cmux.desktop"
           install -Dm644 share/metainfo/com.jesssullivan.cmux.metainfo.xml "$PREFIX/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
-          install -Dm644 share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png "$PREFIX/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png"
-          install -Dm644 share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png "$PREFIX/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png"
-          install -Dm644 etc/udev/rules.d/70-u2f.rules /etc/udev/rules.d/70-u2f.rules
+          for size in 16 128 256 512; do
+            install -Dm644 "share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png" \
+              "$PREFIX/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          install -Dm644 lib/udev/rules.d/70-u2f.rules /usr/lib/udev/rules.d/70-u2f.rules
           echo "Installed cmux to $PREFIX"
           INSTALL
           chmod +x "${STAGING}/install.sh"
@@ -264,9 +268,11 @@ jobs:
           fi
           install -Dm644 dist/linux/com.jesssullivan.cmux.desktop "${BUILDROOT}/usr/share/applications/com.jesssullivan.cmux.desktop"
           install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml "${BUILDROOT}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
-          install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png "${BUILDROOT}/usr/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png"
-          install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png "${BUILDROOT}/usr/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png"
-          install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}/etc/udev/rules.d/70-u2f.rules"
+          for size in 16 128 256 512; do
+            install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${BUILDROOT}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}/usr/lib/udev/rules.d/70-u2f.rules"
 
           # Generate spec from template with correct version
           sed "s/^Version:.*/Version:        ${VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
