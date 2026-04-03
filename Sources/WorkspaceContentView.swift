@@ -225,6 +225,7 @@ struct WorkspaceContentView: View {
     @ObservedObject var workspace: Workspace
     let isWorkspaceVisible: Bool
     let isWorkspaceInputActive: Bool
+    let isFullScreen: Bool
     let workspacePortalPriority: Int
     let onThemeRefreshRequest: ((
         _ reason: String,
@@ -262,6 +263,7 @@ struct WorkspaceContentView: View {
         // Inactive workspaces are kept alive in a ZStack (for state preservation) but their
         // AppKit-backed views can still intercept drags. Disable drop acceptance for them.
         let _ = { workspace.bonsplitController.isInteractive = isWorkspaceInputActive }()
+
 
         // Wire up file drop handling so bonsplit's PaneDragContainerView can forward
         // Finder file drops to the correct terminal panel.
@@ -376,15 +378,9 @@ struct WorkspaceContentView: View {
         }
 
         Group {
-            if isMinimalMode {
+            if isMinimalMode && !isFullScreen {
                 bonsplitView
                     .ignoresSafeArea(.container, edges: .top)
-                    .overlay(alignment: .top) {
-                        if isWorkspaceInputActive {
-                            TitlebarDoubleClickMonitorView()
-                                .frame(height: WorkspaceTitlebarInteractionMetrics.minimalModeTopStripHeight)
-                        }
-                    }
             } else {
                 bonsplitView
             }
