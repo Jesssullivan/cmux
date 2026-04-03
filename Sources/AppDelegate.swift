@@ -426,6 +426,17 @@ enum FinderServicePathResolver {
         return canonical
     }
 
+    private static func normalizedComparisonURL(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    private static func isSameOrDescendant(_ url: URL, of rootURL: URL) -> Bool {
+        let urlPathComponents = normalizedComparisonURL(url).pathComponents
+        let rootPathComponents = normalizedComparisonURL(rootURL).pathComponents
+        guard urlPathComponents.count >= rootPathComponents.count else { return false }
+        return Array(urlPathComponents.prefix(rootPathComponents.count)) == rootPathComponents
+    }
+
     private static func resolvedDirectoryURL(from url: URL) -> URL {
         let standardized = url.standardizedFileURL
         if standardized.hasDirectoryPath {
@@ -438,12 +449,18 @@ enum FinderServicePathResolver {
         return standardized.deletingLastPathComponent()
     }
 
-    static func orderedUniqueDirectories(from pathURLs: [URL]) -> [String] {
+    static func orderedUniqueDirectories(
+        from pathURLs: [URL],
+        excludingDescendantsOf excludedRootURLs: [URL] = []
+    ) -> [String] {
         var seen: Set<String> = []
         var directories: [String] = []
 
         for url in pathURLs {
             let directoryURL = resolvedDirectoryURL(from: url)
+            guard !excludedRootURLs.contains(where: { isSameOrDescendant(directoryURL, of: $0) }) else {
+                continue
+            }
             let path = canonicalDirectoryPath(directoryURL.path(percentEncoded: false))
             guard !path.isEmpty else { continue }
             if seen.insert(path).inserted {
@@ -1620,10 +1637,10 @@ func commandPaletteSelectionDeltaForKeyboardNavigation(
 
     if normalizedFlags == [.control] {
         // Control modifiers can surface as either printable chars or ASCII control chars.
+        // Keep Emacs-style next/previous navigation, but leave other control bindings
+        // (for example Ctrl+K text editing in the palette search field) to AppKit.
         if keyCode == 45 || normalizedChars == "n" || normalizedChars == "\u{0e}" { return 1 }    // Ctrl+N
         if keyCode == 35 || normalizedChars == "p" || normalizedChars == "\u{10}" { return -1 }   // Ctrl+P
-        if keyCode == 38 || normalizedChars == "j" || normalizedChars == "\u{0a}" { return 1 }    // Ctrl+J
-        if keyCode == 40 || normalizedChars == "k" || normalizedChars == "\u{0b}" { return -1 }   // Ctrl+K
     }
 
     return nil
@@ -1851,6 +1868,115 @@ func shouldRouteCommandEquivalentDirectlyToMainMenu(_ event: NSEvent) -> Bool {
     return true
 }
 
+private enum BrowserFindCommandEquivalent {
+    case find
+    case findNext
+    case findPrevious
+    case hideFind
+    case useSelection
+
+    var keepsCmuxBrowserFindBarOwnershipWhenVisible: Bool {
+        switch self {
+        case .find, .findNext, .findPrevious, .hideFind:
+            return true
+        case .useSelection:
+            return false
+        }
+    }
+}
+
+private func cmuxIsLikelyWebInspectorResponder(_ responder: NSResponder?) -> Bool {
+    guard let responder else { return false }
+    let responderType = String(describing: type(of: responder))
+    if responderType.contains("WKInspector") {
+        return true
+    }
+    guard let view = responder as? NSView else { return false }
+    var node: NSView? = view
+    var hops = 0
+    while let current = node, hops < 64 {
+        if String(describing: type(of: current)).contains("WKInspector") {
+            return true
+        }
+        node = current.superview
+        hops += 1
+    }
+    return false
+}
+
+private func browserFindCommandEquivalent(for event: NSEvent) -> BrowserFindCommandEquivalent? {
+    let flags = event.modifierFlags
+        .intersection(.deviceIndependentFlagsMask)
+        .subtracting([.numericPad, .function, .capsLock])
+
+    let normalizedChars = KeyboardLayout.normalizedCharacters(for: event).lowercased()
+    let hasSingleASCIIShortcutChar =
+        normalizedChars.count == 1 && normalizedChars.allSatisfy(\.isASCII)
+    let producedAnyASCIIShortcutChar = normalizedChars.contains(where: \.isASCII)
+    func matches(_ chars: String, keyCode: UInt16) -> Bool {
+        if hasSingleASCIIShortcutChar {
+            return normalizedChars == chars
+        }
+        if !producedAnyASCIIShortcutChar {
+            return event.keyCode == keyCode
+        }
+        return false
+    }
+
+    switch flags {
+    case [.command]:
+        if matches("e", keyCode: 14) { // kVK_ANSI_E
+            return .useSelection
+        }
+        if matches("f", keyCode: 3) { // kVK_ANSI_F
+            return .find
+        }
+        if matches("g", keyCode: 5) { // kVK_ANSI_G
+            return .findNext
+        }
+        return nil
+    case [.command, .shift]:
+        if matches("f", keyCode: 3) { // kVK_ANSI_F
+            return .hideFind
+        }
+        if matches("g", keyCode: 5) { // kVK_ANSI_G
+            return .findPrevious
+        }
+        return nil
+    default:
+        return nil
+    }
+}
+
+/// For browser content, let the page try the Find command family before cmux's menu fallback.
+/// This preserves native web-app shortcuts like VS Code's Cmd+F while still allowing cmux's
+/// browser find overlay to keep owning its visible Find UI shortcuts.
+func shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst(
+    _ event: NSEvent,
+    responder: NSResponder? = nil,
+    owningWebView: CmuxWebView? = nil
+) -> Bool {
+    guard let shortcut = browserFindCommandEquivalent(for: event) else {
+        return false
+    }
+
+    if cmuxIsLikelyWebInspectorResponder(responder) {
+        return false
+    }
+
+    if shortcut.keepsCmuxBrowserFindBarOwnershipWhenVisible,
+       let owningWebView {
+        let browserFindBarIsVisible = MainActor.assumeIsolated {
+            AppDelegate.shared?.browserFindBarIsVisible(for: owningWebView) == true
+        }
+        if browserFindBarIsVisible {
+            return false
+        }
+    }
+
+    return true
+}
+
 func cmuxOwningGhosttyView(for responder: NSResponder?) -> GhosttyNSView? {
     guard let responder else { return nil }
     if let ghosttyView = responder as? GhosttyNSView {
@@ -2042,12 +2168,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let visibleFrame: CGRect
     }
 
-    private struct PersistedWindowGeometry: Codable, Sendable {
+    struct PersistedWindowGeometry: Codable, Sendable {
+        let version: Int
         let frame: SessionRectSnapshot
         let display: SessionDisplaySnapshot?
     }
 
-    private static let persistedWindowGeometryDefaultsKey = "cmux.session.lastWindowGeometry.v1"
+    nonisolated static let persistedWindowGeometrySchemaVersion = 2
+    private nonisolated static let persistedWindowGeometryDefaultsKey = "cmux.session.lastWindowGeometry.v2"
+    private nonisolated static let legacyPersistedWindowGeometryDefaultsKeys = [
+        "cmux.session.lastWindowGeometry.v1"
+    ]
 
     weak var tabManager: TabManager?
     weak var notificationStore: TerminalNotificationStore?
@@ -2127,6 +2258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var didSetupGotoSplitUITest = false
     private var didSetupBonsplitTabDragUITest = false
     private var bonsplitTabDragUITestRecorder: DispatchSourceTimer?
+    private var gotoSplitUITestRecorder: DispatchSourceTimer?
     private var gotoSplitUITestObservers: [NSObjectProtocol] = []
     private var didSetupMultiWindowNotificationsUITest = false
     private var didSetupDisplayResolutionUITestDiagnostics = false
@@ -2142,6 +2274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let isFirstResponder: Bool
     }
     var debugCloseMainWindowConfirmationHandler: ((NSWindow) -> Bool)?
+    var debugCreateMainWindowSourceIsNativeFullScreenOverride: Bool?
     // Keep debug-only windows alive when tests intentionally inject key mismatches.
     private var debugDetachedContextWindows: [NSWindow] = []
 
@@ -2212,6 +2345,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var lastTypingActivityAt: TimeInterval = 0
     private var didHandleExplicitOpenIntentAtStartup = false
     private var isTerminatingApp = false
+    // Set to true when the user has already confirmed quit via the warning dialog,
+    // so applicationShouldTerminate does not show a second alert.
+    private var isQuitWarningConfirmed = false
     private var didInstallLifecycleSnapshotObservers = false
     private var didDisableSuddenTermination = false
     private var commandPaletteVisibilityByWindowId: [UUID: Bool] = [:]
@@ -2701,7 +2837,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isTerminatingApp = true
         _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
-        return .terminateNow
+
+        // Tagged DEV builds are ephemeral, skip quit confirmation entirely.
+        if SocketControlSettings.isTaggedDevBuild() {
+            return .terminateNow
+        }
+
+        // If the user already confirmed via the Cmd+Q shortcut warning dialog
+        // (handleQuitShortcutWarning), skip the check to avoid a second alert.
+        if isQuitWarningConfirmed {
+            return .terminateNow
+        }
+
+        // Respect the "Warn Before Quit" setting even when Cmd+Q arrives via
+        // the Cmd+Tab app switcher, bypassing handleCustomShortcut.
+        guard QuitWarningSettings.isEnabled() else {
+            return .terminateNow
+        }
+
+        // Show the same confirmation dialog used by the Cmd+Q shortcut path,
+        // then reply asynchronously so we can return .terminateLater now.
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit cmux?")
+            alert.informativeText = String(localized: "dialog.quitCmux.message", defaultValue: "This will close all windows and workspaces.")
+            alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
+            alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = String(localized: "dialog.dontWarnCmdQ", defaultValue: "Don't warn again for Cmd+Q")
+
+            let response = alert.runModal()
+            if alert.suppressionButton?.state == .on {
+                QuitWarningSettings.setEnabled(false)
+            }
+
+            let shouldQuit = response == .alertFirstButtonReturn
+            if shouldQuit {
+                self.isQuitWarningConfirmed = true
+            } else {
+                // Reset so that the next quit attempt can show the dialog again.
+                self.isTerminatingApp = false
+            }
+            NSApp.reply(toApplicationShouldTerminate: shouldQuit)
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -2827,16 +3007,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
         guard SessionRestorePolicy.shouldAttemptRestore() else { return }
+        Self.removeLegacyPersistedWindowGeometry()
         startupSessionSnapshot = SessionPersistenceStore.load()
     }
 
     private func persistedWindowGeometry(
         defaults: UserDefaults = .standard
     ) -> PersistedWindowGeometry? {
+        Self.removeLegacyPersistedWindowGeometry(defaults: defaults)
         guard let data = defaults.data(forKey: Self.persistedWindowGeometryDefaultsKey) else {
             return nil
         }
-        return try? JSONDecoder().decode(PersistedWindowGeometry.self, from: data)
+        guard let payload = Self.decodedPersistedWindowGeometryData(data) else {
+            defaults.removeObject(forKey: Self.persistedWindowGeometryDefaultsKey)
+            return nil
+        }
+        return payload
     }
 
     private func persistWindowGeometry(
@@ -2844,6 +3030,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         display: SessionDisplaySnapshot?,
         defaults: UserDefaults = .standard
     ) {
+        Self.removeLegacyPersistedWindowGeometry(defaults: defaults)
         guard let data = Self.encodedPersistedWindowGeometryData(frame: frame, display: display) else {
             return
         }
@@ -2855,8 +3042,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         display: SessionDisplaySnapshot?
     ) -> Data? {
         guard let frame else { return nil }
-        let payload = PersistedWindowGeometry(frame: frame, display: display)
+        let payload = PersistedWindowGeometry(
+            version: persistedWindowGeometrySchemaVersion,
+            frame: frame,
+            display: display
+        )
         return try? JSONEncoder().encode(payload)
+    }
+
+    nonisolated static func decodedPersistedWindowGeometryData(_ data: Data) -> PersistedWindowGeometry? {
+        guard let payload = try? JSONDecoder().decode(PersistedWindowGeometry.self, from: data),
+              payload.version == persistedWindowGeometrySchemaVersion else {
+            return nil
+        }
+        return payload
+    }
+
+    private nonisolated static func removeLegacyPersistedWindowGeometry(
+        defaults: UserDefaults = .standard
+    ) {
+        legacyPersistedWindowGeometryDefaultsKeys.forEach { defaults.removeObject(forKey: $0) }
     }
 
     private func persistWindowGeometry(from window: NSWindow?) {
@@ -3718,6 +3923,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return }
 
         let writeBlock = {
+            Self.removeLegacyPersistedWindowGeometry()
             if let persistedGeometryData {
                 UserDefaults.standard.set(
                     persistedGeometryData,
@@ -4799,14 +5005,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func focusMainWindow(windowId: UUID) -> Bool {
         guard let window = windowForMainWindowId(windowId) else { return false }
-        if TerminalController.shouldSuppressSocketCommandActivation() {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            if TerminalController.socketCommandAllowsInAppFocusMutations() {
-                window.orderFront(nil)
-                setActiveMainWindow(window)
-            }
+        if TerminalController.shouldSuppressSocketCommandActivation(),
+           !TerminalController.socketCommandAllowsInAppFocusMutations() {
+            setActiveMainWindow(window)
             return true
         }
         bringToFront(window)
@@ -5432,6 +5633,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         mainWindowContexts.values.first(where: { $0.windowId == windowId })?.sidebarState.isVisible
     }
 
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu(title: "")
+        let newWindowItem = NSMenuItem(
+            title: String(localized: "menu.file.newWindow", defaultValue: "New Window"),
+            action: #selector(openNewMainWindow(_:)),
+            keyEquivalent: ""
+        )
+        newWindowItem.target = self
+        menu.addItem(newWindowItem)
+        return menu
+    }
+
     @objc func openNewMainWindow(_ sender: Any?) {
         _ = createMainWindow()
     }
@@ -5457,6 +5670,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 workingDirectory: url.path,
                 debugSource: "shortcut.openFolder"
             )
+        }
+    }
+
+    @discardableResult
+    func openDirectoryInInlineVSCode(
+        _ directoryURL: URL,
+        tabManager preferredTabManager: TabManager? = nil
+    ) -> Bool {
+        guard let vscodeApplicationURL = TerminalDirectoryOpenTarget.vscodeInline.applicationURL() else {
+            return false
+        }
+
+        let targetTabManager = preferredTabManager
+            ?? preferredMainWindowContextForWorkspaceCreation(debugSource: "inlineVSCode.open.target")?.tabManager
+        guard let targetTabManager else {
+            return false
+        }
+
+        let targetWorkspaceId = targetTabManager.selectedWorkspace?.id
+            ?? targetTabManager.tabs.first?.id
+            ?? targetTabManager.addWorkspace(select: true).id
+        let normalizedDirectoryURL = directoryURL.standardizedFileURL
+
+        VSCodeServeWebController.shared.ensureServeWebURL(vscodeApplicationURL: vscodeApplicationURL) { serveWebURL in
+            guard let serveWebURL,
+                  let openFolderURL = VSCodeServeWebURLBuilder.openFolderURL(
+                      baseWebUIURL: serveWebURL,
+                      directoryPath: normalizedDirectoryURL.path
+                  ) else {
+                NSSound.beep()
+                return
+            }
+
+            guard targetTabManager.openBrowser(
+                inWorkspace: targetWorkspaceId,
+                url: openFolderURL,
+                preferSplitRight: true
+            ) != nil else {
+                NSSound.beep()
+                return
+            }
+        }
+
+        return true
+    }
+
+    func showOpenFolderInInlineVSCodePanel(tabManager preferredTabManager: TabManager? = nil) {
+        guard TerminalDirectoryOpenTarget.vscodeInline.isAvailable() else {
+            NSSound.beep()
+            return
+        }
+
+        let targetTabManager = preferredTabManager
+            ?? preferredMainWindowContextForWorkspaceCreation(debugSource: "inlineVSCode.panel.target")?.tabManager
+        guard let targetTabManager else {
+            NSSound.beep()
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = String(
+            localized: "menu.file.openFolderInVSCodeInline.panelTitle",
+            defaultValue: "Open Folder in VS Code (Inline)"
+        )
+        panel.prompt = String(
+            localized: "menu.file.openFolderInVSCodeInline.panelPrompt",
+            defaultValue: "Open in VS Code"
+        )
+        if let cwd = targetTabManager.selectedWorkspace?.currentDirectory,
+           !cwd.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: cwd)
+        }
+
+        if panel.runModal() == .OK,
+           let url = panel.url,
+           !openDirectoryInInlineVSCode(url, tabManager: targetTabManager) {
+            NSSound.beep()
         }
     }
 
@@ -5486,8 +5779,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         target: ServiceOpenTarget,
         error: AutoreleasingUnsafeMutablePointer<NSString>
     ) {
-        prepareForExplicitOpenIntentAtStartup()
-
         let pathURLs = servicePathURLs(from: pasteboard)
         guard !pathURLs.isEmpty else {
             error.pointee = Self.serviceErrorNoPath
@@ -5500,6 +5791,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        prepareForExplicitOpenIntentAtStartup()
         for directory in directories {
             switch target {
             case .window:
@@ -5554,7 +5846,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func externalOpenDirectories(from urls: [URL]) -> [String] {
-        FinderServicePathResolver.orderedUniqueDirectories(from: urls.filter { $0.isFileURL })
+        // LaunchServices can surface the running app bundle on relaunch; ignore self paths so
+        // they do not get treated as explicit folder opens and suppress session restore.
+        FinderServicePathResolver.orderedUniqueDirectories(
+            from: urls.filter { $0.isFileURL },
+            excludingDescendantsOf: [Bundle.main.bundleURL]
+        )
     }
 
     private func openWorkspaceForExternalDirectory(
@@ -5897,9 +6194,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Use the current key window's size for new windows so Cmd+Shift+N
         // creates a window matching the previous one's dimensions.
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        let existingFrame = preferredMainWindowContextForWorkspaceCreation(
+        let sourceContext = preferredMainWindowContextForWorkspaceCreation(
             debugSource: "createMainWindow.initialGeometry"
-        ).flatMap { resolvedWindow(for: $0)?.frame }
+        )
+        let sourceWindow = sourceContext.flatMap { resolvedWindow(for: $0) }
+        let existingFrame = sourceWindow?.frame
+        let sourceWindowIsNativeFullScreen: Bool = {
+#if DEBUG
+            if let debugCreateMainWindowSourceIsNativeFullScreenOverride {
+                return debugCreateMainWindowSourceIsNativeFullScreenOverride
+            }
+#endif
+            return sourceWindow?.styleMask.contains(.fullScreen) == true
+        }()
+        let shouldTemporarilyDisallowFullScreenTiling =
+            sessionWindowSnapshot == nil && sourceWindowIsNativeFullScreen
         let initialRect: NSRect
         if sessionWindowSnapshot == nil, let existingFrame {
             // Convert frame rect to content rect so the new window matches the
@@ -5915,6 +6224,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             backing: .buffered,
             defer: false
         )
+        // When creating a new window from an existing native fullscreen window,
+        // temporarily opt out of fullscreen tiling so AppKit doesn't place the
+        // new window into the active fullscreen Space.
+        if shouldTemporarilyDisallowFullScreenTiling {
+            window.collectionBehavior.insert(.fullScreenDisallowsTiling)
+        }
         window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -5966,6 +6281,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             window.makeKeyAndOrderFront(nil)
             setActiveMainWindow(window)
             NSApp.activate(ignoringOtherApps: true)
+        }
+        if shouldTemporarilyDisallowFullScreenTiling {
+            DispatchQueue.main.async { [weak window] in
+                window?.collectionBehavior.remove(.fullScreenDisallowsTiling)
+            }
         }
         if let restoredFrame {
             window.setFrame(restoredFrame, display: true)
@@ -7112,7 +7432,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return
             }
 
-            let url = URL(string: "https://example.com")
+            let requestedBrowserURL = env["CMUX_UI_TEST_GOTO_SPLIT_BROWSER_URL"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let url = requestedBrowserURL.flatMap { rawURL in
+                guard !rawURL.isEmpty else { return nil }
+                return URL(string: rawURL)
+            } ?? URL(string: "https://example.com")
+            guard let url else {
+                self.writeGotoSplitTestData(["setupError": "Invalid browser URL"])
+                return
+            }
             guard let browserPanelId = tabManager.newBrowserSplit(
                 tabId: tab.id,
                 fromPanelId: initialPanelId,
@@ -7346,12 +7675,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .first(where: { $0.searchState != nil })
         updates["terminalFindPanelId"] = terminalWithFind?.id.uuidString ?? ""
         updates["terminalFindNeedle"] = terminalWithFind?.searchState?.needle ?? ""
+        updates["terminalFindVisible"] = terminalWithFind == nil ? "false" : "true"
 
         let browserWithFind = workspace.panels.values
             .compactMap { $0 as? BrowserPanel }
             .first(where: { $0.searchState != nil })
         updates["browserFindPanelId"] = browserWithFind?.id.uuidString ?? ""
         updates["browserFindNeedle"] = browserWithFind?.searchState?.needle ?? ""
+        updates["browserFindSelected"] = browserWithFind?.searchState?.selected.map {
+            String($0 + 1)
+        } ?? ""
+        updates["browserFindTotal"] = browserWithFind?.searchState?.total.map(String.init) ?? ""
+        updates["browserFindVisible"] = browserWithFind == nil ? "false" : "true"
 
         return updates
     }
@@ -7399,6 +7734,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
             resolved = true
             cleanup()
+            self.startGotoSplitUITestRecorder(browserPanelId: browserPanelId)
             writeGotoSplitTestData([
                 "browserPanelId": browserPanelId.uuidString,
                 "browserPaneId": browserPaneId.description,
@@ -7447,6 +7783,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         recordFocusedState()
+    }
+
+    private func startGotoSplitUITestRecorder(browserPanelId: UUID) {
+        guard isGotoSplitUITestRecordingEnabled() else { return }
+        gotoSplitUITestRecorder?.cancel()
+        gotoSplitUITestRecorder = nil
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            self?.recordGotoSplitUITestState(browserPanelId: browserPanelId)
+        }
+        gotoSplitUITestRecorder = timer
+        timer.resume()
+    }
+
+    private func recordGotoSplitUITestState(browserPanelId: UUID) {
+        guard let tabManager,
+              let workspace = tabManager.selectedWorkspace,
+              let browserPanel = workspace.browserPanel(for: browserPanelId) else {
+            return
+        }
+
+        var updates = gotoSplitFindStateSnapshot(for: workspace)
+        updates["browserPageTitle"] = browserPanel.webView.title?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        updates["browserPageURL"] = browserPanel.preferredURLStringForOmnibar() ?? ""
+        writeGotoSplitTestData(updates)
     }
 
     private func isWebViewFocused(_ panel: BrowserPanel) -> Bool {
@@ -8963,6 +9327,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func handleQuitShortcutWarning() -> Bool {
+        // Tagged DEV builds are ephemeral, skip quit confirmation entirely.
+        if SocketControlSettings.isTaggedDevBuild() {
+            NSApp.terminate(nil)
+            return true
+        }
+
         if !QuitWarningSettings.isEnabled() {
             NSApp.terminate(nil)
             return true
@@ -8983,6 +9353,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if response == .alertFirstButtonReturn {
+            // Mark as confirmed so applicationShouldTerminate does not show a
+            // second alert when NSApp.terminate re-enters the delegate callback.
+            isQuitWarningConfirmed = true
             NSApp.terminate(nil)
         }
         return true
@@ -10291,22 +10664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func isLikelyWebInspectorResponder(_ responder: NSResponder?) -> Bool {
-        guard let responder else { return false }
-        let responderType = String(describing: type(of: responder))
-        if responderType.contains("WKInspector") {
-            return true
-        }
-        guard let view = responder as? NSView else { return false }
-        var node: NSView? = view
-        var hops = 0
-        while let current = node, hops < 64 {
-            if String(describing: type(of: current)).contains("WKInspector") {
-                return true
-            }
-            node = current.superview
-            hops += 1
-        }
-        return false
+        cmuxIsLikelyWebInspectorResponder(responder)
     }
 
 #if DEBUG
@@ -10629,7 +10987,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // For command-based shortcuts, trust AppKit's layout-aware characters when present.
         // Keep this strict for letter shortcuts to avoid physical-key collisions across layouts,
         // while still allowing keyCode fallback for digit/punctuation shortcuts on non-US layouts.
-        // When a non-Latin input source is active (Korean, Chinese, Japanese, etc.),
+        // When a non-Latin input source is active (Russian, Korean, Chinese, Japanese, etc.),
         // charactersIgnoringModifiers returns non-ASCII characters that can never match
         // a Latin shortcut key — skip this guard and fall through to layout-based matching.
         let hasEventChars = !(eventCharsIgnoringModifiers?.isEmpty ?? true)
@@ -10658,15 +11016,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // so keep ANSI keyCode fallback for control-modified shortcuts. Also allow fallback for
         // command punctuation shortcuts, since some non-US layouts report different characters
         // for the same physical key even when menu-equivalent semantics should still apply.
-        // When a non-Latin input source is active, treat non-ASCII event chars the same as
-        // absent chars — they carry no usable Latin key identity.
+        // When a non-Latin input source is active (Russian, Korean, Chinese, Japanese, etc.),
+        // event chars carry no usable Latin key identity. Always allow keyCode fallback as a
+        // safety net — even when the layout-based translation resolved a character, the
+        // physical key code is the definitive identifier for the intended shortcut.
+        // For empty-character events (synthetic/browser key equivalents), preserve the original
+        // behavior: only fall back when the layout translation also failed.
         let hasUsableEventChars = hasEventChars && eventCharsAreASCII
         let allowANSIKeyCodeFallback = flags.contains(.control)
             || (flags.contains(.command)
                 && !flags.contains(.control)
                 && (
                     !shouldRequireCharacterMatchForCommandShortcut(shortcutKey: shortcutKey)
-                        || (!hasUsableEventChars && (layoutCharacter?.isEmpty ?? true))
+                        || (hasEventChars && !eventCharsAreASCII)
+                        || (!hasEventChars && (layoutCharacter?.isEmpty ?? true))
                 ))
         if allowANSIKeyCodeFallback, let expectedKeyCode = keyCodeForShortcutKey(shortcutKey) {
             return event.keyCode == expectedKeyCode
@@ -11131,6 +11494,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return tabManager?.selectedWorkspace?.browserPanel(for: panelId)
     }
 
+    fileprivate func browserFindBarIsVisible(for webView: CmuxWebView) -> Bool {
+        browserPanelOwning(webView)?.searchState != nil
+    }
+
+    private func browserPanelOwning(_ webView: CmuxWebView) -> BrowserPanel? {
+        var candidateManagers: [TabManager] = []
+        var seenManagers = Set<ObjectIdentifier>()
+
+        func appendCandidate(_ manager: TabManager?) {
+            guard let manager else { return }
+            let identifier = ObjectIdentifier(manager)
+            guard seenManagers.insert(identifier).inserted else { return }
+            candidateManagers.append(manager)
+        }
+
+        if let window = webView.window,
+           let context = contextForMainWindow(window) {
+            appendCandidate(context.tabManager)
+        }
+        appendCandidate(tabManager)
+        for context in mainWindowContexts.values {
+            appendCandidate(context.tabManager)
+        }
+
+        for manager in candidateManagers {
+            if let panel = browserPanelOwning(webView, in: manager) {
+                return panel
+            }
+        }
+        return nil
+    }
+
+    private func browserPanelOwning(_ webView: CmuxWebView, in manager: TabManager) -> BrowserPanel? {
+        for workspace in manager.tabs {
+            if let panel = workspace.panels.values
+                .compactMap({ $0 as? BrowserPanel })
+                .first(where: { $0.webView === webView }) {
+                return panel
+            }
+        }
+        return nil
+    }
+
     private func setActiveMainWindow(_ window: NSWindow) {
         guard let context = contextForMainTerminalWindow(window) else { return }
 #if DEBUG
@@ -11500,6 +11906,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func bringToFront(_ window: NSWindow) {
+        if TerminalController.shouldSuppressSocketCommandActivation(),
+           !TerminalController.socketCommandAllowsInAppFocusMutations() {
+            return
+        }
+        setActiveMainWindow(window)
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
@@ -12595,6 +13006,27 @@ private extension NSWindow {
             dlog("  → browser Return/Enter routed to firstResponder.keyDown")
 #endif
             self.firstResponder?.keyDown(with: event)
+            return true
+        }
+
+        if let firstResponderWebView,
+           shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst(
+               event,
+               responder: self.firstResponder,
+               owningWebView: firstResponderWebView
+           ) {
+            let result = firstResponderWebView.performKeyEquivalent(with: event)
+#if DEBUG
+            if result {
+                dlog("  → browser find command resolved before window menu path")
+            } else {
+                dlog("  → browser find command preflight left unclaimed; suppressing replay")
+            }
+#endif
+            // The focused web view has already received this Find-family shortcut once.
+            // Do not fall through into the original NSWindow.performKeyEquivalent path,
+            // or WebKit can observe the same key equivalent a second time before AppKit
+            // reaches keyDown/menu fallback.
             return true
         }
 
