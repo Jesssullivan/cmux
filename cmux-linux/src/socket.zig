@@ -1409,6 +1409,7 @@ var app_focus_override: ?bool = null;
 fn handleNotificationCreate(alloc: Allocator, params: json.Value) []const u8 {
     _ = alloc;
     const title = getParamString(params, "title") orelse "notification";
+    const body = getParamString(params, "body");
 
     // If app is "focused", suppress
     if (app_focus_override) |focused| {
@@ -1426,6 +1427,11 @@ fn handleNotificationCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tlen = @min(title.len, notif.title.len);
     @memcpy(notif.title[0..tlen], title[0..tlen]);
     notif.title_len = tlen;
+
+    // Send desktop notification via GNotification
+    const main = @import("main.zig");
+    main.sendNotification("cmux-notification", title, body);
+
     return "{}";
 }
 
@@ -1509,6 +1515,9 @@ fn handleNotificationList(alloc: Allocator, _: json.Value) []const u8 {
 
 fn handleNotificationClear(_: Allocator, _: json.Value) []const u8 {
     notification_count = 0;
+    // Withdraw desktop notification
+    const main = @import("main.zig");
+    main.withdrawNotification("cmux-notification");
     return "{}";
 }
 
