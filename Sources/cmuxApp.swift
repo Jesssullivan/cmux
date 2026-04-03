@@ -191,6 +191,7 @@ struct cmuxApp: App {
 
         let startupAppearance = AppearanceSettings.resolvedMode()
         Self.applyAppearance(startupAppearance)
+        Self.ensureAppSupportDirectoryExists()
         _tabManager = StateObject(wrappedValue: TabManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
@@ -225,6 +226,23 @@ struct cmuxApp: App {
         fflush(stderr)
         NSLog("%@", message)
         Darwin.exit(64)
+    }
+
+    /// Ensure the app support directory exists before TabManager and session
+    /// restoration attempt to access it. Without this, a fresh install (or one
+    /// where the directory was deleted) crashes with SIGSEGV in addWorkspace.
+    /// See: #124
+    private static func ensureAppSupportDirectoryExists() {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else { return }
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.cmuxterm.app"
+        let cmuxDir = appSupport.appendingPathComponent("cmux", isDirectory: true)
+        try? FileManager.default.createDirectory(at: cmuxDir, withIntermediateDirectories: true)
+        // Also ensure the bundle-specific directory exists for session persistence
+        let bundleDir = appSupport.appendingPathComponent(bundleId, isDirectory: true)
+        try? FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
     }
 
     private static func configureGhosttyEnvironment() {
