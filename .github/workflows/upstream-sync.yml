@@ -62,8 +62,8 @@ jobs:
 
           COMMIT_COUNT="${{ steps.check.outputs.commit_count }}"
 
-          # Collect commit subjects
-          COMMITS=$(git log HEAD..upstream/main --pretty=format:"- %h %s" --no-merges | head -50)
+          # Collect commit subjects (use tail-pipe pattern to avoid SIGPIPE from head under pipefail)
+          COMMITS=$(git log HEAD..upstream/main --pretty=format:"- %h %s" --no-merges -50)
 
           # Classify changed files for risk assessment
           CHANGED_FILES=$(git diff HEAD..upstream/main --name-only)
