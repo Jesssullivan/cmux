@@ -60,18 +60,20 @@ install -Dm755 cmux-linux/zig-out/bin/cmux %{buildroot}%{_bindir}/cmux
 install -Dm755 ghostty/zig-out/lib/libghostty.so %{buildroot}%{_libdir}/cmux/libghostty.so
 install -Dm644 dist/linux/com.jesssullivan.cmux.desktop %{buildroot}%{_datadir}/applications/com.jesssullivan.cmux.desktop
 install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml %{buildroot}%{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
+install -Dm644 dist/linux/icons/com.jesssullivan.cmux_16x16.png %{buildroot}%{_datadir}/icons/hicolor/16x16/apps/com.jesssullivan.cmux.png
 install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
 install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
-install -Dm644 dist/linux/70-u2f.rules %{buildroot}/etc/udev/rules.d/70-u2f.rules
+install -Dm644 dist/linux/icons/com.jesssullivan.cmux_512x512.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/com.jesssullivan.cmux.png
+install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
 
 %post
-/usr/bin/udevadm control --reload-rules 2>/dev/null || :
-/usr/bin/udevadm trigger 2>/dev/null || :
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
+/usr/bin/udevadm control --reload-rules 2>/dev/null || :
+/usr/bin/udevadm trigger --subsystem-match=hidraw 2>/dev/null || :
 
 %postun
-/usr/bin/udevadm control --reload-rules 2>/dev/null || :
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
+/usr/bin/udevadm control --reload-rules 2>/dev/null || :
 
 %files
 %license LICENSE
@@ -81,7 +83,7 @@ install -Dm644 dist/linux/70-u2f.rules %{buildroot}/etc/udev/rules.d/70-u2f.rule
 %{_datadir}/applications/com.jesssullivan.cmux.desktop
 %{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/com.jesssullivan.cmux.png
-/etc/udev/rules.d/70-u2f.rules
+%{_udevrulesdir}/70-u2f.rules
 
 %changelog
 * Sat Mar 29 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.72.0-1
