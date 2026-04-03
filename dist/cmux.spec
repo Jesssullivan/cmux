@@ -62,11 +62,15 @@ install -Dm644 dist/linux/com.jesssullivan.cmux.desktop %{buildroot}%{_datadir}/
 install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml %{buildroot}%{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
 install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
 install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
+install -Dm644 dist/linux/70-u2f.rules %{buildroot}/etc/udev/rules.d/70-u2f.rules
 
 %post
+/usr/bin/udevadm control --reload-rules 2>/dev/null || :
+/usr/bin/udevadm trigger 2>/dev/null || :
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %postun
+/usr/bin/udevadm control --reload-rules 2>/dev/null || :
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
 
 %files
@@ -77,6 +81,7 @@ install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png %{buildroot}%{
 %{_datadir}/applications/com.jesssullivan.cmux.desktop
 %{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/com.jesssullivan.cmux.png
+/etc/udev/rules.d/70-u2f.rules
 
 %changelog
 * Sat Mar 29 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.72.0-1

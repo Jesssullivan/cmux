@@ -21,6 +21,8 @@ override_dh_auto_install:
 	# Icons
 	install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png debian/cmux/usr/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
 	install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png debian/cmux/usr/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
+	# udev rules for FIDO2/U2F hardware keys
+	install -Dm644 dist/linux/70-u2f.rules debian/cmux/etc/udev/rules.d/70-u2f.rules
 
 override_dh_auto_test:
 	# Skip tests in packaging build
