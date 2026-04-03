@@ -262,9 +262,13 @@ jobs:
           mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
           BUILDROOT="$TOPDIR/BUILDROOT/cmux-${RPM_VERSION}-1.x86_64"
 
-          # Install files into buildroot
+          # Resolve RPM macros for this distro
+          UDEVRULESDIR=$(rpm --eval '%{_udevrulesdir}')
+          LIBDIR=$(rpm --eval '%{_libdir}')
+
+          # Install files into buildroot (must match %files in spec)
           install -Dm755 cmux-linux/zig-out/bin/cmux "${BUILDROOT}/usr/bin/cmux"
-          install -Dm755 ghostty/zig-out/lib/libghostty.so "${BUILDROOT}/usr/lib64/cmux/libghostty.so"
+          install -Dm755 ghostty/zig-out/lib/libghostty.so "${BUILDROOT}${LIBDIR}/cmux/libghostty.so"
           if [ -f cmuxd/zig-out/bin/cmuxd ]; then
             install -Dm755 cmuxd/zig-out/bin/cmuxd "${BUILDROOT}/usr/bin/cmuxd"
           fi
@@ -274,7 +278,10 @@ jobs:
             install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
               "${BUILDROOT}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
           done
-          install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}/usr/lib/udev/rules.d/70-u2f.rules"
+          install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}${UDEVRULESDIR}/70-u2f.rules"
+          # %license and %doc files expected by the spec
+          install -Dm644 LICENSE "${BUILDROOT}/usr/share/licenses/cmux/LICENSE"
+          install -Dm644 README.md "${BUILDROOT}/usr/share/doc/cmux/README.md"
 
           # Generate spec from template with correct version
           sed "s/^Version:.*/Version:        ${RPM_VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
