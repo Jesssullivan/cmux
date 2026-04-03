@@ -256,9 +256,11 @@ jobs:
       - name: Assemble RPM package
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          # RPM Version field cannot contain hyphens; use tilde for pre-release
+          RPM_VERSION=$(echo "$VERSION" | tr '-' '~')
           TOPDIR="$PWD/rpmbuild"
           mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
-          BUILDROOT="$TOPDIR/BUILDROOT/cmux-${VERSION}-1.x86_64"
+          BUILDROOT="$TOPDIR/BUILDROOT/cmux-${RPM_VERSION}-1.x86_64"
 
           # Install files into buildroot
           install -Dm755 cmux-linux/zig-out/bin/cmux "${BUILDROOT}/usr/bin/cmux"
@@ -275,7 +277,7 @@ jobs:
           install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}/usr/lib/udev/rules.d/70-u2f.rules"
 
           # Generate spec from template with correct version
-          sed "s/^Version:.*/Version:        ${VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
+          sed "s/^Version:.*/Version:        ${RPM_VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
 
           # Build binary RPM from pre-populated buildroot (skip %prep and %build)
           rpmbuild -bb \
