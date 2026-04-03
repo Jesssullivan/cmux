@@ -9,6 +9,8 @@ const c = @import("c_api.zig");
 const app_mod = @import("app.zig");
 const window = @import("window.zig");
 const SocketServer = @import("socket.zig").SocketServer;
+const notifications = @import("notifications.zig");
+const logind = @import("logind.zig");
 
 const log = std.log.scoped(.main);
 
@@ -25,6 +27,9 @@ fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
         log.warn("Socket server failed to start: {}", .{err});
     };
 
+    // Start logind session monitoring (pause terminals on screen lock)
+    logind.watchSession(&onSessionStateChange);
+
     // Create the main window (tab manager, sidebar, workspaces)
     window.createWindow(gtk_app, ghostty_app);
 
@@ -32,6 +37,39 @@ fn onActivate(gtk_app: *c.GtkApplication) callconv(.c) void {
     if (posix.getenv("CMUX_NO_SURFACE") != null) {
         c.gtk.g_application_hold(@ptrCast(gtk_app));
     }
+}
+
+/// Handle logind session state changes (lock/unlock).
+fn onSessionStateChange(state: logind.SessionState) void {
+    switch (state) {
+        .locked => {
+            log.info("Session locked — pausing terminal activity", .{});
+            // TODO: pause ghostty rendering when ghostty_app_pause API is available
+        },
+        .active => {
+            log.info("Session unlocked — resuming terminal activity", .{});
+            // TODO: resume ghostty rendering when ghostty_app_resume API is available
+        },
+    }
+}
+
+/// Send a desktop notification via GNotification.
+/// Called from socket commands and OSC 9/99 terminal sequences.
+pub fn sendNotification(id: []const u8, title: []const u8, body: ?[]const u8) void {
+    const app = c.gtk.g_application_get_default() orelse {
+        log.warn("No GApplication for notification", .{});
+        return;
+    };
+    notifications.send(app, id, .{
+        .title = title,
+        .body = body,
+    });
+}
+
+/// Withdraw a previously sent notification.
+pub fn withdrawNotification(id: []const u8) void {
+    const app = c.gtk.g_application_get_default() orelse return;
+    notifications.withdraw(app, id);
 }
 
 /// Wakeup callback: called by libghostty when it needs a tick.
@@ -103,7 +141,8 @@ pub fn main() !void {
         null,
     );
 
-    // Clean up socket server
+    // Clean up
+    logind.unwatchSession();
     socket_server.stop();
 
     if (status != 0) {
