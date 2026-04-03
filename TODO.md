@@ -14,7 +14,7 @@
 - [ ] Add resize tests for multi-attachment sessions (attach/detach/reconnect transitions)
 
 ## Command Palette
-- [ ] Add cmd+shift+p palette with all commands (upstream ctrl-k/cmd-p shipped in PR #139; verify keybinding)
+- [x] Add cmd+shift+p palette with all commands (implemented in cmuxApp.swift, ghostty default is super+shift+p / ctrl+shift+p)
 
 ## Feature Requests
 - [ ] Warm pool of Claude Code instances mapped to a keyboard shortcut
