@@ -1,0 +1,341 @@
+name: Linux Release
+
+on:
+  push:
+    tags:
+      - 'lab-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. lab-v0.73.0)'
+        required: true
+
+concurrency:
+  group: release-linux
+  cancel-in-progress: false
+
+jobs:
+  # ── Build + package on Ubuntu (DEB + tarball) ─────────────────────
+  build-deb:
+    name: Build DEB package (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#lab-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building Linux packages for $TAG (version $VERSION)"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+          use-cache: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsecret-1-dev libnotify-dev pkg-config \
+            libgtk-4-dev libadwaita-1-dev \
+            libwebkitgtk-6.0-dev \
+            libfreetype-dev libharfbuzz-dev libfontconfig-dev \
+            libpng-dev libonig-dev libgl-dev \
+            glslang-tools spirv-cross
+
+      - name: Build vendor libraries
+        run: |
+          cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+
+      - name: Build cmux-linux
+        run: |
+          cd cmux-linux
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build cmuxd
+        run: |
+          if [ -d cmuxd ]; then
+            cd cmuxd && zig build -Doptimize=ReleaseFast
+          fi
+
+      - name: Assemble DEB package
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PKG="cmux_${VERSION}_amd64"
+          mkdir -p "${PKG}/DEBIAN"
+
+          cat > "${PKG}/DEBIAN/control" <<CTRL
+          Package: cmux
+          Version: ${VERSION}
+          Architecture: amd64
+          Maintainer: Jess Sullivan <jess@jesssullivan.dev>
+          Homepage: https://github.com/Jesssullivan/cmux
+          Section: x11
+          Priority: optional
+          Depends: libgtk-4-1 (>= 4.10), libadwaita-1-0 (>= 1.3)
+          Recommends: libsecret-1-0, libnotify4
+          Description: Terminal multiplexer with split panes, workspaces, and WebAuthn
+           cmux is a GTK4 terminal multiplexer built on libghostty.
+          CTRL
+
+          # Strip leading whitespace from control file (heredoc indentation)
+          sed -i 's/^          //' "${PKG}/DEBIAN/control"
+
+          cat > "${PKG}/DEBIAN/postinst" <<'POSTINST'
+          #!/bin/sh
+          set -e
+          gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+          udevadm control --reload-rules 2>/dev/null || true
+          udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
+          POSTINST
+          sed -i 's/^          //' "${PKG}/DEBIAN/postinst"
+          chmod 755 "${PKG}/DEBIAN/postinst"
+
+          # Binary + shared library
+          install -Dm755 cmux-linux/zig-out/bin/cmux "${PKG}/usr/bin/cmux"
+          install -Dm755 ghostty/zig-out/lib/libghostty.so "${PKG}/usr/lib/cmux/libghostty.so"
+
+          # cmuxd
+          if [ -f cmuxd/zig-out/bin/cmuxd ]; then
+            install -Dm755 cmuxd/zig-out/bin/cmuxd "${PKG}/usr/bin/cmuxd"
+          fi
+
+          # Desktop, metainfo, icons
+          install -Dm644 dist/linux/com.jesssullivan.cmux.desktop \
+            "${PKG}/usr/share/applications/com.jesssullivan.cmux.desktop"
+          install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml \
+            "${PKG}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
+          for size in 16 128 256 512; do
+            install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${PKG}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+
+          # udev rules for FIDO2/U2F hardware keys
+          install -Dm644 dist/linux/70-u2f.rules "${PKG}/usr/lib/udev/rules.d/70-u2f.rules"
+
+          dpkg-deb --build "${PKG}"
+          echo "Built: ${PKG}.deb ($(du -h "${PKG}.deb" | cut -f1))"
+
+      - name: Assemble generic tarball
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          STAGING="cmux-${VERSION}-linux-amd64"
+          mkdir -p "${STAGING}"/{bin,lib,share/{applications,metainfo,icons/hicolor/{16x16,128x128,256x256,512x512}/apps},lib/udev/rules.d}
+
+          cp cmux-linux/zig-out/bin/cmux "${STAGING}/bin/"
+          cp ghostty/zig-out/lib/libghostty.so "${STAGING}/lib/"
+          if [ -f cmuxd/zig-out/bin/cmuxd ]; then
+            cp cmuxd/zig-out/bin/cmuxd "${STAGING}/bin/"
+          fi
+          cp dist/linux/com.jesssullivan.cmux.desktop "${STAGING}/share/applications/"
+          cp dist/linux/com.jesssullivan.cmux.metainfo.xml "${STAGING}/share/metainfo/"
+          for size in 16 128 256 512; do
+            cp "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${STAGING}/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          cp dist/linux/70-u2f.rules "${STAGING}/lib/udev/rules.d/"
+
+          cat > "${STAGING}/install.sh" <<'INSTALL'
+          #!/bin/sh
+          set -e
+          PREFIX="${1:-/usr/local}"
+          install -Dm755 bin/cmux "$PREFIX/bin/cmux"
+          install -Dm755 lib/libghostty.so "$PREFIX/lib/cmux/libghostty.so"
+          [ -f bin/cmuxd ] && install -Dm755 bin/cmuxd "$PREFIX/bin/cmuxd"
+          install -Dm644 share/applications/com.jesssullivan.cmux.desktop "$PREFIX/share/applications/com.jesssullivan.cmux.desktop"
+          install -Dm644 share/metainfo/com.jesssullivan.cmux.metainfo.xml "$PREFIX/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
+          for size in 16 128 256 512; do
+            install -Dm644 "share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png" \
+              "$PREFIX/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          install -Dm644 lib/udev/rules.d/70-u2f.rules /usr/lib/udev/rules.d/70-u2f.rules
+          echo "Installed cmux to $PREFIX"
+          INSTALL
+          chmod +x "${STAGING}/install.sh"
+
+          tar czf "cmux-${VERSION}-linux-amd64.tar.gz" "${STAGING}"
+          echo "Built: cmux-${VERSION}-linux-amd64.tar.gz ($(du -h "cmux-${VERSION}-linux-amd64.tar.gz" | cut -f1))"
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-linux-deb
+          path: cmux_*.deb
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-linux-tarball
+          path: cmux-*-linux-amd64.tar.gz
+
+  # ── Build + package on Fedora (RPM) ──────────────────────────────
+  build-rpm:
+    name: Build RPM package (Fedora 42)
+    runs-on: ubuntu-latest
+    container: fedora:42
+    timeout-minutes: 30
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            git rpm-build \
+            gcc gcc-c++ pkg-config \
+            gtk4-devel libadwaita-devel \
+            webkitgtk6.0-devel \
+            libsecret-devel libnotify-devel \
+            wayland-devel wayland-protocols-devel \
+            freetype-devel harfbuzz-devel fontconfig-devel \
+            libpng-devel oniguruma-devel mesa-libGL-devel
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#lab-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+          use-cache: false
+
+      - name: Build vendor libraries
+        run: |
+          cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+
+      - name: Build cmux-linux
+        run: |
+          cd cmux-linux
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build cmuxd
+        run: |
+          if [ -d cmuxd ]; then
+            cd cmuxd && zig build -Doptimize=ReleaseFast
+          fi
+
+      - name: Assemble RPM package
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TOPDIR="$PWD/rpmbuild"
+          mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
+          BUILDROOT="$TOPDIR/BUILDROOT/cmux-${VERSION}-1.x86_64"
+
+          # Install files into buildroot
+          install -Dm755 cmux-linux/zig-out/bin/cmux "${BUILDROOT}/usr/bin/cmux"
+          install -Dm755 ghostty/zig-out/lib/libghostty.so "${BUILDROOT}/usr/lib64/cmux/libghostty.so"
+          if [ -f cmuxd/zig-out/bin/cmuxd ]; then
+            install -Dm755 cmuxd/zig-out/bin/cmuxd "${BUILDROOT}/usr/bin/cmuxd"
+          fi
+          install -Dm644 dist/linux/com.jesssullivan.cmux.desktop "${BUILDROOT}/usr/share/applications/com.jesssullivan.cmux.desktop"
+          install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml "${BUILDROOT}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
+          for size in 16 128 256 512; do
+            install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${BUILDROOT}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}/usr/lib/udev/rules.d/70-u2f.rules"
+
+          # Generate spec from template with correct version
+          sed "s/^Version:.*/Version:        ${VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
+
+          # Build binary RPM from pre-populated buildroot (skip %prep and %build)
+          rpmbuild -bb \
+            --define "_topdir $TOPDIR" \
+            --define "_builddir $PWD" \
+            --buildroot "$BUILDROOT" \
+            --short-circuit \
+            "$TOPDIR/SPECS/cmux.spec"
+
+          RPM=$(find "$TOPDIR/RPMS" -name '*.rpm' | head -1)
+          cp "$RPM" .
+          RPM_NAME=$(basename "$RPM")
+          echo "Built: $RPM_NAME ($(du -h "$RPM_NAME" | cut -f1))"
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-linux-rpm
+          path: cmux-*.rpm
+
+  # ── Upload to GitHub release ─────────────────────────────────────
+  release:
+    name: Upload Linux packages to release
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.build-deb.outputs.tag }}"
+
+          ASSETS=()
+          for f in cmux-linux-deb/*.deb cmux-linux-rpm/*.rpm cmux-linux-tarball/*.tar.gz; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          echo "Uploading ${#ASSETS[@]} Linux assets for $TAG:"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "ERROR: No package artifacts found"
+            ls -laR cmux-linux-*/ || true
+            exit 1
+          fi
+
+          # Upload to existing release (created by fork-release.yml) or create new
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists, uploading Linux assets..."
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Creating release $TAG with Linux assets..."
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "cmux $TAG" \
+              --notes "Linux release packages for $TAG" \
+              "${ASSETS[@]}"
+          fi

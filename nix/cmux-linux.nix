@@ -25,6 +25,7 @@ in
       root = ../.;
       fileset = lib.fileset.unions [
         ../cmux-linux
+        ../dist/linux
       ];
     };
 
@@ -66,6 +67,19 @@ in
       cp zig-out/bin/cmux $out/bin/cmux-linux || \
         cp ../cmux-linux/zig-out/bin/cmux $out/bin/cmux-linux || \
         { echo "ERROR: cmux binary not found"; find . -name cmux -type f 2>/dev/null; exit 1; }
+
+      # XDG desktop integration
+      install -Dm644 ../dist/linux/com.jesssullivan.cmux.desktop $out/share/applications/com.jesssullivan.cmux.desktop
+      install -Dm644 ../dist/linux/com.jesssullivan.cmux.metainfo.xml $out/share/metainfo/com.jesssullivan.cmux.metainfo.xml
+
+      # Icons (all available sizes)
+      install -Dm644 ../dist/linux/icons/com.jesssullivan.cmux_16x16.png $out/share/icons/hicolor/16x16/apps/com.jesssullivan.cmux.png
+      install -Dm644 ../dist/linux/icons/com.jesssullivan.cmux_128x128.png $out/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
+      install -Dm644 ../dist/linux/icons/com.jesssullivan.cmux_256x256.png $out/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
+      install -Dm644 ../dist/linux/icons/com.jesssullivan.cmux_512x512.png $out/share/icons/hicolor/512x512/apps/com.jesssullivan.cmux.png
+
+      # udev rules for FIDO2/U2F hardware keys (NixOS picks these up via services.udev.packages)
+      install -Dm644 ../dist/linux/70-u2f.rules $out/lib/udev/rules.d/70-u2f.rules
 
       runHook postInstall
     '';
