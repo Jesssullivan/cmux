@@ -200,7 +200,7 @@ jobs:
       - name: Install build dependencies
         run: |
           dnf install -y \
-            git rpm-build \
+            git rpm-build systemd-rpm-macros \
             gcc gcc-c++ pkg-config \
             gtk4-devel libadwaita-devel \
             webkitgtk6.0-devel \
