@@ -63173,6 +63173,23 @@
         }
       }
     },
+    "settings.search.placeholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を検索"
+          }
+        }
+      }
+    },
     "settings.section.workspaceColors": {
       "extractionState": "manual",
       "localizations": {
