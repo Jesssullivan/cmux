@@ -1498,20 +1498,21 @@ fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []co
     const sid_str = getParamString(params, "surface_id");
 
     // Resolve surface ref once (if provided)
-    const resolved: ?struct { id: u128, ws: *Workspace } = if (sid_str) |s| blk: {
+    const resolved_id: ?u128 = if (sid_str) |s| blk: {
         const tm = getTabManager() orelse break :blk null;
-        break :blk findSurfaceGlobal(tm, s);
+        const found = findSurfaceGlobal(tm, s) orelse break :blk null;
+        break :blk found.id;
     } else null;
 
     // Suppress only if app focused AND target surface is the focused surface
     if (app_focus_override) |focused| {
         if (focused) {
-            if (resolved) |r| {
+            if (resolved_id) |rid| {
                 const tm = getTabManager();
                 if (tm) |tmgr| {
                     if (tmgr.selectedWorkspace()) |ws| {
                         if (ws.focused_panel_id) |fid| {
-                            if (fid == r.id) return "{}";
+                            if (fid == rid) return "{}";
                         }
                     }
                 }
@@ -1529,11 +1530,16 @@ fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []co
     const tlen = @min(title.len, notif.title.len);
     @memcpy(notif.title[0..tlen], title[0..tlen]);
     notif.title_len = tlen;
-    if (resolved) |r| {
-        notif.surface_id = r.id;
+    if (resolved_id) |rid| {
+        notif.surface_id = rid;
         // Trigger flash on the notified surface
-        if (r.ws.panels.getPtr(r.id)) |panel_ptr| {
-            panel_ptr.*.flash_count += 1;
+        if (getTabManager()) |tm| {
+            for (tm.workspaces.items) |ws| {
+                if (ws.panels.getPtr(rid)) |panel_ptr| {
+                    panel_ptr.*.flash_count += 1;
+                    break;
+                }
+            }
         }
     }
     notification_count += 1;
