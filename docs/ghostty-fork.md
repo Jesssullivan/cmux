@@ -14,7 +14,8 @@ When we change the fork, update this document and the parent submodule SHA.
 ## Current fork changes
 
 Fork rebased onto upstream `main` at `3509ccf78` (`v1.3.1-457-g3509ccf78`) on March 30, 2026.
-Current cmux fork head: `0b231db94` (`v1.3.1-472-g0b231db94`).
+Merged upstream through `0a492fdb3` (build: add pkg-config static linking support) on April 4, 2026.
+Current cmux fork head: `d2b6f74b8` (merge commit).
 
 ### 1) macOS display link restart on display changes
 
