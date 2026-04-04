@@ -203,7 +203,7 @@ enum GhosttyPasteboardHelper {
             return true
         }
         if types.contains(where: isPlainTextType) {
-            return
+            return true
         }
         return hasImageData(in: pasteboard)
     }
@@ -1252,7 +1252,7 @@ class GhosttyApp {
                     )
                 }
             }
-            return true
+            return
         }
         runtimeConfig.confirm_read_clipboard_cb = { userdata, content, state, _ in
             guard let content else { return }
