@@ -313,12 +313,85 @@ fn getTabManager() ?*@import("tab_manager.zig").TabManager {
     return window.getTabManager();
 }
 
+const RefKind = enum { workspace, surface, pane, window };
+
+/// Parse a "kind:N" short ref string. Returns the kind and ordinal index.
+fn parseRef(s: []const u8) ?struct { kind: RefKind, ordinal: usize } {
+    const colon = std.mem.indexOfScalar(u8, s, ':') orelse return null;
+    if (colon == 0 or colon + 1 >= s.len) return null;
+    const kind_str = s[0..colon];
+    const ordinal_str = s[colon + 1 ..];
+    const kind: RefKind = if (std.mem.eql(u8, kind_str, "workspace"))
+        .workspace
+    else if (std.mem.eql(u8, kind_str, "surface"))
+        .surface
+    else if (std.mem.eql(u8, kind_str, "pane"))
+        .pane
+    else if (std.mem.eql(u8, kind_str, "window"))
+        .window
+    else
+        return null;
+    const ordinal = std.fmt.parseInt(usize, ordinal_str, 10) catch return null;
+    return .{ .kind = kind, .ordinal = ordinal };
+}
+
+/// Resolve a workspace by UUID hex string or "workspace:N" short ref.
 fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?struct { ws: *Workspace, index: usize } {
+    // Try short ref first (workspace:N)
+    if (parseRef(id_str)) |ref| {
+        if (ref.kind == .workspace and ref.ordinal < tm.workspaces.items.len) {
+            return .{ .ws = tm.workspaces.items[ref.ordinal], .index = ref.ordinal };
+        }
+        return null;
+    }
+    // Fall back to UUID hex
     const target_id = parseId(id_str) orelse return null;
     for (tm.workspaces.items, 0..) |ws, i| {
         if (ws.id == target_id) return .{ .ws = ws, .index = i };
     }
     return null;
+}
+
+/// Resolve a surface by UUID hex string or "surface:N" short ref within a workspace.
+fn findSurfaceInWorkspace(ws: *Workspace, id_str: []const u8) ?u128 {
+    if (parseRef(id_str)) |ref| {
+        if (ref.kind == .surface and ref.ordinal < ws.ordered_panels.items.len) {
+            return ws.ordered_panels.items[ref.ordinal];
+        }
+        return null;
+    }
+    return parseId(id_str);
+}
+
+/// Resolve a surface by UUID hex or "surface:N" ref, searching all workspaces.
+fn findSurfaceGlobal(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?struct { id: u128, ws: *Workspace } {
+    if (parseRef(id_str)) |ref| {
+        if (ref.kind != .surface) return null;
+        // Short refs are relative to the selected workspace
+        const ws = tm.selectedWorkspace() orelse return null;
+        if (ref.ordinal < ws.ordered_panels.items.len) {
+            const panel_id = ws.ordered_panels.items[ref.ordinal];
+            return .{ .id = panel_id, .ws = ws };
+        }
+        return null;
+    }
+    const target_id = parseId(id_str) orelse return null;
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(target_id) != null) return .{ .id = target_id, .ws = ws };
+    }
+    return null;
+}
+
+/// Resolve a window by UUID hex or "window:N" short ref.
+fn findWindowByRef(id_str: []const u8) ?*WindowEntry {
+    if (parseRef(id_str)) |ref| {
+        if (ref.kind == .window and ref.ordinal < window_count) {
+            return &window_store[ref.ordinal];
+        }
+        return null;
+    }
+    const target_id = parseId(id_str) orelse return null;
+    return findWindowById(target_id);
 }
 
 fn isNoSurface() bool {
@@ -400,8 +473,8 @@ fn handleWindowList(alloc: Allocator, _: json.Value) []const u8 {
         if (i > 0) writer.writeAll(",") catch {};
         const hex = formatId(w.id);
         writer.print(
-            "{{\"id\":\"{s}\",\"index\":{d},\"focused\":{s}}}",
-            .{ @as([]const u8, &hex), i, if (i == 0) "true" else "false" },
+            "{{\"id\":\"{s}\",\"short_id\":\"window:{d}\",\"index\":{d},\"focused\":{s}}}",
+            .{ @as([]const u8, &hex), i, i, if (i == 0) "true" else "false" },
         ) catch {};
     }
     writer.writeAll("]}") catch {};
@@ -423,10 +496,7 @@ fn handleWorkspaceList(alloc: Allocator, params: json.Value) []const u8 {
     // Optional window_id filter
     const win_filter: ?*const WindowEntry = if (getParamString(params, "window_id")) |wid_str| blk: {
         ensureDefaultWindow();
-        if (parseId(wid_str)) |wid| {
-            break :blk if (findWindowById(wid)) |w| w else null;
-        }
-        break :blk null;
+        break :blk if (findWindowByRef(wid_str)) |w| w else null;
     } else null;
 
     // Build JSON array manually for efficiency
@@ -444,10 +514,11 @@ fn handleWorkspaceList(alloc: Allocator, params: json.Value) []const u8 {
         const ws_id = formatId(ws.id);
         const is_selected = if (selected) |s| s == i else false;
         writer.print(
-            "{{\"index\":{d},\"id\":\"{s}\",\"title\":\"{s}\",\"selected\":{s}}}",
+            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"workspace:{d}\",\"title\":\"{s}\",\"selected\":{s}}}",
             .{
                 out_idx,
                 @as([]const u8, &ws_id),
+                out_idx,
                 ws.displayTitle(),
                 if (is_selected) "true" else "false",
             },
@@ -467,7 +538,7 @@ fn handleWorkspaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     // Register in window model
     ensureDefaultWindow();
     const target_win = if (getParamString(params, "window_id")) |wid_str|
-        if (parseId(wid_str)) |wid| findWindowById(wid) else null
+        findWindowByRef(wid_str)
     else
         if (window_count > 0) &window_store[0] else null;
     if (target_win) |w| w.addWorkspace(ws.id);
@@ -564,10 +635,11 @@ fn handleSurfaceList(alloc: Allocator, params: json.Value) []const u8 {
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
         const title = panel.custom_title orelse panel.title orelse "Terminal";
         writer.print(
-            "{{\"index\":{d},\"id\":\"{s}\",\"focused\":{s},\"title\":\"{s}\",\"type\":\"{s}\"}}",
+            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"surface:{d}\",\"focused\":{s},\"title\":\"{s}\",\"type\":\"{s}\"}}",
             .{
                 idx,
                 @as([]const u8, &panel_hex),
+                idx,
                 if (is_focused) "true" else "false",
                 title,
                 @tagName(panel.panel_type),
@@ -582,7 +654,8 @@ fn handleSurfaceList(alloc: Allocator, params: json.Value) []const u8 {
 fn handleSurfaceFocus(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const id_str = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
-    const target_id = parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}";
+    const found = findSurfaceGlobal(tm, id_str) orelse return "{\"error\":\"surface not found\"}";
+    const target_id = found.id;
 
     // Search all workspaces for this surface
     for (tm.workspaces.items) |ws| {
@@ -642,7 +715,7 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
 
     // Determine which surface to close (param or focused)
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
     else
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
@@ -712,10 +785,11 @@ fn handlePaneList(alloc: Allocator, params: json.Value) []const u8 {
         const panel_hex = formatId(panel.id);
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
         writer.print(
-            "{{\"index\":{d},\"id\":\"{s}\",\"surface_count\":1,\"focused\":{s}}}",
+            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"pane:{d}\",\"surface_count\":1,\"focused\":{s}}}",
             .{
                 idx,
                 @as([]const u8, &panel_hex),
+                idx,
                 if (is_focused) "true" else "false",
             },
         ) catch {};
@@ -749,29 +823,18 @@ fn handleWorkspaceReorder(_: Allocator, params: json.Value) []const u8 {
             tm.workspaces.insertAssumeCapacity(tidx, ws);
         }
     } else if (getParamString(params, "before_workspace_id")) |before_str| {
-        const before_id = parseId(before_str) orelse return "{\"error\":\"invalid before_workspace_id\"}";
-        // Find target position and move source before it
-        for (tm.workspaces.items, 0..) |ws, i| {
-            if (ws.id == before_id) {
-                if (i != found.index) {
-                    const src = tm.workspaces.orderedRemove(found.index);
-                    const insert_at = if (found.index < i) i - 1 else i;
-                    tm.workspaces.insertAssumeCapacity(insert_at, src);
-                }
-                break;
-            }
+        const before = findWorkspaceById(tm, before_str) orelse return "{\"error\":\"invalid before_workspace_id\"}";
+        if (before.index != found.index) {
+            const src = tm.workspaces.orderedRemove(found.index);
+            const insert_at = if (found.index < before.index) before.index - 1 else before.index;
+            tm.workspaces.insertAssumeCapacity(insert_at, src);
         }
     } else if (getParamString(params, "after_workspace_id")) |after_str| {
-        const after_id = parseId(after_str) orelse return "{\"error\":\"invalid after_workspace_id\"}";
-        for (tm.workspaces.items, 0..) |ws, i| {
-            if (ws.id == after_id) {
-                if (i != found.index) {
-                    const src = tm.workspaces.orderedRemove(found.index);
-                    const insert_at = if (found.index <= i) i else i + 1;
-                    tm.workspaces.insertAssumeCapacity(insert_at, src);
-                }
-                break;
-            }
+        const after = findWorkspaceById(tm, after_str) orelse return "{\"error\":\"invalid after_workspace_id\"}";
+        if (after.index != found.index) {
+            const src = tm.workspaces.orderedRemove(found.index);
+            const insert_at = if (found.index <= after.index) after.index else after.index + 1;
+            tm.workspaces.insertAssumeCapacity(insert_at, src);
         }
     }
     if (window.getSidebar()) |sb| sb.refresh();
@@ -902,7 +965,7 @@ fn handleSurfaceSendText(_: Allocator, params: json.Value) []const u8 {
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
 
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
     else
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
@@ -963,12 +1026,9 @@ fn handleSurfaceTriggerFlash(_: Allocator, params: json.Value) []const u8 {
         }
         return "{}";
     };
-    const target_id = parseId(id_str) orelse return "{}";
-    for (tm.workspaces.items) |ws| {
-        if (ws.panels.getPtr(target_id)) |panel_ptr| {
-            panel_ptr.*.flash_count += 1;
-            return "{}";
-        }
+    const found = findSurfaceGlobal(tm, id_str) orelse return "{}";
+    if (found.ws.panels.getPtr(found.id)) |panel_ptr| {
+        panel_ptr.*.flash_count += 1;
     }
     return "{}";
 }
@@ -982,16 +1042,11 @@ fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
 fn handlePaneFocus(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const id_str = getParamString(params, "pane_id") orelse return "{\"error\":\"missing pane_id\"}";
-    const target_id = parseId(id_str) orelse return "{\"error\":\"invalid pane_id\"}";
+    const found = findSurfaceGlobal(tm, id_str) orelse return "{\"error\":\"invalid pane_id\"}";
 
-    // Search all workspaces (pane == panel in 1:1 mapping)
-    for (tm.workspaces.items) |ws| {
-        if (ws.panels.get(target_id) != null) {
-            ws.focused_panel_id = target_id;
-            return "{}";
-        }
-    }
-    return "{\"error\":\"not found\"}";
+    // pane == panel in 1:1 mapping
+    found.ws.focused_panel_id = found.id;
+    return "{}";
 }
 
 fn handlePaneCreate(alloc: Allocator, params: json.Value) []const u8 {
@@ -1007,7 +1062,7 @@ fn handlePaneSurfaces(alloc: Allocator, params: json.Value) []const u8 {
 
     // Get target pane (or focused)
     const target_id = if (getParamString(params, "pane_id")) |id_str|
-        parseId(id_str) orelse return "{\"surfaces\":[]}"
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"surfaces\":[]}"
     else
         ws.focused_panel_id orelse return "{\"surfaces\":[]}";
 
@@ -1043,8 +1098,10 @@ fn handlePaneSwap(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const pane_str = getParamString(params, "pane_id") orelse return "{\"error\":\"missing pane_id\"}";
     const target_str = getParamString(params, "target_pane_id") orelse return "{\"error\":\"missing target_pane_id\"}";
-    const pane_id = parseId(pane_str) orelse return "{\"error\":\"invalid pane_id\"}";
-    const target_id = parseId(target_str) orelse return "{\"error\":\"invalid target_pane_id\"}";
+    const pane_found = findSurfaceGlobal(tm, pane_str) orelse return "{\"error\":\"invalid pane_id\"}";
+    const target_found = findSurfaceGlobal(tm, target_str) orelse return "{\"error\":\"invalid target_pane_id\"}";
+    const pane_id = pane_found.id;
+    const target_id = target_found.id;
 
     // Find both panels in any workspace and swap their leaf nodes in the split tree
     for (tm.workspaces.items) |ws| {
@@ -1071,9 +1128,9 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
 
     // Identify pane to break (pane_id or surface_id or focused)
     const target_id = if (getParamString(params, "pane_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid pane_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid pane_id\"}"
     else if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused pane\"}";
@@ -1102,18 +1159,18 @@ fn handlePaneJoin(_: Allocator, params: json.Value) []const u8 {
 fn handleWorkspaceMoveToWindow(_: Allocator, params: json.Value) []const u8 {
     const ws_str = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
     const win_str = getParamString(params, "window_id") orelse return "{\"error\":\"missing window_id\"}";
-    const ws_id = parseId(ws_str) orelse return "{\"error\":\"invalid workspace_id\"}";
-    const win_id = parseId(win_str) orelse return "{\"error\":\"invalid window_id\"}";
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws_found = findWorkspaceById(tm, ws_str) orelse return "{\"error\":\"invalid workspace_id\"}";
 
     ensureDefaultWindow();
+    const win = findWindowByRef(win_str) orelse return "{\"error\":\"invalid window_id\"}";
+
     // Remove from all windows
     for (window_store[0..window_count]) |*w| {
-        w.removeWorkspace(ws_id);
+        w.removeWorkspace(ws_found.ws.id);
     }
     // Add to target window
-    if (findWindowById(win_id)) |w| {
-        w.addWorkspace(ws_id);
-    }
+    win.addWorkspace(ws_found.ws.id);
     return "{}";
 }
 
@@ -1172,7 +1229,7 @@ fn handleBrowserNavigate(_: Allocator, params: json.Value) []const u8 {
     const url = getParamString(params, "url") orelse return "{\"error\":\"missing url\"}";
 
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
@@ -1215,7 +1272,7 @@ const BrowserAction = enum { back, forward, reload };
 fn browserAction(params: json.Value, action: BrowserAction) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
@@ -1244,7 +1301,7 @@ fn browserAction(params: json.Value, action: BrowserAction) []const u8 {
 fn handleBrowserUrlGet(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
@@ -1271,7 +1328,7 @@ fn handleBrowserUrlGet(alloc: Allocator, params: json.Value) []const u8 {
 fn handleBrowserFocusWebview(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
@@ -1291,7 +1348,7 @@ fn handleBrowserFocusWebview(_: Allocator, params: json.Value) []const u8 {
 fn handleBrowserIsWebviewFocused(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"focused\":false}";
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"focused\":false}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"focused\":false}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"focused\":false}";
         break :blk ws.focused_panel_id orelse return "{\"focused\":false}";
@@ -1321,7 +1378,7 @@ fn handleBrowserCloseDevtools(_: Allocator, params: json.Value) []const u8 {
 fn handleBrowserFind(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
@@ -1363,7 +1420,7 @@ const BrowserViewAction = enum { show_devtools, close_devtools, find_next, find_
 fn browserViewAction(params: json.Value, action: BrowserViewAction) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        parseId(id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
     else blk: {
         const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
         break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
@@ -1440,18 +1497,22 @@ fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []co
     const title = getParamString(params, "title") orelse "notification";
     const sid_str = getParamString(params, "surface_id");
 
+    // Resolve surface ref once (if provided)
+    const resolved_id: ?u128 = if (sid_str) |s| blk: {
+        const tm = getTabManager() orelse break :blk null;
+        const found = findSurfaceGlobal(tm, s) orelse break :blk null;
+        break :blk found.id;
+    } else null;
+
     // Suppress only if app focused AND target surface is the focused surface
     if (app_focus_override) |focused| {
         if (focused) {
-            if (sid_str) |s| {
-                const sid = parseId(s);
-                if (sid) |target_sid| {
-                    const tm = getTabManager();
-                    if (tm) |tmgr| {
-                        if (tmgr.selectedWorkspace()) |ws| {
-                            if (ws.focused_panel_id) |fid| {
-                                if (fid == target_sid) return "{}";
-                            }
+            if (resolved_id) |rid| {
+                const tm = getTabManager();
+                if (tm) |tmgr| {
+                    if (tmgr.selectedWorkspace()) |ws| {
+                        if (ws.focused_panel_id) |fid| {
+                            if (fid == rid) return "{}";
                         }
                     }
                 }
@@ -1469,15 +1530,14 @@ fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []co
     const tlen = @min(title.len, notif.title.len);
     @memcpy(notif.title[0..tlen], title[0..tlen]);
     notif.title_len = tlen;
-    if (sid_str) |s| {
-        const sid = parseId(s);
-        notif.surface_id = sid;
+    if (resolved_id) |rid| {
+        notif.surface_id = rid;
         // Trigger flash on the notified surface
-        if (sid) |target_sid| {
-            const tm = getTabManager() orelse return "{}";
+        if (getTabManager()) |tm| {
             for (tm.workspaces.items) |ws| {
-                if (ws.panels.getPtr(target_sid)) |panel_ptr| {
+                if (ws.panels.getPtr(rid)) |panel_ptr| {
                     panel_ptr.*.flash_count += 1;
+                    break;
                 }
             }
         }
@@ -1543,11 +1603,9 @@ fn handleDebugAppActivate(_: Allocator, _: json.Value) []const u8 {
 fn handleDebugFlashCount(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"count\":0}";
     const id_str = getParamString(params, "surface_id") orelse return "{\"count\":0}";
-    const target_id = parseId(id_str) orelse return "{\"count\":0}";
-    for (tm.workspaces.items) |ws| {
-        if (ws.panels.get(target_id)) |panel| {
-            return std.fmt.allocPrint(alloc, "{{\"count\":{d}}}", .{panel.flash_count}) catch "{\"count\":0}";
-        }
+    const found = findSurfaceGlobal(tm, id_str) orelse return "{\"count\":0}";
+    if (found.ws.panels.get(found.id)) |panel| {
+        return std.fmt.allocPrint(alloc, "{{\"count\":{d}}}", .{panel.flash_count}) catch "{\"count\":0}";
     }
     return "{\"count\":0}";
 }
