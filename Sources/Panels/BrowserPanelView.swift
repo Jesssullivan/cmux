@@ -638,6 +638,14 @@ struct BrowserPanelView: View {
                 panel.invalidateAddressBarPageFocusRestoreAttempts()
                 hideSuggestions()
                 setAddressBarFocused(false, reason: "panelFocus.onChange.unfocused")
+                // If the WebView is still first responder, resign it so the terminal
+                // can receive keyboard events (arrow keys, etc.) immediately.
+                let webView = panel.webView
+                if let window = webView.window,
+                   let responderView = window.firstResponder as? NSView,
+                   responderView === webView || responderView.isDescendant(of: webView) {
+                    window.makeFirstResponder(nil)
+                }
                 // Surface switches in split layouts can keep the browser visible, so
                 // `isVisibleInUI` never flips to false. Check for an attached-inspector
                 // X-close when focus leaves as well so the persisted intent stays in sync.

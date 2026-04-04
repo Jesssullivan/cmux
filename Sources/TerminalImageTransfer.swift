@@ -266,6 +266,9 @@ enum TerminalImageTransferPlanner {
         }
 
         if let rawURL = pasteboard.string(forType: .URL), !rawURL.isEmpty {
+            if let url = URL(string: rawURL), url.isFileURL {
+                return .insertText(escapeForShell(url.path))
+            }
             return .insertText(escapeForShell(rawURL))
         }
 
@@ -281,6 +284,10 @@ enum TerminalImageTransferPlanner {
         }
 
         if let rawURL = pasteboard.string(forType: .URL), !rawURL.isEmpty {
+            // Convert file:// URLs to POSIX paths for terminal insertion
+            if let url = URL(string: rawURL), url.isFileURL {
+                return .insertText(escapeForShell(url.path))
+            }
             return .insertText(escapeForShell(rawURL))
         }
 

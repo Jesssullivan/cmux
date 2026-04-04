@@ -9601,6 +9601,9 @@ private struct SidebarExternalDropDelegate: DropDelegate {
 #if DEBUG
         dlog("sidebar.dropOutside.exited tab=\(debugShortSidebarTabId(draggedTabId))")
 #endif
+        if !CGEventSource.buttonState(.combinedSessionState, button: .left) {
+            SidebarDragLifecycleNotification.postClearRequest(reason: "outside_drop_exited_mouse_up")
+        }
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -13409,6 +13412,15 @@ private struct SidebarTabDropDelegate: DropDelegate {
 #endif
         if dropIndicator?.tabId == targetTabId {
             dropIndicator = nil
+        }
+        // If the mouse button is no longer down, the drag session has ended
+        // without performDrop (e.g. dropped outside valid targets). Clear
+        // immediately rather than waiting for the failsafe timer.
+        if !CGEventSource.buttonState(.combinedSessionState, button: .left) {
+#if DEBUG
+            dlog("sidebar.dropExited.mouseUpClear target=\(targetTabId?.uuidString.prefix(5) ?? "end")")
+#endif
+            draggedTabId = nil
         }
     }
 
