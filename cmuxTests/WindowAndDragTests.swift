@@ -1338,6 +1338,42 @@ final class TmuxWorkspacePaneOverlayTests: XCTestCase {
         XCTAssertEqual(model.flashReason, .navigation)
     }
 
+    func testTmuxWorkspacePaneOverlayModelClearsFlashAfterDuration() {
+        let clearExpectation = expectation(description: "flash auto clears")
+        let startedAt = Date()
+        let workspaceId = UUID()
+        let model = TmuxWorkspacePaneOverlayModel()
+        model.onStateChange = {
+            if model.flashStartedAt == nil {
+                clearExpectation.fulfill()
+            }
+        }
+
+        model.apply(
+            TmuxWorkspacePaneOverlayRenderState(
+                workspaceId: workspaceId,
+                unreadRects: [],
+                flashRect: CGRect(x: 10, y: 20, width: 300, height: 200),
+                flashToken: 1,
+                flashReason: .notificationArrival
+            )
+        )
+        model.apply(
+            TmuxWorkspacePaneOverlayRenderState(
+                workspaceId: workspaceId,
+                unreadRects: [],
+                flashRect: CGRect(x: 10, y: 20, width: 300, height: 200),
+                flashToken: 2,
+                flashReason: .notificationArrival
+            ),
+            now: { startedAt }
+        )
+
+        XCTAssertEqual(model.flashStartedAt, startedAt)
+        wait(for: [clearExpectation], timeout: FocusFlashPattern.duration + 0.5)
+        XCTAssertNil(model.flashStartedAt)
+    }
+
     func testNavigationFlashUsesNonNotificationPresentation() {
         XCTAssertNotEqual(
             WorkspaceAttentionCoordinator.flashStyle(for: .navigation),

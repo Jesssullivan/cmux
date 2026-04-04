@@ -1383,14 +1383,21 @@ private final class WindowTmuxWorkspacePaneOverlayController: NSObject {
     private let model = TmuxWorkspacePaneOverlayModel()
     private let hostingView: NSHostingView<TmuxWorkspacePaneOverlayView>
     private var installConstraints: [NSLayoutConstraint] = []
-    private var modelVisibilityCancellable: AnyCancellable?
 
     init(window: NSWindow) {
         self.window = window
         self.hostingView = NSHostingView(
-            rootView: TmuxWorkspacePaneOverlayView(model: model)
+            rootView: TmuxWorkspacePaneOverlayView(
+                unreadRects: [],
+                flashRect: nil,
+                flashStartedAt: nil,
+                flashReason: nil
+            )
         )
         super.init()
+        model.onStateChange = { [weak self] in
+            self?.renderModelState()
+        }
         containerView.translatesAutoresizingMaskIntoConstraints = false
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -1407,18 +1414,6 @@ private final class WindowTmuxWorkspacePaneOverlayController: NSObject {
             hostingView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             hostingView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
         ])
-        modelVisibilityCancellable = Publishers.CombineLatest3(
-            model.$unreadRects,
-            model.$flashRect,
-            model.$flashStartedAt
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] unreadRects, flashRect, flashStartedAt in
-            guard let self else { return }
-            let hasVisibleContent = !unreadRects.isEmpty || (flashRect != nil && flashStartedAt != nil)
-            self.containerView.alphaValue = hasVisibleContent ? 1 : 0
-            self.containerView.isHidden = !hasVisibleContent
-        }
         _ = ensureInstalled()
     }
 
@@ -1452,6 +1447,19 @@ private final class WindowTmuxWorkspacePaneOverlayController: NSObject {
         } else {
             model.clear()
         }
+        renderModelState()
+    }
+
+    private func renderModelState() {
+        guard ensureInstalled() else { return }
+        hostingView.rootView = TmuxWorkspacePaneOverlayView(
+            unreadRects: model.unreadRects,
+            flashRect: model.flashRect,
+            flashStartedAt: model.flashStartedAt,
+            flashReason: model.flashReason
+        )
+        containerView.alphaValue = model.hasVisibleContent ? 1 : 0
+        containerView.isHidden = !model.hasVisibleContent
     }
 }
 

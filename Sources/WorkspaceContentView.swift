@@ -102,15 +102,16 @@ struct TmuxWorkspacePaneOverlayRenderState: Equatable {
 }
 
 @MainActor
-final class TmuxWorkspacePaneOverlayModel: ObservableObject {
-    @Published private(set) var unreadRects: [CGRect] = []
-    @Published private(set) var flashRect: CGRect?
-    @Published private(set) var flashStartedAt: Date?
-    @Published private(set) var flashReason: WorkspaceAttentionFlashReason?
+final class TmuxWorkspacePaneOverlayModel {
+    private(set) var unreadRects: [CGRect] = []
+    private(set) var flashRect: CGRect?
+    private(set) var flashStartedAt: Date?
+    private(set) var flashReason: WorkspaceAttentionFlashReason?
 
     private var lastWorkspaceId: UUID?
     private var lastFlashToken: UInt64?
     private var flashResetWorkItem: DispatchWorkItem?
+    var onStateChange: (() -> Void)?
 
     var showsAnimatedFlash: Bool {
         flashRect != nil && flashStartedAt != nil
@@ -173,6 +174,7 @@ final class TmuxWorkspacePaneOverlayModel: ObservableObject {
             }
 
             self.flashStartedAt = nil
+            self.onStateChange?()
         }
         flashResetWorkItem = workItem
         DispatchQueue.main.asyncAfter(
@@ -188,11 +190,14 @@ final class TmuxWorkspacePaneOverlayModel: ObservableObject {
 }
 
 struct TmuxWorkspacePaneOverlayView: View {
-    @ObservedObject var model: TmuxWorkspacePaneOverlayModel
+    let unreadRects: [CGRect]
+    let flashRect: CGRect?
+    let flashStartedAt: Date?
+    let flashReason: WorkspaceAttentionFlashReason?
 
     var body: some View {
         Group {
-            if model.showsAnimatedFlash {
+            if flashRect != nil && flashStartedAt != nil {
                 TimelineView(.animation) { timeline in
                     Canvas { context, _ in
                         renderOverlay(
@@ -201,7 +206,7 @@ struct TmuxWorkspacePaneOverlayView: View {
                         )
                     }
                 }
-            } else if !model.unreadRects.isEmpty {
+            } else if !unreadRects.isEmpty {
                 Canvas { context, _ in
                     renderOverlay(in: &context, currentDate: nil)
                 }
@@ -217,12 +222,12 @@ struct TmuxWorkspacePaneOverlayView: View {
         in context: inout GraphicsContext,
         currentDate: Date?
     ) {
-        for rect in model.unreadRects {
+        for rect in unreadRects {
             drawUnreadRing(in: &context, rect: rect)
         }
 
-        guard let flashRect = model.flashRect,
-              let flashStartedAt = model.flashStartedAt,
+        guard let flashRect,
+              let flashStartedAt,
               let currentDate else { return }
         let elapsed = currentDate.timeIntervalSince(flashStartedAt)
         let opacity = FocusFlashPattern.opacity(at: elapsed)
@@ -231,7 +236,7 @@ struct TmuxWorkspacePaneOverlayView: View {
             in: &context,
             rect: flashRect,
             opacity: opacity,
-            reason: model.flashReason ?? .notificationArrival
+            reason: flashReason ?? .notificationArrival
         )
     }
 
