@@ -34,6 +34,9 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
 
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
       - name: Install CJK IME frameworks
         run: |
           # fcitx5 with CJK input methods + GTK4 module
