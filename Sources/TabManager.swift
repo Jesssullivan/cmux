@@ -948,7 +948,7 @@ class TabManager: ObservableObject {
         let activeProbeKeys = Set(workspaceGitProbeGenerationByKey.keys)
 
         for workspace in tabs {
-            for panelId in trackedWorkspaceGitMetadataPeriodicPollCandidatePanelIds(
+            for panelId in trackedWorkspaceGitMetadataPollCandidatePanelIds(
                 in: workspace,
                 activeProbeKeys: activeProbeKeys
             ) {
@@ -987,6 +987,13 @@ class TabManager: ObservableObject {
             return
         }
 
+        // Preserve any in-flight bootstrap retry sequence for this workspace.
+        let probeKey = WorkspaceGitProbeKey(workspaceId: workspace.id, panelId: focusedPanelId)
+        guard workspaceGitProbeGenerationByKey[probeKey] == nil,
+              workspaceGitProbeTimersByKey[probeKey] == nil else {
+            return
+        }
+
         scheduleWorkspaceGitMetadataRefreshIfPossible(
             workspaceId: workspace.id,
             panelId: focusedPanelId,
@@ -1009,6 +1016,11 @@ class TabManager: ObservableObject {
         )
     }
 
+    func workspaceGitProbeAttemptCountForTesting(workspaceId: UUID, panelId: UUID) -> Int {
+        let probeKey = WorkspaceGitProbeKey(workspaceId: workspaceId, panelId: panelId)
+        return workspaceGitProbeTimersByKey[probeKey]?.count ?? 0
+    }
+
     private func trackedWorkspaceGitMetadataPollCandidatePanelIds(
         in workspace: Workspace,
         activeProbeKeys: Set<WorkspaceGitProbeKey>
@@ -1019,29 +1031,6 @@ class TabManager: ObservableObject {
         if candidatePanelIds.isEmpty,
            let focusedPanelId = workspace.focusedPanelId,
            workspace.gitBranch != nil || workspace.pullRequest != nil {
-            candidatePanelIds.insert(focusedPanelId)
-        }
-
-        return Set(candidatePanelIds.filter { panelId in
-            let probeKey = WorkspaceGitProbeKey(workspaceId: workspace.id, panelId: panelId)
-            return !activeProbeKeys.contains(probeKey)
-        })
-    }
-
-    private func trackedWorkspaceGitMetadataPeriodicPollCandidatePanelIds(
-        in workspace: Workspace,
-        activeProbeKeys: Set<WorkspaceGitProbeKey>
-    ) -> Set<UUID> {
-        var candidatePanelIds = Set(
-            workspace.panelPullRequests.compactMap { panelId, pullRequest in
-                pullRequest.status == .open ? panelId : nil
-            }
-        )
-
-        if candidatePanelIds.isEmpty,
-           let focusedPanelId = workspace.focusedPanelId,
-           let pullRequest = workspace.pullRequest,
-           pullRequest.status == .open {
             candidatePanelIds.insert(focusedPanelId)
         }
 
