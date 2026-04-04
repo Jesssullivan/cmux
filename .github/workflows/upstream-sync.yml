@@ -276,10 +276,10 @@ jobs:
           GHOSTTY_SHA=$(git -C ghostty rev-parse HEAD)
           TAG="xcframework-${GHOSTTY_SHA}"
           echo "Downloading GhosttyKit for ghostty commit ${GHOSTTY_SHA}"
-          gh release download "$TAG" --repo manaflow-ai/ghostty --pattern "GhosttyKit.xcframework.tar.gz" || {
+          gh release download "$TAG" --repo Jesssullivan/ghostty --pattern "GhosttyKit.xcframework.tar.gz" || {
             echo "Pre-built xcframework not found for $TAG"
             echo "Available releases:"
-            gh release list --repo manaflow-ai/ghostty --limit 5
+            gh release list --repo Jesssullivan/ghostty --limit 5
             exit 1
           }
           tar xzf GhosttyKit.xcframework.tar.gz
