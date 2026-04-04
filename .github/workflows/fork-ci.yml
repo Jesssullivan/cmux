@@ -19,6 +19,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
