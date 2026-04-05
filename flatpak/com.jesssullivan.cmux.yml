@@ -1,16 +1,14 @@
 app-id: com.jesssullivan.cmux
 runtime: org.gnome.Platform
-runtime-version: '47'
+runtime-version: '49'
 sdk: org.gnome.Sdk
 command: cmux
 
 finish-args:
   # GPU rendering (OpenGL for libghostty)
   - --device=dri
-  # PTY device access (terminal I/O)
+  # PTY device access (terminal I/O) + FIDO2/U2F hidraw
   - --device=all
-  # FIDO2/U2F hardware security keys (hidraw)
-  - --device=hidraw
   # Windowing
   - --share=ipc
   - --socket=fallback-x11
@@ -34,13 +32,17 @@ cleanup:
   - '*.a'
 
 modules:
+  - dependencies.yml
+
   - name: cmux
     buildsystem: simple
+    build-options:
+      append-path: /app/zig
     build-commands:
-      # Build libghostty
-      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+      # Build libghostty (--system vendors pre-fetched Zig packages for offline build)
+      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline -Dflatpak=true -Demit-docs=false --search-prefix /app --system $PWD/vendor/p
       # Build cmux-linux
-      - cd cmux-linux && zig build -Doptimize=ReleaseFast
+      - cd cmux-linux && zig build -Doptimize=ReleaseFast -Dcpu=baseline
       # Install binary
       - install -Dm755 cmux-linux/zig-out/bin/cmux /app/bin/cmux
       # Install shared library
@@ -54,6 +56,20 @@ modules:
       - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png /app/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
       - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png /app/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
       - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_512x512.png /app/share/icons/hicolor/512x512/apps/com.jesssullivan.cmux.png
+      # Install udev rules
+      - install -Dm644 dist/linux/70-u2f.rules /app/share/udev/rules.d/70-u2f.rules
     sources:
       - type: dir
         path: ..
+        skip:
+          - flatpak/.flatpak-builder
+          - flatpak/builddir
+          - flatpak/repo
+          - .zig-cache
+          - zig-out
+          - .build
+          - node_modules
+          - GhosttyKit.xcframework
+
+      # Pre-fetched Zig packages for offline build (ghostty dependencies)
+      - zig-packages.json
