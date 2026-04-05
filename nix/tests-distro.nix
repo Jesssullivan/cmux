@@ -168,7 +168,7 @@
   distro-rocky9 =
     if cmuxRpm != null
     then
-      nvt.rocky."9_5" {
+      (nvt.rocky."9_5" {
         sharedDirs = {
           pkg = {
             source = "${cmuxRpm}";
@@ -190,7 +190,7 @@
 
           ${socketPingTest}
         '';
-      }
+      }).driver
     else
       # Fallback: skip if packages couldn't be built
       pkgs.runCommand "distro-rocky9-skipped" {} ''
@@ -202,7 +202,7 @@
   distro-debian12 =
     if cmuxDeb != null
     then
-      nvt.debian."12" {
+      (nvt.debian."12" {
         sharedDirs = {
           pkg = {
             source = "${cmuxDeb}";
@@ -222,7 +222,7 @@
 
           ${socketPingTest}
         '';
-      }
+      }).driver
     else
       pkgs.runCommand "distro-debian12-skipped" {} ''
         echo "Skipped: cmux-linux packages not available (missing ghosttySrc or zigPkg)"
@@ -235,7 +235,7 @@
   distro-ubuntu2404 =
     if cmuxDeb != null
     then
-      nvt.ubuntu."24_04" {
+      (nvt.ubuntu."24_04" {
         sharedDirs = {
           pkg = {
             source = "${cmuxDeb}";
@@ -255,7 +255,7 @@
 
           ${socketPingTest}
         '';
-      }
+      }).driver
     else
       pkgs.runCommand "distro-ubuntu2404-skipped" {} ''
         echo "Skipped: cmux-linux packages not available (missing ghosttySrc or zigPkg)"
