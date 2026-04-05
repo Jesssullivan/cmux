@@ -173,13 +173,26 @@
     # ── Automated Checks ─────────────────────────────────────────────
     # Usage: nix flake check
     #        nix build .#checks.x86_64-linux.basic-version-check
-    checks = forAllPlatforms (pkgs:
-      import ./nix/tests.nix {
+    #        nix build .#checks.x86_64-linux.distro-rocky9
+    #        nix build .#checks.x86_64-linux.distro-debian12
+    #        nix build .#checks.x86_64-linux.distro-ubuntu2404
+    checks = forAllPlatforms (pkgs: let
+      sys = pkgs.stdenv.hostPlatform.system;
+      zigPkg = zig.packages.${sys}."0.15.2";
+    in
+      (import ./nix/tests.nix {
         inherit nixpkgs self;
-        inherit (pkgs.stdenv.hostPlatform) system;
-        zigPkg = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
+        system = sys;
+        inherit zigPkg;
         ghosttySrc = ghostty-src;
-      });
+      })
+      // (lib.optionalAttrs pkgs.stdenv.isLinux
+        (import ./nix/tests-distro.nix {
+          inherit nixpkgs self nix-vm-test;
+          system = sys;
+          inherit zigPkg;
+          ghosttySrc = ghostty-src;
+        })));
 
     # ── Overlays ─────────────────────────────────────────────────────
     overlays = {
