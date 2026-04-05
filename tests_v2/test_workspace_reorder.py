@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Socket API: workspace.reorder by index, before_workspace, after_workspace."""
+"""Socket API: workspace.reorder by before_workspace, after_workspace."""
 
 import os
 import sys
@@ -30,14 +30,14 @@ def main() -> int:
 
         ws0, ws1, ws2, ws3 = ids_before[0], ids_before[1], ids_before[2], ids_before[3]
 
-        # Reorder by index: move ws3 to index 0
-        c.reorder_workspace(ws3, index=0)
+        # Reorder by before_workspace: move ws3 before ws0 (to first position)
+        c.reorder_workspace(ws3, before_workspace=ws0)
         time.sleep(0.05)
-        ids_after_idx = _ws_ids(c)
-        if ids_after_idx[0] != ws3:
-            raise cmuxError(f"reorder by index: expected ws3 first, got {ids_after_idx}")
+        ids_after_before_first = _ws_ids(c)
+        if ids_after_before_first[0] != ws3:
+            raise cmuxError(f"reorder before (to first): expected ws3 first, got {ids_after_before_first}")
 
-        # Reorder by before_workspace: move ws1 before ws3 (which is now at index 0)
+        # Reorder by before_workspace: move ws1 before ws3 (which is now first)
         c.reorder_workspace(ws1, before_workspace=ws3)
         time.sleep(0.05)
         ids_after_before = _ws_ids(c)
@@ -63,7 +63,7 @@ def main() -> int:
         for ws_id in reversed(created):
             c.close_workspace(ws_id)
 
-    print("PASS: workspace reorder (by index, before, after)")
+    print("PASS: workspace reorder (before, after)")
     return 0
 
 

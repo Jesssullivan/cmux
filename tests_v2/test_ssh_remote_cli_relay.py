@@ -237,8 +237,8 @@ def main() -> int:
                 f"expected no eligible detected ports in fixture: {first_status}",
             )
             _must(
-                not (first_remote.get("forwarded_ports") or []),
-                f"expected no forwarded ports when none are eligible: {first_status}",
+                "forwarded_ports" not in first_remote,
+                f"expected no forwarded_ports field (port mirroring removed): {first_status}",
             )
 
             # Verify remote cmux wrapper + relay-specific daemon mapping were installed.

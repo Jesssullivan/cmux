@@ -3700,7 +3700,6 @@ final class WorkspaceRemoteSessionController {
             guard workspace.activeRemoteSessionControllerID == controllerID else { return }
             workspace.applyRemotePortsSnapshot(
                 detected: [],
-                forwarded: [],
                 conflicts: [],
                 target: workspace.remoteDisplayTarget ?? "remote host"
             )
@@ -5581,7 +5580,6 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var remoteConnectionDetail: String?
     @Published var remoteDaemonStatus: WorkspaceRemoteDaemonStatus = WorkspaceRemoteDaemonStatus()
     @Published var remoteDetectedPorts: [Int] = []
-    @Published var remoteForwardedPorts: [Int] = []
     @Published var remotePortConflicts: [Int] = []
     @Published var remoteProxyEndpoint: BrowserProxyEndpoint?
     @Published var remoteHeartbeatCount: Int = 0
@@ -6724,7 +6722,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func recomputeListeningPorts() {
-        let unique = Set(surfaceListeningPorts.values.flatMap { $0 }).union(remoteForwardedPorts)
+        let unique = Set(surfaceListeningPorts.values.flatMap { $0 })
         let next = unique.sorted()
         if listeningPorts != next {
             listeningPorts = next
@@ -6952,7 +6950,6 @@ final class Workspace: Identifiable, ObservableObject {
             "active_terminal_sessions": activeRemoteTerminalSessionCount,
             "daemon": remoteDaemonStatus.payload(),
             "detected_ports": remoteDetectedPorts,
-            "forwarded_ports": remoteForwardedPorts,
             "conflicted_ports": remotePortConflicts,
             "detail": remoteConnectionDetail ?? NSNull(),
             "heartbeat": [
@@ -7013,7 +7010,6 @@ final class Workspace: Identifiable, ObservableObject {
         remoteConfiguration = configuration
         seedInitialRemoteTerminalSessionIfNeeded(configuration: configuration)
         remoteDetectedPorts = []
-        remoteForwardedPorts = []
         remotePortConflicts = []
         remoteProxyEndpoint = nil
         remoteHeartbeatCount = 0
@@ -7072,7 +7068,6 @@ final class Workspace: Identifiable, ObservableObject {
         activeRemoteTerminalSurfaceIds.removeAll()
         activeRemoteTerminalSessionCount = 0
         remoteDetectedPorts = []
-        remoteForwardedPorts = []
         remotePortConflicts = []
         remoteProxyEndpoint = nil
         remoteHeartbeatCount = 0
@@ -7337,9 +7332,8 @@ final class Workspace: Identifiable, ObservableObject {
         applyBrowserRemoteWorkspaceStatusToPanels()
     }
 
-    fileprivate func applyRemotePortsSnapshot(detected: [Int], forwarded: [Int], conflicts: [Int], target: String) {
+    fileprivate func applyRemotePortsSnapshot(detected: [Int], conflicts: [Int], target: String) {
         remoteDetectedPorts = detected
-        remoteForwardedPorts = forwarded
         remotePortConflicts = conflicts
         recomputeListeningPorts()
 
