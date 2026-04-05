@@ -816,13 +816,7 @@ fn handleWorkspaceReorder(_: Allocator, params: json.Value) []const u8 {
     const id_str = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
     const found = findWorkspaceById(tm, id_str) orelse return "{\"error\":\"not found\"}";
 
-    if (getParamInt(params, "index")) |target_idx| {
-        const tidx: usize = @intCast(@max(0, @min(target_idx, @as(i64, @intCast(tm.workspaces.items.len - 1)))));
-        if (tidx != found.index) {
-            const ws = tm.workspaces.orderedRemove(found.index);
-            tm.workspaces.insertAssumeCapacity(tidx, ws);
-        }
-    } else if (getParamString(params, "before_workspace_id")) |before_str| {
+    if (getParamString(params, "before_workspace_id")) |before_str| {
         const before = findWorkspaceById(tm, before_str) orelse return "{\"error\":\"invalid before_workspace_id\"}";
         if (before.index != found.index) {
             const src = tm.workspaces.orderedRemove(found.index);

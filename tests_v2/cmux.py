@@ -466,7 +466,6 @@ class cmux:
         self,
         workspace: Union[str, int],
         *,
-        index: Optional[int] = None,
         before_workspace: Union[str, int, None] = None,
         after_workspace: Union[str, int, None] = None,
         window_id: Optional[str] = None,
@@ -475,9 +474,6 @@ class cmux:
         params: Dict[str, Any] = {"workspace_id": wsid}
 
         targets = 0
-        if index is not None:
-            params["index"] = int(index)
-            targets += 1
         if before_workspace is not None:
             params["before_workspace_id"] = self._resolve_workspace_id(before_workspace)
             targets += 1
@@ -485,7 +481,7 @@ class cmux:
             params["after_workspace_id"] = self._resolve_workspace_id(after_workspace)
             targets += 1
         if targets != 1:
-            raise cmuxError("reorder_workspace requires exactly one target: index|before_workspace|after_workspace")
+            raise cmuxError("reorder_workspace requires exactly one target: before_workspace|after_workspace")
 
         if window_id is not None:
             params["window_id"] = str(window_id)
@@ -597,7 +593,6 @@ class cmux:
         window_id: Optional[str] = None,
         before_surface: Union[str, int, None] = None,
         after_surface: Union[str, int, None] = None,
-        index: Optional[int] = None,
         focus: bool = True,
     ) -> None:
         sid = self._resolve_surface_id(surface)
@@ -627,8 +622,6 @@ class cmux:
             if not after_id:
                 raise cmuxError(f"Invalid after_surface: {after_surface!r}")
             params["after_surface_id"] = after_id
-        if index is not None:
-            params["index"] = int(index)
 
         self._call("surface.move", params)
 
@@ -636,7 +629,6 @@ class cmux:
         self,
         surface: Union[str, int],
         *,
-        index: Optional[int] = None,
         before_surface: Union[str, int, None] = None,
         after_surface: Union[str, int, None] = None,
     ) -> None:
@@ -646,9 +638,6 @@ class cmux:
 
         params: Dict[str, Any] = {"surface_id": sid}
         targets = 0
-        if index is not None:
-            params["index"] = int(index)
-            targets += 1
         if before_surface is not None:
             before_id = self._resolve_surface_id(before_surface)
             if not before_id:
@@ -662,7 +651,7 @@ class cmux:
             params["after_surface_id"] = after_id
             targets += 1
         if targets != 1:
-            raise cmuxError("reorder_surface requires exactly one target: index|before_surface|after_surface")
+            raise cmuxError("reorder_surface requires exactly one target: before_surface|after_surface")
 
         self._call("surface.reorder", params)
 

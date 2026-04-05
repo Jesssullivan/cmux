@@ -102,14 +102,24 @@ struct TmuxWorkspacePaneOverlayRenderState: Equatable {
 }
 
 @MainActor
-final class TmuxWorkspacePaneOverlayModel: ObservableObject {
-    @Published private(set) var unreadRects: [CGRect] = []
-    @Published private(set) var flashRect: CGRect?
-    @Published private(set) var flashStartedAt: Date?
-    @Published private(set) var flashReason: WorkspaceAttentionFlashReason?
+final class TmuxWorkspacePaneOverlayModel {
+    private(set) var unreadRects: [CGRect] = []
+    private(set) var flashRect: CGRect?
+    private(set) var flashStartedAt: Date?
+    private(set) var flashReason: WorkspaceAttentionFlashReason?
 
     private var lastWorkspaceId: UUID?
     private var lastFlashToken: UInt64?
+    private var flashResetWorkItem: DispatchWorkItem?
+    var onStateChange: (() -> Void)?
+
+    var showsAnimatedFlash: Bool {
+        flashRect != nil && flashStartedAt != nil
+    }
+
+    var hasVisibleContent: Bool {
+        !unreadRects.isEmpty || showsAnimatedFlash
+    }
 
     func apply(
         _ state: TmuxWorkspacePaneOverlayRenderState,
@@ -123,25 +133,59 @@ final class TmuxWorkspacePaneOverlayModel: ObservableObject {
         if didChangeWorkspace {
             lastWorkspaceId = state.workspaceId
             lastFlashToken = state.flashToken
+            cancelFlashReset()
             flashStartedAt = nil
             return
+        }
+
+        if state.flashRect == nil {
+            cancelFlashReset()
+            flashStartedAt = nil
         }
 
         if let lastFlashToken,
            state.flashToken != lastFlashToken,
            state.flashRect != nil {
-            flashStartedAt = now()
+            let startedAt = now()
+            flashStartedAt = startedAt
+            scheduleFlashReset(workspaceId: state.workspaceId, flashToken: state.flashToken)
         }
         self.lastFlashToken = state.flashToken
     }
 
     func clear() {
+        cancelFlashReset()
         unreadRects = []
         flashRect = nil
         flashStartedAt = nil
         flashReason = nil
         lastWorkspaceId = nil
         lastFlashToken = nil
+    }
+
+    private func scheduleFlashReset(workspaceId: UUID, flashToken: UInt64) {
+        cancelFlashReset()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.lastWorkspaceId == workspaceId,
+                  self.lastFlashToken == flashToken else {
+                return
+            }
+
+            self.flashStartedAt = nil
+            self.onStateChange?()
+        }
+        flashResetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + FocusFlashPattern.duration,
+            execute: workItem
+        )
+    }
+
+    private func cancelFlashReset() {
+        flashResetWorkItem?.cancel()
+        flashResetWorkItem = nil
     }
 }
 
@@ -152,27 +196,48 @@ struct TmuxWorkspacePaneOverlayView: View {
     let flashReason: WorkspaceAttentionFlashReason?
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, _ in
-                for rect in unreadRects {
-                    drawUnreadRing(in: &context, rect: rect)
+        Group {
+            if flashRect != nil && flashStartedAt != nil {
+                TimelineView(.animation) { timeline in
+                    Canvas { context, _ in
+                        renderOverlay(
+                            in: &context,
+                            currentDate: timeline.date
+                        )
+                    }
                 }
-
-                guard let flashRect,
-                      let flashStartedAt else { return }
-                let elapsed = timeline.date.timeIntervalSince(flashStartedAt)
-                let opacity = FocusFlashPattern.opacity(at: elapsed)
-                guard opacity > 0.001 else { return }
-                drawFlashRing(
-                    in: &context,
-                    rect: flashRect,
-                    opacity: opacity,
-                    reason: flashReason ?? .notificationArrival
-                )
+            } else if !unreadRects.isEmpty {
+                Canvas { context, _ in
+                    renderOverlay(in: &context, currentDate: nil)
+                }
+            } else {
+                Color.clear
             }
         }
         .allowsHitTesting(false)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func renderOverlay(
+        in context: inout GraphicsContext,
+        currentDate: Date?
+    ) {
+        for rect in unreadRects {
+            drawUnreadRing(in: &context, rect: rect)
+        }
+
+        guard let flashRect,
+              let flashStartedAt,
+              let currentDate else { return }
+        let elapsed = currentDate.timeIntervalSince(flashStartedAt)
+        let opacity = FocusFlashPattern.opacity(at: elapsed)
+        guard opacity > 0.001 else { return }
+        drawFlashRing(
+            in: &context,
+            rect: flashRect,
+            opacity: opacity,
+            reason: flashReason ?? .notificationArrival
+        )
     }
 
     private func drawUnreadRing(in context: inout GraphicsContext, rect: CGRect) {

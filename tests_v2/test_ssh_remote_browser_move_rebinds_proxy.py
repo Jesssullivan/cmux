@@ -215,10 +215,9 @@ def main() -> int:
             remote_workspace_id = _resolve_workspace_id(client, payload, before_workspace_ids=before_workspace_ids)
             remote_status = _wait_remote_ready(client, remote_workspace_id, timeout_s=65.0)
             remote_payload = remote_status.get("remote") or {}
-            forwarded_ports = remote_payload.get("forwarded_ports") or []
             _must(
-                forwarded_ports == [],
-                f"remote workspace should rely on proxy endpoint, not explicit forwarded ports: {forwarded_ports!r}",
+                "forwarded_ports" not in remote_payload,
+                "remote workspace should rely on proxy endpoint, not explicit forwarded ports",
             )
 
             surfaces = client.list_surfaces(remote_workspace_id)

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import SwiftUI
 
 /// Type of panel content
 public enum PanelType: String, Codable, Sendable {
@@ -213,6 +214,83 @@ enum FocusFlashPattern {
             return 1 - (inverse * inverse)
         }
     }
+}
+
+// MARK: - Shared Panel Flash Overlay (CAKeyframeAnimation)
+
+/// AppKit view that renders a ring flash using CAKeyframeAnimation.
+/// Used by BrowserPanelView and MarkdownPanelView via PanelFlashOverlayRepresentable
+/// to avoid SwiftUI animation coalescing that causes only one flash instead of two.
+final class PanelFlashOverlayNSView: NSView {
+    private let ringLayer = CAShapeLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.masksToBounds = false
+        ringLayer.fillColor = NSColor.clear.cgColor
+        ringLayer.lineWidth = PanelOverlayRingMetrics.lineWidth
+        ringLayer.lineJoin = .round
+        ringLayer.lineCap = .round
+        ringLayer.opacity = 0
+        layer?.addSublayer(ringLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        ringLayer.frame = bounds
+        updatePath()
+    }
+
+    private func updatePath() {
+        let rect = PanelOverlayRingMetrics.pathRect(in: bounds)
+        guard rect.width > 0, rect.height > 0 else { return }
+        ringLayer.path = CGPath(
+            roundedRect: rect,
+            cornerWidth: PanelOverlayRingMetrics.cornerRadius,
+            cornerHeight: PanelOverlayRingMetrics.cornerRadius,
+            transform: nil
+        )
+    }
+
+    func triggerFlash(reason: WorkspaceAttentionFlashReason = .navigation) {
+        let style = WorkspaceAttentionCoordinator.flashStyle(for: reason)
+        let strokeColor = style.accent.strokeColor.cgColor
+
+        ringLayer.strokeColor = strokeColor
+        ringLayer.shadowColor = strokeColor
+        ringLayer.shadowOpacity = Float(style.glowOpacity)
+        ringLayer.shadowRadius = style.glowRadius
+        ringLayer.shadowOffset = .zero
+
+        ringLayer.removeAllAnimations()
+        ringLayer.opacity = 0
+
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        animation.values = FocusFlashPattern.values.map { NSNumber(value: $0) }
+        animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
+        animation.duration = FocusFlashPattern.duration
+        animation.timingFunctions = FocusFlashPattern.curves.map { curve in
+            switch curve {
+            case .easeIn:
+                return CAMediaTimingFunction(name: .easeIn)
+            case .easeOut:
+                return CAMediaTimingFunction(name: .easeOut)
+            }
+        }
+        ringLayer.add(animation, forKey: "cmux.panelFlash")
+    }
+}
+
+/// Wraps a pre-existing PanelFlashOverlayNSView for embedding in SwiftUI.
+struct PanelFlashOverlayRepresentable: NSViewRepresentable {
+    let nsView: PanelFlashOverlayNSView
+    func makeNSView(context: Context) -> PanelFlashOverlayNSView { nsView }
+    func updateNSView(_ nsView: PanelFlashOverlayNSView, context: Context) {}
 }
 
 /// Protocol for all panel types (terminal, browser, etc.)

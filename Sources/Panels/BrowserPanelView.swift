@@ -310,8 +310,7 @@ struct BrowserPanelView: View {
     @State private var omnibarSelectionRange: NSRange = NSRange(location: NSNotFound, length: 0)
     @State private var omnibarHasMarkedText: Bool = false
     @State private var suppressNextFocusLostRevert: Bool = false
-    @State private var focusFlashOpacity: Double = 0.0
-    @State private var focusFlashAnimationGeneration: Int = 0
+    @State private var flashOverlayView = PanelFlashOverlayNSView()
     @State private var omnibarPillFrame: CGRect = .zero
     @State private var addressBarHeight: CGFloat = 0
     @State private var isBrowserImportHintPopoverPresented = false
@@ -470,10 +469,7 @@ struct BrowserPanelView: View {
             }
         }
         .overlay {
-            RoundedRectangle(cornerRadius: FocusFlashPattern.ringCornerRadius)
-                .stroke(cmuxAccentColor().opacity(focusFlashOpacity), lineWidth: 3)
-                .shadow(color: cmuxAccentColor().opacity(focusFlashOpacity * 0.35), radius: 10)
-                .padding(FocusFlashPattern.ringInset)
+            PanelFlashOverlayRepresentable(nsView: flashOverlayView)
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .topLeading) {
@@ -572,7 +568,7 @@ struct BrowserPanelView: View {
 #endif
         }
         .onChange(of: panel.focusFlashToken) { _ in
-            triggerFocusFlashAnimation()
+            flashOverlayView.triggerFlash()
         }
         .onChange(of: panel.currentURL) { _ in
             let addressWasEmpty = omnibarState.buffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1214,30 +1210,6 @@ struct BrowserPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .layoutPriority(1)
         .zIndex(0)
-    }
-
-    private func triggerFocusFlashAnimation() {
-        focusFlashAnimationGeneration &+= 1
-        let generation = focusFlashAnimationGeneration
-        focusFlashOpacity = FocusFlashPattern.values.first ?? 0
-
-        for segment in FocusFlashPattern.segments {
-            DispatchQueue.main.asyncAfter(deadline: .now() + segment.delay) {
-                guard focusFlashAnimationGeneration == generation else { return }
-                withAnimation(focusFlashAnimation(for: segment.curve, duration: segment.duration)) {
-                    focusFlashOpacity = segment.targetOpacity
-                }
-            }
-        }
-    }
-
-    private func focusFlashAnimation(for curve: FocusFlashCurve, duration: TimeInterval) -> Animation {
-        switch curve {
-        case .easeIn:
-            return .easeIn(duration: duration)
-        case .easeOut:
-            return .easeOut(duration: duration)
-        }
     }
 
     private func refreshBrowserChromeStyle() {
