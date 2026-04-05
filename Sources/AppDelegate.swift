@@ -6325,6 +6325,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
     }
 
+    func openClaudeFromPool() {
+        guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "claude_pool") else {
+            return
+        }
+        if let window = context.window ?? windowForMainWindowId(context.windowId) {
+            setActiveMainWindow(window)
+            bringToFront(window)
+        }
+        if let _ = context.tabManager.claimWarmClaudeWorkspace() {
+            // Pool hit — workspace already selected by claimWarmClaudeWorkspace
+        } else {
+            // Pool miss — create fresh
+            context.tabManager.addWorkspace(
+                title: "Claude Code",
+                initialTerminalCommand: "claude",
+                eagerLoadTerminal: true,
+                placementOverride: .end
+            )
+        }
+    }
+
     func openWelcomeWorkspace() {
         guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "welcome") else {
             return

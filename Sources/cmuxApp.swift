@@ -624,6 +624,13 @@ struct cmuxApp: App {
 
             // Close tab/workspace
             CommandGroup(after: .newItem) {
+                Button(String(localized: "menu.file.newClaude", defaultValue: "New Claude Code")) {
+                    AppDelegate.shared?.openClaudeFromPool()
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+
+                Divider()
+
                 Button(String(localized: "menu.file.goToWorkspace", defaultValue: "Go to Workspace…")) {
                     let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
                     NotificationCenter.default.post(name: .commandPaletteSwitcherRequested, object: targetWindow)
@@ -3959,6 +3966,16 @@ enum ClaudeCodeIntegrationSettings {
     }
 }
 
+enum WarmClaudePoolSettings {
+    static let poolSizeKey = "warmClaudePoolSize"
+    static let defaultPoolSize = 0
+
+    static func poolSize(defaults: UserDefaults = .standard) -> Int {
+        let raw = defaults.integer(forKey: poolSizeKey)
+        return max(0, min(raw, 3))
+    }
+}
+
 enum WelcomeSettings {
     static let shownKey = "cmuxWelcomeShown"
 }
@@ -4040,6 +4057,8 @@ struct SettingsView: View {
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
     @AppStorage(PreferredEditorSettings.key) private var preferredEditorCommand = ""
+    @AppStorage(WarmClaudePoolSettings.poolSizeKey)
+    private var warmClaudePoolSize = WarmClaudePoolSettings.defaultPoolSize
     @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
     @AppStorage("cmuxPortRange") private var cmuxPortRange = 10
     @AppStorage(BrowserSearchSettings.searchEngineKey) private var browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
@@ -5425,6 +5444,21 @@ struct SettingsView: View {
                             )
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
+                        }
+                    }
+
+                    SettingsCard {
+                        SettingsCardRow(
+                            String(localized: "settings.automation.warmClaudePool", defaultValue: "Warm Claude Pool"),
+                            subtitle: warmClaudePoolSize > 0
+                                ? String(localized: "settings.automation.warmClaudePool.subtitleOn", defaultValue: "Pre-spawns Claude Code sessions for instant launch via ⇧⌘K.")
+                                : String(localized: "settings.automation.warmClaudePool.subtitleOff", defaultValue: "Claude Code sessions launch on demand (no pre-warming).")
+                        ) {
+                            Stepper(value: $warmClaudePoolSize, in: 0...3) {
+                                Text("\(warmClaudePoolSize)")
+                                    .monospacedDigit()
+                            }
+                            .frame(width: 100)
                         }
                     }
 

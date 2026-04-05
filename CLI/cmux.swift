@@ -2294,6 +2294,19 @@ struct CMUXCLI {
             cliTelemetry.breadcrumb("claude-setup.dispatch")
             try runClaudeSetup(client: client)
 
+        case "new-claude":
+            cliTelemetry.breadcrumb("new-claude.dispatch")
+            let response = try client.sendV2(
+                method: "workspace.create",
+                params: ["title": "Claude Code"]
+            )
+            let wsId = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
+            if !wsId.isEmpty {
+                let text = unescapeSendText("claude\\n")
+                _ = try client.sendV2(method: "surface.send_text", params: ["text": text, "workspace_id": wsId])
+            }
+            print("OK \(wsId)")
+
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
