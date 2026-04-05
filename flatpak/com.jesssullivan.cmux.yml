@@ -41,8 +41,8 @@ modules:
     build-options:
       append-path: /app/zig
     build-commands:
-      # Build libghostty
-      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline
+      # Build libghostty (--system vendors pre-fetched Zig packages for offline build)
+      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline --system $PWD/vendor/p
       # Build cmux-linux
       - cd cmux-linux && zig build -Doptimize=ReleaseFast -Dcpu=baseline
       # Install binary
@@ -72,3 +72,6 @@ modules:
           - .build
           - node_modules
           - GhosttyKit.xcframework
+
+      # Pre-fetched Zig packages for offline build (ghostty dependencies)
+      - zig-packages.json
