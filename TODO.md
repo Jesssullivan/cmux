@@ -44,8 +44,8 @@
 ## UI/UX Improvements
 - [ ] Show loading indicator in terminal while it's loading
 - [x] Add question mark icon to learn shortcuts (sidebar footer help popover)
-- [ ] Notification popover: each button item should show outline outside when focused/hovered
-- [ ] Notification popover: add right-click context menu to mark as read/unread
+- [x] Notification popover: each button item should show outline outside when focused/hovered
+- [x] Notification popover: add right-click context menu to mark as read/unread
 - [x] Right-click tab should allow renaming that workspace (context menu already has "Rename Workspace...")
 - [ ] Cmd+click should open links in cmux (browser panel) instead of external browser
 - [ ] "Waiting for input" notification should include custom terminal title if set
