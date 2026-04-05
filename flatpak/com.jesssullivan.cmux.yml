@@ -7,10 +7,8 @@ command: cmux
 finish-args:
   # GPU rendering (OpenGL for libghostty)
   - --device=dri
-  # PTY device access (terminal I/O)
+  # PTY device access (terminal I/O) + FIDO2/U2F hidraw
   - --device=all
-  # FIDO2/U2F hardware security keys (hidraw)
-  - --device=hidraw
   # Windowing
   - --share=ipc
   - --socket=fallback-x11
