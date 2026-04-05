@@ -6318,8 +6318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             bringToFront(window)
         }
         context.tabManager.addWorkspace(
-            initialTerminalCommand: "cmux claude-setup",
             title: String(localized: "workspace.claudeSetup.title", defaultValue: "Claude Code Setup"),
+            initialTerminalCommand: "cmux claude-setup",
             eagerLoadTerminal: true,
             placementOverride: .end
         )
