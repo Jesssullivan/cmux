@@ -5716,7 +5716,7 @@ final class Workspace: Identifiable, ObservableObject {
         case .promptIdle:
             return false
         case .commandRunning:
-            return true
+            return CloseRunningProcessSettings.isEnabled()
         case .unknown:
             return fallbackNeedsConfirmClose
         }
