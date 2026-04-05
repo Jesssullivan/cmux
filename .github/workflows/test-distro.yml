@@ -61,15 +61,15 @@ jobs:
 
       - name: Rocky 9 package test
         if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
-        run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L
+        run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 
       - name: Debian 12 package test
         if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
-        run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L
+        run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
 
       - name: Ubuntu 24.04 package test (Mint proxy)
         if: inputs.distro == 'all' || inputs.distro == 'ubuntu2404' || inputs.distro == ''
-        run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L
+        run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
 
       - name: Upload test logs
         if: always()
