@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import libzig_crypto
 import libzig_keychain
 import Darwin
