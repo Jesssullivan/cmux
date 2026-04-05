@@ -1010,17 +1010,18 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func markUnread(forTabId tabId: UUID) {
-        var updated = notifications
-        var didChange = false
-        for index in updated.indices {
-            if updated[index].tabId == tabId, updated[index].isRead {
-                updated[index].isRead = false
-                didChange = true
+        var promoted: [TerminalNotification] = []
+        var rest: [TerminalNotification] = []
+        for var notification in notifications {
+            if notification.tabId == tabId, notification.isRead {
+                notification.isRead = false
+                promoted.append(notification)
+            } else {
+                rest.append(notification)
             }
         }
-        if didChange {
-            notifications = updated
-        }
+        guard !promoted.isEmpty else { return }
+        notifications = promoted + rest
     }
 
     func setFocusedReadIndicator(forTabId tabId: UUID, surfaceId: UUID?) {

@@ -34,7 +34,7 @@
 - [x] Sidebar tab reorder can get stuck in dragging state (PR #172)
 - [x] Drag-and-drop files/images into terminal shows URL instead of file path (PR #172)
 - [x] After opening a browser tab, up/down arrow keys stop working in the terminal (PR #172)
-- [ ] Notification marked unread doesn't get pushed to the top of the list
+- [x] Notification marked unread doesn't get pushed to the top of the list
 - [ ] Browser cmd+shift+H ring flashes only once (should flash twice like other shortcuts)
 
 ## Refactoring
