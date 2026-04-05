@@ -405,6 +405,10 @@ struct cmuxApp: App {
                 }
                 .keyboardShortcut(",", modifiers: [.command, .shift])
                 Divider()
+                Button(String(localized: "menu.app.installClaudeIntegration", defaultValue: "Install Claude Code Integration…")) {
+                    appDelegate.installClaudeCodeIntegration()
+                }
+                Divider()
                 Button(String(localized: "menu.app.checkForUpdates", defaultValue: "Check for Updates…")) {
                     appDelegate.checkForUpdates(nil)
                 }

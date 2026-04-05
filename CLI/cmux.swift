@@ -2290,6 +2290,10 @@ struct CMUXCLI {
             )
             print(response)
 
+        case "claude-setup":
+            cliTelemetry.breadcrumb("claude-setup.dispatch")
+            try runClaudeSetup(client: client)
+
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
@@ -11352,6 +11356,99 @@ struct CMUXCLI {
         default:
             throw CLIError(message: "Unsupported tmux compatibility command: \(command)")
         }
+    }
+
+    private func runClaudeSetup(client: SocketClient) throws {
+        // Find the bundled claude wrapper path
+        let wrapperPath: String
+        if let bundlePath = Bundle.main.resourcePath {
+            wrapperPath = (bundlePath as NSString).appendingPathComponent("bin/claude")
+        } else {
+            wrapperPath = ProcessInfo.processInfo.environment["CMUX_CLAUDE_HOOK_CMUX_BIN"]
+                .map { ($0 as NSString).deletingLastPathComponent + "/../Resources/bin/claude" }
+                ?? "/Applications/cmux.app/Contents/Resources/bin/claude"
+        }
+
+        // Create a new workspace for the setup flow
+        let response = try client.sendV2(
+            method: "workspace.create",
+            params: ["title": "Claude Code Setup"]
+        )
+        let wsId = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
+        guard !wsId.isEmpty else {
+            throw CLIError(message: "Failed to create setup workspace")
+        }
+
+        // Build the interactive setup script
+        let script = """
+        clear
+        echo "═══════════════════════════════════════════════"
+        echo "  cmux — Claude Code Integration Setup"
+        echo "═══════════════════════════════════════════════"
+        echo ""
+        WRAPPER="\(wrapperPath)"
+        if [ ! -f "$WRAPPER" ]; then
+          echo "❌ Claude wrapper not found at: $WRAPPER"
+          echo "   Make sure cmux is installed in /Applications."
+          exit 1
+        fi
+        echo "This will configure your shell so that 'claude' invocations"
+        echo "inside cmux terminals use the cmux integration hooks."
+        echo ""
+        echo "Proposed changes:"
+        echo ""
+        SHELL_NAME="$(basename "$SHELL")"
+        if [ "$SHELL_NAME" = "zsh" ]; then
+          RC="$HOME/.zshrc"
+        elif [ "$SHELL_NAME" = "bash" ]; then
+          RC="$HOME/.bashrc"
+        elif [ "$SHELL_NAME" = "fish" ]; then
+          RC="$HOME/.config/fish/config.fish"
+        else
+          RC="$HOME/.profile"
+        fi
+        LINK_DIR="$HOME/.local/bin"
+        echo "  1. Create symlink: $LINK_DIR/claude → $WRAPPER"
+        echo "  2. Ensure $LINK_DIR is on PATH in $RC"
+        echo ""
+        if [ -L "$LINK_DIR/claude" ] && [ "$(readlink "$LINK_DIR/claude")" = "$WRAPPER" ]; then
+          echo "✅ Symlink already exists and is correct."
+          echo ""
+          echo "Claude Code integration is already installed."
+          exit 0
+        fi
+        printf "Proceed? [y/N] "
+        read -r answer
+        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+          echo "Cancelled."
+          exit 0
+        fi
+        mkdir -p "$LINK_DIR"
+        ln -sf "$WRAPPER" "$LINK_DIR/claude"
+        echo ""
+        echo "✅ Symlink created: $LINK_DIR/claude → $WRAPPER"
+        if ! echo "$PATH" | tr ':' '\\n' | grep -qx "$LINK_DIR"; then
+          if [ "$SHELL_NAME" = "fish" ]; then
+            echo "fish_add_path $LINK_DIR" >> "$RC"
+          else
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
+          fi
+          echo "✅ Added $LINK_DIR to PATH in $RC"
+          echo ""
+          echo "Restart your shell or run: source $RC"
+        else
+          echo "✅ $LINK_DIR is already on PATH"
+        fi
+        echo ""
+        echo "Done! Claude Code hooks are now active in cmux terminals."
+
+        """
+
+        let sendParams: [String: Any] = [
+            "text": script + "\n",
+            "workspace_id": wsId,
+        ]
+        _ = try client.sendV2(method: "surface.send_text", params: sendParams)
     }
 
     private func runClaudeHook(
