@@ -42,7 +42,7 @@ modules:
       append-path: /app/zig
     build-commands:
       # Build libghostty (--system vendors pre-fetched Zig packages for offline build)
-      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline --system $PWD/vendor/p
+      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline -Dflatpak=true -Demit-docs=false --search-prefix /app --system $PWD/vendor/p
       # Build cmux-linux
       - cd cmux-linux && zig build -Doptimize=ReleaseFast -Dcpu=baseline
       # Install binary
