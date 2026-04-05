@@ -693,6 +693,7 @@ class TabManager: ObservableObject {
     @Published private(set) var isWorkspaceCycleHot: Bool = false
     @Published private(set) var pendingBackgroundWorkspaceLoadIds: Set<UUID> = []
     @Published private(set) var debugPinnedWorkspaceLoadIds: Set<UUID> = []
+    @Published private(set) var warmClaudePoolIds: [UUID] = []
 
     /// Global monotonically increasing counter for CMUX_PORT ordinal assignment.
     /// Static so port ranges don't overlap across multiple windows (each window has its own TabManager).
@@ -2182,6 +2183,56 @@ class TabManager: ObservableObject {
         var updated = pendingBackgroundWorkspaceLoadIds
         updated.remove(workspaceId)
         pendingBackgroundWorkspaceLoadIds = updated
+    }
+
+    // MARK: - Warm Claude Code Pool
+
+    func ensureWarmClaudePool() {
+        let targetSize = WarmClaudePoolSettings.poolSize()
+        guard targetSize > 0 else {
+            // Drain pool if disabled
+            if !warmClaudePoolIds.isEmpty {
+                let idsToClose = warmClaudePoolIds
+                warmClaudePoolIds = []
+                for wsId in idsToClose {
+                    if let ws = tabs.first(where: { $0.id == wsId }) {
+                        closeWorkspace(ws)
+                    }
+                }
+            }
+            return
+        }
+
+        // Remove stale IDs (workspaces that were closed by the user)
+        warmClaudePoolIds.removeAll { wsId in
+            !tabs.contains { $0.id == wsId }
+        }
+
+        // Spawn new entries up to target size
+        while warmClaudePoolIds.count < targetSize {
+            let ws = addWorkspace(
+                title: "Claude Code",
+                initialTerminalCommand: "claude",
+                select: false,
+                eagerLoadTerminal: true,
+                placementOverride: .end,
+                autoWelcomeIfNeeded: false
+            )
+            warmClaudePoolIds.append(ws.id)
+        }
+    }
+
+    func claimWarmClaudeWorkspace() -> Workspace? {
+        guard let wsId = warmClaudePoolIds.first else { return nil }
+        warmClaudePoolIds.removeFirst()
+        guard let ws = tabs.first(where: { $0.id == wsId }) else { return nil }
+        // Select the claimed workspace
+        selectedTabId = ws.id
+        // Backfill the pool after a short delay to avoid blocking the UI
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.ensureWarmClaudePool()
+        }
+        return ws
     }
 
     func retainDebugWorkspaceLoads(for workspaceIds: Set<UUID>) {
