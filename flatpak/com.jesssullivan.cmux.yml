@@ -1,6 +1,6 @@
 app-id: com.jesssullivan.cmux
 runtime: org.gnome.Platform
-runtime-version: '47'
+runtime-version: '49'
 sdk: org.gnome.Sdk
 command: cmux
 
@@ -34,13 +34,17 @@ cleanup:
   - '*.a'
 
 modules:
+  - dependencies.yml
+
   - name: cmux
     buildsystem: simple
+    build-options:
+      append-path: /app/zig
     build-commands:
       # Build libghostty
-      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+      - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline
       # Build cmux-linux
-      - cd cmux-linux && zig build -Doptimize=ReleaseFast
+      - cd cmux-linux && zig build -Doptimize=ReleaseFast -Dcpu=baseline
       # Install binary
       - install -Dm755 cmux-linux/zig-out/bin/cmux /app/bin/cmux
       # Install shared library
@@ -54,6 +58,17 @@ modules:
       - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png /app/share/icons/hicolor/128x128/apps/com.jesssullivan.cmux.png
       - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png /app/share/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
       - install -Dm644 dist/linux/icons/com.jesssullivan.cmux_512x512.png /app/share/icons/hicolor/512x512/apps/com.jesssullivan.cmux.png
+      # Install udev rules
+      - install -Dm644 dist/linux/70-u2f.rules /app/share/udev/rules.d/70-u2f.rules
     sources:
       - type: dir
         path: ..
+        skip:
+          - flatpak/.flatpak-builder
+          - flatpak/builddir
+          - flatpak/repo
+          - .zig-cache
+          - zig-out
+          - .build
+          - node_modules
+          - GhosttyKit.xcframework

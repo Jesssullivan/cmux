@@ -1,0 +1,41 @@
+name: Flatpak CI
+
+on:
+  push:
+    branches: [main, 'sid/**']
+    paths:
+      - 'flatpak/**'
+      - 'cmux-linux/**'
+      - 'dist/linux/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'flatpak/**'
+      - 'cmux-linux/**'
+      - 'dist/linux/**'
+  workflow_dispatch:
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flatpak:
+    name: Flatpak build
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak/com.jesssullivan.cmux.yml
+          bundle: cmux.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}

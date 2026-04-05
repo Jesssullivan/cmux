@@ -1,0 +1,31 @@
+name: dependencies-meta
+buildsystem: simple
+build-commands:
+  - true
+modules:
+  - name: zig
+    buildsystem: simple
+    cleanup:
+      - "*"
+    build-commands:
+      - mkdir -p /app/zig
+      - cp -r ./* /app/zig
+      - chmod a+x /app/zig/zig
+    sources:
+      - type: archive
+        sha256: 02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+        url: https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
+        only-arches: [x86_64]
+      - type: archive
+        sha256: 958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f
+        url: https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz
+        only-arches: [aarch64]
+
+  - name: bzip2-redirect
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 libbzip2.so /app/lib/libbzip2.so
+    sources:
+      - type: inline
+        contents: INPUT(libbz2.so)
+        dest-filename: libbzip2.so
