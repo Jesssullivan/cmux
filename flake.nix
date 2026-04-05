@@ -190,8 +190,6 @@
         (import ./nix/tests-distro.nix {
           inherit nixpkgs self nix-vm-test;
           system = sys;
-          inherit zigPkg;
-          ghosttySrc = ghostty-src;
         })));
 
     # ── Overlays ─────────────────────────────────────────────────────
