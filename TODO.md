@@ -35,7 +35,7 @@
 - [x] Drag-and-drop files/images into terminal shows URL instead of file path (PR #172)
 - [x] After opening a browser tab, up/down arrow keys stop working in the terminal (PR #172)
 - [x] Notification marked unread doesn't get pushed to the top of the list
-- [ ] Browser cmd+shift+H ring flashes only once (should flash twice like other shortcuts)
+- [x] Browser cmd+shift+H ring flashes only once — replaced SwiftUI animation with CAKeyframeAnimation
 
 ## Refactoring
 - [x] **P0** Remove all index-based APIs in favor of short ID refs (surface:N, pane:N, workspace:N, window:N) (PR #174 + cleanup)
@@ -43,10 +43,10 @@
 
 ## UI/UX Improvements
 - [ ] Show loading indicator in terminal while it's loading
-- [ ] Add question mark icon to learn shortcuts
+- [x] Add question mark icon to learn shortcuts (sidebar footer help popover)
 - [ ] Notification popover: each button item should show outline outside when focused/hovered
 - [ ] Notification popover: add right-click context menu to mark as read/unread
-- [ ] Right-click tab should allow renaming that workspace
+- [x] Right-click tab should allow renaming that workspace (context menu already has "Rename Workspace...")
 - [ ] Cmd+click should open links in cmux (browser panel) instead of external browser
 - [ ] "Waiting for input" notification should include custom terminal title if set
 - [ ] Close button for current/active tab should always be visible (not just on hover)

@@ -37,6 +37,13 @@ struct NotificationsPage: View {
                                 onClear: {
                                     notificationStore.remove(id: notification.id)
                                 },
+                                onToggleRead: {
+                                    if notification.isRead {
+                                        notificationStore.markUnread(forTabId: notification.tabId)
+                                    } else {
+                                        notificationStore.markRead(id: notification.id)
+                                    }
+                                },
                                 focusedNotificationId: $focusedNotificationId
                             )
                         }
@@ -186,7 +193,13 @@ private struct NotificationRow: View {
     let tabTitle: String?
     let onOpen: () -> Void
     let onClear: () -> Void
+    let onToggleRead: () -> Void
     let focusedNotificationId: FocusState<UUID?>.Binding
+    @State private var isHovered = false
+
+    private var hasFocusOrHover: Bool {
+        isHovered || focusedNotificationId.wrappedValue == notification.id
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -249,6 +262,23 @@ private struct NotificationRow: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(cmuxAccentColor().opacity(hasFocusOrHover ? 0.5 : 0), lineWidth: 1)
+        )
+        .onHover { hovering in isHovered = hovering }
+        .contextMenu {
+            Button(notification.isRead
+                   ? String(localized: "notifications.context.markUnread", defaultValue: "Mark as Unread")
+                   : String(localized: "notifications.context.markRead", defaultValue: "Mark as Read")
+            ) {
+                onToggleRead()
+            }
+            Divider()
+            Button(String(localized: "notifications.context.clear", defaultValue: "Clear"), role: .destructive) {
+                onClear()
+            }
+        }
     }
 }
 
