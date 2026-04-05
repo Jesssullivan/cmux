@@ -6309,6 +6309,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         updateController.checkForUpdatesInCustomUI()
     }
 
+    func installClaudeCodeIntegration() {
+        guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "claude_setup") else {
+            return
+        }
+        if let window = context.window ?? windowForMainWindowId(context.windowId) {
+            setActiveMainWindow(window)
+            bringToFront(window)
+        }
+        context.tabManager.addWorkspace(
+            initialTerminalCommand: "cmux claude-setup",
+            title: String(localized: "workspace.claudeSetup.title", defaultValue: "Claude Code Setup"),
+            eagerLoadTerminal: true,
+            placementOverride: .end
+        )
+    }
+
     func openWelcomeWorkspace() {
         guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "welcome") else {
             return
