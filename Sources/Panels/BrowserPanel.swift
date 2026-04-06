@@ -2628,6 +2628,10 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Set up navigation delegate
         let navDelegate = BrowserNavigationDelegate()
+#if DEBUG
+        navDelegate.panelID = id
+        navDelegate.workspaceID = workspaceId
+#endif
         navDelegate.openInNewTab = { [weak self] url in
             self?.openLinkInNewTab(url: url)
         }
@@ -5903,16 +5907,55 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     /// when a provisional navigation fails (e.g. connection refused on localhost:3000).
     var lastAttemptedURL: URL?
 
+    /// Panel and workspace IDs for network log attribution.
+    var panelID: UUID?
+    var workspaceID: UUID?
+
+#if DEBUG
+    /// Active navigation tokens for timing (keyed by navigation object identity).
+    private var activeTokens: [ObjectIdentifier: BrowserNetworkLog.NavigationToken] = [:]
+#endif
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         lastAttemptedURL = webView.url
+#if DEBUG
+        if let nav = navigation {
+            let url = webView.url?.absoluteString ?? lastAttemptedURL?.absoluteString ?? "unknown"
+            let token = BrowserNetworkLog.shared.recordRequest(
+                url: url,
+                method: "GET",
+                isMainFrame: true,
+                panelID: panelID,
+                workspaceID: workspaceID
+            )
+            activeTokens[ObjectIdentifier(nav)] = token
+        }
+#endif
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+#if DEBUG
+        if let nav = navigation, let token = activeTokens.removeValue(forKey: ObjectIdentifier(nav)) {
+            // Navigation finished without a decidePolicyFor response callback
+            // (e.g., cached responses). Record with what we have.
+            BrowserNetworkLog.shared.recordResponse(
+                token: token,
+                statusCode: 200,
+                mimeType: nil,
+                responseHeaders: [:]
+            )
+        }
+#endif
         didFinish?(webView)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         NSLog("BrowserPanel navigation failed: %@", error.localizedDescription)
+#if DEBUG
+        if let nav = navigation, let token = activeTokens.removeValue(forKey: ObjectIdentifier(nav)) {
+            BrowserNetworkLog.shared.recordError(token: token)
+        }
+#endif
         // Treat committed-navigation failures the same as provisional ones so
         // stale favicon/title state from the prior page gets cleared.
         let failedURL = webView.url?.absoluteString ?? ""
@@ -5922,6 +5965,11 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
         NSLog("BrowserPanel provisional navigation failed: %@", error.localizedDescription)
+#if DEBUG
+        if let nav = navigation, let token = activeTokens.removeValue(forKey: ObjectIdentifier(nav)) {
+            BrowserNetworkLog.shared.recordError(token: token)
+        }
+#endif
 
         // Cancelled navigations (e.g. rapid typing) are not real errors.
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
@@ -6163,6 +6211,31 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         let mime = navigationResponse.response.mimeType ?? "unknown"
         let canShow = navigationResponse.canShowMIMEType
         let responseURL = navigationResponse.response.url?.absoluteString ?? "nil"
+
+#if DEBUG
+        // Record response in the network log for proxy observability.
+        if let httpResponse = navigationResponse.response as? HTTPURLResponse {
+            var headers: [String: String] = [:]
+            for (key, value) in httpResponse.allHeaderFields {
+                headers[String(describing: key)] = String(describing: value)
+            }
+            // Find the matching request token to complete the timing measurement.
+            // Fall back to creating a standalone entry if no token found (subresource or cached).
+            let entry = BrowserNetworkEntry(
+                timestamp: Date(),
+                url: responseURL,
+                method: "GET",
+                statusCode: httpResponse.statusCode,
+                mimeType: mime,
+                responseHeaders: headers,
+                duration: nil,
+                isMainFrame: navigationResponse.isForMainFrame,
+                panelID: panelID,
+                workspaceID: workspaceID
+            )
+            BrowserNetworkLog.shared.append(entry)
+        }
+#endif
 
         // Only classify HTTP(S) top-level responses as downloads.
         if let scheme = navigationResponse.response.url?.scheme?.lowercased(),

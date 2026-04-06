@@ -9,7 +9,7 @@
 - [x] Add transport-scoped proxy broker (SOCKS5 + HTTP CONNECT) for remote traffic
 - [x] Extend `cmuxd-remote` RPC beyond `hello/ping` with proxy stream methods (`proxy.open|close`)
 - [x] Auto-wire WKWebView in remote workspaces to proxy via `WKWebsiteDataStore.proxyConfigurations`
-- [ ] Add browser proxy e2e tests (remote egress IP, websocket, reconnect continuity)
+- [x] Add browser proxy e2e tests (remote egress IP, websocket, reconnect continuity)
 - [x] Implement PTY resize coordinator with tmux semantics (`smallest screen wins`)
 - [x] Add resize tests for multi-attachment sessions (attach/detach/reconnect transitions)
 
@@ -51,3 +51,4 @@
 - [ ] "Waiting for input" notification should include custom terminal title if set
 - [ ] Close button for current/active tab should always be visible (not just on hover)
 - [ ] Add browser icon to the left of the plus button in the tab bar
+- [ ] Replace Claude Code specific branding/strings with generic "Agent / Agent Harness" for Linux parity (OpenCode, OMO as equal first-class integrations)
