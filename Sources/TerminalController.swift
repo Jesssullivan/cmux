@@ -2372,6 +2372,8 @@ class TerminalController {
             return v2Result(id: id, self.v2BrowserNetworkUnroute(params: params))
         case "browser.network.requests":
             return v2Result(id: id, self.v2BrowserNetworkRequests(params: params))
+        case "browser.network.clear":
+            return v2Result(id: id, self.v2BrowserNetworkClear(params: params))
         case "browser.screencast.start":
             return v2Result(id: id, self.v2BrowserScreencastStart(params: params))
         case "browser.screencast.stop":
@@ -10708,14 +10710,34 @@ class TerminalController {
     }
 
     private func v2BrowserNetworkRequests(params: [String: Any]) -> V2CallResult {
+#if DEBUG
+        let panelID = v2UUID(params, "panel_id")
+        let workspaceID = v2UUID(params, "workspace_id")
+        let limit = (params["limit"] as? Int) ?? 100
+        let entries = BrowserNetworkLog.shared.list(panelID: panelID, workspaceID: workspaceID, limit: limit)
+        return .ok([
+            "requests": entries.map { $0.toJSON() },
+            "count": entries.count,
+        ])
+#else
         if let surfaceId = v2UUID(params, "surface_id") {
             let items = v2BrowserUnsupportedNetworkRequestsBySurface[surfaceId] ?? []
-            return .err(code: "not_supported", message: "browser.network.requests is not supported on WKWebView", data: [
-                "details": "Request interception logs are unavailable without CDP network hooks",
+            return .err(code: "not_supported", message: "browser.network.requests is not supported in release builds", data: [
+                "details": "Network observability is available in DEBUG builds only",
                 "recorded_requests": items
             ])
         }
-        return v2BrowserNotSupported("browser.network.requests", details: "Request interception logs are unavailable without CDP network hooks")
+        return v2BrowserNotSupported("browser.network.requests", details: "Network observability is available in DEBUG builds only")
+#endif
+    }
+
+    private func v2BrowserNetworkClear(params _: [String: Any]) -> V2CallResult {
+#if DEBUG
+        BrowserNetworkLog.shared.clear()
+        return .ok(["cleared": true])
+#else
+        return v2BrowserNotSupported("browser.network.clear", details: "Network observability is available in DEBUG builds only")
+#endif
     }
 
     private func v2BrowserScreencastStart(params _: [String: Any]) -> V2CallResult {
