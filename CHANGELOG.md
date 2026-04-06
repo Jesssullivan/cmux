@@ -2,6 +2,27 @@
 
 All notable changes to cmux are documented here.
 
+## [0.75.0] - 2026-04-06
+
+### Added
+- Terminal loading indicator — subtle spinner overlay while the terminal surface initializes, fading out once the shell is ready ([#196](https://github.com/Jesssullivan/cmux/pull/196))
+- Browser network observability — Debug > Debug Windows > Browser Network Log shows real-time request/response traffic with status codes, headers, timing, and per-panel attribution (DEBUG builds) ([#191](https://github.com/Jesssullivan/cmux/pull/191))
+- Browser and new-workspace buttons in sidebar footer for quick access ([#193](https://github.com/Jesssullivan/cmux/pull/193))
+- "Waiting for input" notifications now include the terminal's custom title for multi-workspace identification ([#196](https://github.com/Jesssullivan/cmux/pull/196))
+- `browser.network.requests` and `browser.network.clear` socket RPC for programmatic network inspection (DEBUG builds) ([#191](https://github.com/Jesssullivan/cmux/pull/191))
+
+### Changed
+- Agent-neutral UI branding — "Claude Code" references replaced with generic "Agent" terminology throughout menus, settings, and workspace titles for Linux parity with OpenCode and OMO integrations ([#192](https://github.com/Jesssullivan/cmux/pull/192))
+- Close button on the active/selected sidebar tab is now always visible, not just on hover ([#193](https://github.com/Jesssullivan/cmux/pull/193))
+
+### Infrastructure
+- QEMU distro package testing — Rocky 9, Debian 12, and Ubuntu 24.04 packages verified via nix-vm-test VMs in CI ([#188](https://github.com/Jesssullivan/cmux/pull/188))
+- SSH proxy e2e test suite with remote egress IP validation and CI workflow ([#190](https://github.com/Jesssullivan/cmux/pull/190))
+
+### Thanks to 1 contributor!
+
+- [@Jesssullivan](https://github.com/Jesssullivan)
+
 ## [0.63.1] - 2026-03-28
 
 ### Fixed
