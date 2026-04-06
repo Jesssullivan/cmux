@@ -1,5 +1,9 @@
 name: SSH Proxy E2E Tests (Self-Hosted)
 
+# NOTE: Docker SSH tests require `cmux ssh` CLI subcommand which is
+# macOS-only. On Linux, tests that need `cmux ssh` will SKIP gracefully.
+# Tests that only use socket RPC will run on both platforms.
+
 on:
   # SECURITY: Only trigger on direct pushes and manual dispatch.
   # Never run on pull_request — fork PRs could execute arbitrary code

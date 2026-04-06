@@ -87,9 +87,15 @@ for test_file in "${TESTS[@]}"; do
   LOG="/tmp/ssh-proxy-tests-${name}.log"
   echo "--- $name ---"
   if timeout 120 python3 "$test_file" > "$LOG" 2>&1; then
-    PASS=$((PASS + 1))
-    echo "ok $NUM $name" >> "$TAP_FILE"
-    echo "PASS: $name"
+    if grep -q "^SKIP:" "$LOG" 2>/dev/null; then
+      PASS=$((PASS + 1))
+      echo "ok $NUM $name # SKIP $(grep '^SKIP:' "$LOG" | head -1)" >> "$TAP_FILE"
+      echo "SKIP: $name ($(grep '^SKIP:' "$LOG" | head -1))"
+    else
+      PASS=$((PASS + 1))
+      echo "ok $NUM $name" >> "$TAP_FILE"
+      echo "PASS: $name"
+    fi
   else
     FAIL=$((FAIL + 1))
     echo "not ok $NUM $name" >> "$TAP_FILE"

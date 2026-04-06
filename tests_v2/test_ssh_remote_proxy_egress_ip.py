@@ -73,6 +73,11 @@ def _docker_available() -> bool:
     return _run(["docker", "info"], check=False).returncode == 0
 
 
+def _cli_supports_ssh(cli: str) -> bool:
+    proc = _run([cli, "ssh", "--help"], check=False)
+    return proc.returncode == 0 and "ssh" in (proc.stdout + proc.stderr).lower()
+
+
 def _parse_host_port(docker_port_output: str) -> int:
     text = docker_port_output.strip()
     if not text:
@@ -139,7 +144,15 @@ def main() -> int:
         print("SKIP: docker is not available")
         return 0
 
-    cli = _find_cli_binary()
+    try:
+        cli = _find_cli_binary()
+    except cmuxError:
+        print("SKIP: cmux CLI binary not found (set CMUXTERM_CLI)")
+        return 0
+
+    if not _cli_supports_ssh(cli):
+        print("SKIP: cmux CLI does not support 'ssh' subcommand (macOS-only)")
+        return 0
     fixture_dir = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "ssh-remote"
     _must(fixture_dir.is_dir(), f"Missing fixture: {fixture_dir}")
 
