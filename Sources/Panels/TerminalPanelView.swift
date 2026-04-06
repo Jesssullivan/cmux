@@ -36,10 +36,30 @@ struct TerminalPanelView: View {
             onFocus: { _ in onFocus() },
             onTriggerFlash: onTriggerFlash
         )
+        .overlay {
+            if !panel.isReady {
+                TerminalLoadingIndicator()
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: panel.isReady)
         // Keep the NSViewRepresentable identity stable across bonsplit structural updates.
         // This prevents transient teardown/recreate that can momentarily detach the hosted terminal view.
         .id(panel.id)
         .background(Color.clear)
+    }
+}
+
+/// Subtle loading indicator shown while the terminal surface initializes.
+private struct TerminalLoadingIndicator: View {
+    var body: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.8)
+        }
     }
 }
 
