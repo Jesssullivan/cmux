@@ -11066,11 +11066,34 @@ private struct SidebarFooter: View {
 private struct SidebarFooterButtons: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
+    @EnvironmentObject var tabManager: TabManager
 
     var body: some View {
         HStack(spacing: 4) {
             SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
             UpdatePill(model: updateViewModel)
+
+            Spacer()
+
+            Button {
+                if let wsId = tabManager.selectedTabId {
+                    tabManager.openBrowser(inWorkspace: wsId)
+                }
+            } label: {
+                Image(systemName: "globe")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(SidebarFooterIconButtonStyle())
+            .safeHelp(String(localized: "sidebar.footer.newBrowser", defaultValue: "New Browser Panel"))
+
+            Button {
+                tabManager.addWorkspace(placementOverride: .end)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(SidebarFooterIconButtonStyle())
+            .safeHelp(String(localized: "sidebar.footer.newWorkspace", defaultValue: "New Workspace"))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -12608,7 +12631,7 @@ private struct TabItemView: View, Equatable {
     }
 
     private var showCloseButton: Bool {
-        isHovering && canCloseWorkspace && !(showsModifierShortcutHints || alwaysShowShortcutHints)
+        (isHovering || isActive) && canCloseWorkspace && !(showsModifierShortcutHints || alwaysShowShortcutHints)
     }
 
     private var workspaceShortcutLabel: String? {
