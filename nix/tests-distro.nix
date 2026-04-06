@@ -7,6 +7,7 @@
 #
 # Available checks:
 #   nix build .#checks.x86_64-linux.distro-rocky9
+#   (Fedora/Rocky 10 blocked — nix-vm-test stale image URLs, see #187)
 #   nix build .#checks.x86_64-linux.distro-debian12
 #   nix build .#checks.x86_64-linux.distro-ubuntu2404
 #
@@ -29,17 +30,17 @@
 
   # ── Fetch release artifacts from GitHub ──────────────────────────
   # Uses the latest lab release. Update the URLs when cutting a new release.
-  releaseTag = "lab-v0.74.0";
+  releaseTag = "lab-v0.75.0";
   releaseBase = "https://github.com/Jesssullivan/cmux/releases/download/${releaseTag}";
 
   cmuxDeb = pkgs.fetchurl {
-    url = "${releaseBase}/cmux_0.74.0_amd64.deb";
-    hash = "sha256-GTHMK6nupyGVmYSjs9M1MuyuIvWlILSHu3JK29U560M=";
+    url = "${releaseBase}/cmux_0.75.0_amd64.deb";
+    hash = "sha256-BCGGL/CSv2IbcxVVssYq8GIRVxwJss5/OcVy3rfcw4M=";
   };
 
   cmuxRpm = pkgs.fetchurl {
-    url = "${releaseBase}/cmux-0.74.0-1.fc42.x86_64.rpm";
-    hash = "sha256-nSA0YIOclzX+vUlXsjJIoGsbozXJW381fZO3e2kHOz4=";
+    url = "${releaseBase}/cmux-0.75.0-1.fc42.x86_64.rpm";
+    hash = "sha256-fApOZUcz0zQCur0Oo8XDziUg0pYfT4DRsKQNqMTQurw=";
   };
 
   # ── Shared socket ping test snippet ──────────────────────────────
@@ -128,8 +129,11 @@
       '';
     }).driver;
 
-  # TODO(M12): Add Rocky 10 test when nix-vm-test adds rocky."10_0" support.
+  # NOTE: Fedora and Rocky 10 tests blocked:
+  # - nix-vm-test Fedora 39/40/41 images return 404 (stale mirror URLs)
+  # - nix-vm-test hasn't added Rocky 10 yet (GA since June 2025)
   # Track: https://github.com/Jesssullivan/cmux/issues/187
+  # Rocky 9 RPM test covers the dnf/RPM install path in the meantime.
 in {
   inherit distro-rocky9 distro-debian12 distro-ubuntu2404;
 }
