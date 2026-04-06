@@ -520,6 +520,11 @@ struct cmuxApp: App {
                     Button("Split Button Layout Debug…") {
                         SplitButtonLayoutDebugWindowController.shared.show()
                     }
+                    #if DEBUG
+                    Button("Browser Network Log…") {
+                        BrowserNetworkDebugWindowController.shared.show()
+                    }
+                    #endif
                     Button("Open All Debug Windows") {
                         openAllDebugWindows()
                     }
@@ -3509,6 +3514,177 @@ private struct SplitButtonLayoutDebugView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
+
+// MARK: - Browser Network Debug Window
+
+#if DEBUG
+private final class BrowserNetworkDebugWindowController: NSWindowController, NSWindowDelegate {
+    static let shared = BrowserNetworkDebugWindowController()
+
+    private init() {
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Browser Network Log"
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.browserNetworkDebug")
+        window.center()
+        window.contentView = NSHostingView(rootView: BrowserNetworkDebugView())
+        AppDelegate.shared?.applyWindowDecorations(to: window)
+        super.init(window: window)
+        window.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show() {
+        window?.center()
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+private struct BrowserNetworkDebugView: View {
+    @ObservedObject private var log = BrowserNetworkLog.shared
+    @State private var selectedEntry: BrowserNetworkEntry?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Network Requests (\(log.entries.count))")
+                    .font(.headline)
+                Spacer()
+                Button("Clear") {
+                    log.clear()
+                    selectedEntry = nil
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            if log.entries.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No network requests captured")
+                        .foregroundColor(.secondary)
+                    Text("Navigate in a browser panel to see requests here.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HSplitView {
+                    requestList
+                        .frame(minWidth: 300)
+
+                    if let entry = selectedEntry {
+                        detailView(entry)
+                            .frame(minWidth: 250)
+                    }
+                }
+            }
+        }
+    }
+
+    private var requestList: some View {
+        List(log.entries.reversed(), selection: $selectedEntry) { entry in
+            HStack(spacing: 8) {
+                Text(entry.statusDescription)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(statusColor(entry.statusCode))
+                    .frame(width: 36, alignment: .trailing)
+
+                Text(entry.method)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 36)
+
+                Text(entry.url)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer()
+
+                if let dur = entry.duration {
+                    Text("\(Int(dur * 1000))ms")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 2)
+            .tag(entry)
+        }
+    }
+
+    private func detailView(_ entry: BrowserNetworkEntry) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Group {
+                    Text("URL").font(.caption).foregroundColor(.secondary)
+                    Text(entry.url)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+
+                Group {
+                    Text("Status").font(.caption).foregroundColor(.secondary)
+                    Text("\(entry.statusDescription) \(entry.mimeType ?? "")")
+                }
+
+                if let dur = entry.duration {
+                    Group {
+                        Text("Duration").font(.caption).foregroundColor(.secondary)
+                        Text("\(Int(dur * 1000))ms")
+                    }
+                }
+
+                if !entry.responseHeaders.isEmpty {
+                    Text("Response Headers").font(.caption).foregroundColor(.secondary)
+                    ForEach(entry.responseHeaders.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                        HStack(alignment: .top) {
+                            Text(key)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.accentColor)
+                            Text(value)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+
+                if let pid = entry.panelID {
+                    Group {
+                        Text("Panel ID").font(.caption).foregroundColor(.secondary)
+                        Text(pid.uuidString).font(.system(.caption2, design: .monospaced))
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func statusColor(_ code: Int?) -> Color {
+        guard let code else { return .secondary }
+        switch code {
+        case 200..<300: return .green
+        case 300..<400: return .orange
+        case 400..<600: return .red
+        default: return .secondary
+        }
+    }
+}
+#endif
 
 // MARK: - Background Debug Window
 
