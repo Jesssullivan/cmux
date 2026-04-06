@@ -31,6 +31,10 @@ final class TerminalPanel: Panel, ObservableObject {
         }
     }
 
+    /// Whether the underlying ghostty surface has been created and is rendering.
+    /// Used by TerminalPanelView to show a loading indicator until the terminal is ready.
+    @Published private(set) var isReady: Bool = false
+
     /// Bump this token to force SwiftUI to call `updateNSView` on `GhosttyTerminalView`,
     /// which re-attaches the hosted view after bonsplit close/reparent operations.
     ///
@@ -82,6 +86,17 @@ final class TerminalPanel: Panel, ObservableObject {
                 if self?.searchState !== state {
                     self?.searchState = state
                 }
+            }
+            .store(in: &cancellables)
+
+        // Mark ready when the ghostty surface finishes initialization
+        let panelId = surface.id
+        NotificationCenter.default.publisher(for: .terminalSurfaceDidBecomeReady)
+            .filter { ($0.userInfo?["surfaceId"] as? UUID) == panelId }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.isReady = true
             }
             .store(in: &cancellables)
     }

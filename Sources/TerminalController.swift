@@ -12712,12 +12712,13 @@ class TerminalController {
                     result = "ERROR: Panel not found"
                     return
                 }
+                let enrichedBody = Self.enrichNotificationBodyWithCustomTitle(body: body, tab: tab, panelId: panelId)
                 TerminalNotificationStore.shared.addNotification(
                     tabId: workspaceId,
                     surfaceId: panelId,
                     title: title,
                     subtitle: subtitle,
-                    body: body
+                    body: enrichedBody
                 )
             }
             return result
@@ -12740,15 +12741,26 @@ class TerminalController {
                 result = "ERROR: Panel not found"
                 return
             }
+            let enrichedBody = Self.enrichNotificationBodyWithCustomTitle(body: body, tab: tab, panelId: panelId)
             TerminalNotificationStore.shared.addNotification(
                 tabId: tab.id,
                 surfaceId: panelId,
                 title: title,
                 subtitle: subtitle,
-                body: body
+                body: enrichedBody
             )
         }
         return result
+    }
+
+    /// Append the workspace or panel custom title to a notification body if set.
+    /// This lets "Waiting for input" notifications include the terminal's custom title
+    /// so users can identify which session needs attention.
+    private static func enrichNotificationBodyWithCustomTitle(body: String, tab: Tab, panelId: UUID) -> String {
+        // Prefer panel-level custom title, then workspace-level
+        let customTitle = tab.panelCustomTitles[panelId] ?? tab.customTitle
+        guard let customTitle, !customTitle.isEmpty else { return body }
+        return "\(body) — \(customTitle)"
     }
 
     private func listNotifications() -> String {
