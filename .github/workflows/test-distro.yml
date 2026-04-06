@@ -1,0 +1,83 @@
+name: Distro Package Tests (Self-Hosted)
+
+on:
+  # SECURITY: Only trigger on direct pushes and manual dispatch.
+  # Never run on pull_request — fork PRs could execute arbitrary code
+  # on the self-hosted runner with KVM access.
+  push:
+    branches: [main, 'sid/**']
+    paths:
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'nix/**'
+      - 'dist/**'
+      - 'cmux-linux/**'
+      - 'ghostty'
+      - '.github/workflows/test-distro.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or SHA to test
+        required: false
+        default: ""
+      distro:
+        description: "Distro to test"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - rocky9
+          - debian12
+          - ubuntu2404
+
+concurrency:
+  group: test-distro-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  distro-tests:
+    name: Distro package tests (neo)
+    runs-on: [self-hosted, linux, kvm, cmux-distro-test]
+    environment: distro-tests
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Verify KVM access
+        run: |
+          echo "=== KVM device ==="
+          ls -la /dev/kvm
+          test -c /dev/kvm || { echo "ERROR: /dev/kvm not found"; exit 1; }
+          test -r /dev/kvm || { echo "ERROR: /dev/kvm not readable"; exit 1; }
+          echo "=== QEMU version ==="
+          qemu-system-x86_64 --version | head -1
+
+      - name: Rocky 9 package test
+        if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
+        run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
+
+      - name: Debian 12 package test
+        if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
+        run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+
+      - name: Ubuntu 24.04 package test (Mint proxy)
+        if: inputs.distro == 'all' || inputs.distro == 'ubuntu2404' || inputs.distro == ''
+        run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: distro-test-logs-${{ github.run_id }}
+          path: |
+            result/
+            /tmp/distro-tests-*
+          retention-days: 7
+          if-no-files-found: ignore
