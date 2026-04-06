@@ -18,6 +18,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# SSH proxy tests require macOS cmux CLI with `ssh` subcommand.
+# On Linux, cmux-linux is a GTK app without CLI subcommands.
+# Run only on macOS; skip gracefully on Linux.
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "=== SKIP: SSH proxy tests require macOS (cmux ssh CLI is macOS-only) ==="
+  echo "TAP version 13" > "${TAP_FILE:-/tmp/ssh-proxy-tests-results.tap}"
+  echo "1..0 # SKIP macOS-only" >> "${TAP_FILE:-/tmp/ssh-proxy-tests-results.tap}"
+  exit 0
+fi
+
 # Verify Docker
 if ! docker info >/dev/null 2>&1; then
   echo "FAIL: Docker is not available"
@@ -67,6 +77,9 @@ fi
 echo "Socket ready"
 
 # Discover Docker SSH proxy tests
+# NOTE: These tests require `cmux ssh` CLI (macOS-only) and Docker.
+# On Linux they will self-skip via sys.platform check. We still run
+# them so the TAP output records the SKIP rather than silently hiding them.
 TESTS=()
 for f in "$TESTS_DIR"/test_ssh_remote_docker_*.py "$TESTS_DIR"/test_ssh_remote_proxy_*.py; do
   [ -f "$f" ] || continue

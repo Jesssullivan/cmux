@@ -140,19 +140,15 @@ def _wait_connected_proxy_port(client: cmux, workspace_id: str, timeout: float =
 
 
 def main() -> int:
+    if sys.platform != "darwin":
+        print("SKIP: Docker SSH proxy tests require macOS (cmux ssh CLI is macOS-only)")
+        return 0
+
     if not _docker_available():
         print("SKIP: docker is not available")
         return 0
 
-    try:
-        cli = _find_cli_binary()
-    except cmuxError:
-        print("SKIP: cmux CLI binary not found (set CMUXTERM_CLI)")
-        return 0
-
-    if not _cli_supports_ssh(cli):
-        print("SKIP: cmux CLI does not support 'ssh' subcommand (macOS-only)")
-        return 0
+    cli = _find_cli_binary()
     fixture_dir = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "ssh-remote"
     _must(fixture_dir.is_dir(), f"Missing fixture: {fixture_dir}")
 
