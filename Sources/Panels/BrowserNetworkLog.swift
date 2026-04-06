@@ -2,7 +2,15 @@
 import Foundation
 
 /// A captured network request/response from a WKWebView navigation.
-struct BrowserNetworkEntry: Identifiable {
+struct BrowserNetworkEntry: Identifiable, Hashable {
+    static func == (lhs: BrowserNetworkEntry, rhs: BrowserNetworkEntry) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
     let id = UUID()
     let timestamp: Date
     let url: String
