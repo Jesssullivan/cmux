@@ -392,7 +392,7 @@ struct cmuxApp: App {
                 }
                 .keyboardShortcut(",", modifiers: [.command, .shift])
                 Divider()
-                Button(String(localized: "menu.app.installClaudeIntegration", defaultValue: "Install Claude Code Integration…")) {
+                Button(String(localized: "menu.app.installAgentIntegration", defaultValue: "Install Agent Integration…")) {
                     appDelegate.installClaudeCodeIntegration()
                 }
                 Divider()
@@ -622,7 +622,7 @@ struct cmuxApp: App {
 
             // Close tab/workspace
             CommandGroup(after: .newItem) {
-                Button(String(localized: "menu.file.newClaude", defaultValue: "New Claude Code")) {
+                Button(String(localized: "menu.file.newAgent", defaultValue: "New Agent Session")) {
                     AppDelegate.shared?.openClaudeFromPool()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
@@ -5812,29 +5812,29 @@ struct SettingsView: View {
 
                     SettingsCard {
                         SettingsCardRow(
-                            String(localized: "settings.automation.claudeCode", defaultValue: "Claude Code Integration"),
+                            String(localized: "settings.automation.agentIntegration", defaultValue: "Agent Integration"),
                             subtitle: claudeCodeHooksEnabled
-                                ? String(localized: "settings.automation.claudeCode.subtitleOn", defaultValue: "Sidebar shows Claude session status and notifications.")
-                                : String(localized: "settings.automation.claudeCode.subtitleOff", defaultValue: "Claude Code runs without cmux integration.")
+                                ? String(localized: "settings.automation.agentIntegration.subtitleOn", defaultValue: "Sidebar shows agent session status and notifications.")
+                                : String(localized: "settings.automation.agentIntegration.subtitleOff", defaultValue: "Agent harness runs without cmux integration.")
                         ) {
                             Toggle("", isOn: $claudeCodeHooksEnabled)
                                 .labelsHidden()
                                 .controlSize(.small)
-                                .accessibilityIdentifier("SettingsClaudeCodeHooksToggle")
+                                .accessibilityIdentifier("SettingsAgentHooksToggle")
                         }
 
                         SettingsCardDivider()
 
-                        SettingsCardNote(String(localized: "settings.automation.claudeCode.note", defaultValue: "When enabled, cmux wraps the claude command to inject session tracking and notification hooks. Disable if you prefer to manage Claude Code hooks yourself."))
+                        SettingsCardNote(String(localized: "settings.automation.agentIntegration.note", defaultValue: "When enabled, cmux wraps the agent command to inject session tracking and notification hooks. Disable if you prefer to manage agent hooks yourself."))
                     }
 
                     SettingsCard {
                         SettingsCardRow(
-                            String(localized: "settings.automation.claudeCode.customPath", defaultValue: "Claude Binary Path"),
-                            subtitle: String(localized: "settings.automation.claudeCode.customPath.subtitle", defaultValue: "Custom path to the claude binary. Leave empty to use PATH.")
+                            String(localized: "settings.automation.agentIntegration.binaryPath", defaultValue: "Agent Binary Path"),
+                            subtitle: String(localized: "settings.automation.agentIntegration.binaryPath.subtitle", defaultValue: "Custom path to the agent binary. Leave empty to use PATH.")
                         ) {
                             TextField(
-                                String(localized: "settings.automation.claudeCode.customPath.placeholder", defaultValue: "e.g. /usr/local/bin/claude"),
+                                String(localized: "settings.automation.agentIntegration.binaryPath.placeholder", defaultValue: "e.g. /usr/local/bin/claude"),
                                 text: $customClaudePath
                             )
                             .textFieldStyle(.roundedBorder)
@@ -5844,10 +5844,10 @@ struct SettingsView: View {
 
                     SettingsCard {
                         SettingsCardRow(
-                            String(localized: "settings.automation.warmClaudePool", defaultValue: "Warm Claude Pool"),
+                            String(localized: "settings.automation.warmAgentPool", defaultValue: "Warm Agent Pool"),
                             subtitle: warmClaudePoolSize > 0
-                                ? String(localized: "settings.automation.warmClaudePool.subtitleOn", defaultValue: "Pre-spawns Claude Code sessions for instant launch via ⇧⌘K.")
-                                : String(localized: "settings.automation.warmClaudePool.subtitleOff", defaultValue: "Claude Code sessions launch on demand (no pre-warming).")
+                                ? String(localized: "settings.automation.warmAgentPool.subtitleOn", defaultValue: "Pre-spawns agent sessions for instant launch via ⇧⌘K.")
+                                : String(localized: "settings.automation.warmAgentPool.subtitleOff", defaultValue: "Agent sessions launch on demand (no pre-warming).")
                         ) {
                             Stepper(value: $warmClaudePoolSize, in: 0...3) {
                                 Text("\(warmClaudePoolSize)")

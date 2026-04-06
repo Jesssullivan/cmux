@@ -3194,7 +3194,7 @@ class TabManager: ObservableObject {
         // Spawn new entries up to target size
         while warmClaudePoolIds.count < targetSize {
             let ws = addWorkspace(
-                title: "Claude Code",
+                title: "Agent",
                 initialTerminalCommand: "claude",
                 select: false,
                 eagerLoadTerminal: true,

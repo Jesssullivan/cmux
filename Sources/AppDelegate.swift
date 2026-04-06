@@ -6381,7 +6381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             bringToFront(window)
         }
         context.tabManager.addWorkspace(
-            title: String(localized: "workspace.claudeSetup.title", defaultValue: "Claude Code Setup"),
+            title: String(localized: "workspace.agentSetup.title", defaultValue: "Agent Setup"),
             initialTerminalCommand: "cmux claude-setup",
             eagerLoadTerminal: true,
             placementOverride: .end
@@ -6401,7 +6401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else {
             // Pool miss — create fresh
             context.tabManager.addWorkspace(
-                title: "Claude Code",
+                title: "Agent",
                 initialTerminalCommand: "claude",
                 eagerLoadTerminal: true,
                 placementOverride: .end
