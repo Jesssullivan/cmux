@@ -949,7 +949,6 @@ class TabManager: ObservableObject {
                 if let selectedTabId = self.selectedTabId {
                     self.dismissFocusedPanelNotificationIfActive(tabId: selectedTabId)
                 }
-                self.scheduleSelectedWorkspaceGitMetadataRefresh(reason: "selectionChange")
 #if DEBUG
                 let dtMs = self.debugWorkspaceSwitchStartTime > 0
                     ? (CACurrentMediaTime() - self.debugWorkspaceSwitchStartTime) * 1000
