@@ -9960,6 +9960,13 @@ private final class SidebarTabItemSettingsStore: ObservableObject {
     }
 }
 
+private struct SidebarTabItemPresentationSnapshot: Equatable {
+    let tabId: UUID
+    let unreadCount: Int
+    let latestNotificationText: String?
+    let showsModifierShortcutHints: Bool
+}
+
 struct VerticalTabsSidebar: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
@@ -9975,6 +9982,7 @@ struct VerticalTabsSidebar: View {
     @ObservedObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     @State private var draggedTabId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
+    @State private var frozenTabItemPresentation: SidebarTabItemPresentationSnapshot?
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
 
@@ -10040,6 +10048,26 @@ struct VerticalTabsSidebar: View {
                                 let allRemoteContextMenuTargetsDisconnected = usesSelectedContextMenuTargets
                                     ? allSelectedRemoteContextMenuTargetsDisconnected
                                     : (tab.isRemoteWorkspace && tab.remoteConnectionState == .disconnected)
+                                let liveUnreadCount = notificationStore.unreadCount(forTabId: tab.id)
+                                let liveLatestNotificationText: String? = {
+                                    guard showsSidebarNotificationMessage,
+                                          let notification = notificationStore.latestNotification(forTabId: tab.id) else {
+                                        return nil
+                                    }
+                                    let text = notification.body.isEmpty ? notification.title : notification.body
+                                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    return trimmed.isEmpty ? nil : trimmed
+                                }()
+                                let liveShowsModifierShortcutHints = modifierKeyMonitor.isModifierPressed
+                                let livePresentation = SidebarTabItemPresentationSnapshot(
+                                    tabId: tab.id,
+                                    unreadCount: liveUnreadCount,
+                                    latestNotificationText: liveLatestNotificationText,
+                                    showsModifierShortcutHints: liveShowsModifierShortcutHints
+                                )
+                                let frozenPresentation = frozenTabItemPresentation?.tabId == tab.id
+                                    ? frozenTabItemPresentation
+                                    : nil
                                 TabItemView(
                                     tabManager: tabManager,
                                     notificationStore: notificationStore,
@@ -10053,21 +10081,13 @@ struct VerticalTabsSidebar: View {
                                     workspaceShortcutModifierSymbol: workspaceNumberShortcut.numberedDigitHintPrefix,
                                     canCloseWorkspace: canCloseWorkspace,
                                     accessibilityWorkspaceCount: workspaceCount,
-                                    unreadCount: notificationStore.unreadCount(forTabId: tab.id),
-                                    latestNotificationText: {
-                                        guard showsSidebarNotificationMessage,
-                                              let notification = notificationStore.latestNotification(forTabId: tab.id) else {
-                                            return nil
-                                        }
-                                        let text = notification.body.isEmpty ? notification.title : notification.body
-                                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        return trimmed.isEmpty ? nil : trimmed
-                                    }(),
+                                    unreadCount: frozenPresentation?.unreadCount ?? liveUnreadCount,
+                                    latestNotificationText: frozenPresentation?.latestNotificationText ?? liveLatestNotificationText,
                                     rowSpacing: tabRowSpacing,
                                     setSelectionToTabs: { selection = .tabs },
                                     selectedTabIds: $selectedTabIds,
                                     lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                                    showsModifierShortcutHints: modifierKeyMonitor.isModifierPressed,
+                                    showsModifierShortcutHints: frozenPresentation?.showsModifierShortcutHints ?? liveShowsModifierShortcutHints,
                                     dragAutoScrollController: dragAutoScrollController,
                                     draggedTabId: $draggedTabId,
                                     dropIndicator: $dropIndicator,
@@ -10075,7 +10095,9 @@ struct VerticalTabsSidebar: View {
                                     remoteContextMenuWorkspaceIds: remoteContextMenuWorkspaceIds,
                                     allRemoteContextMenuTargetsConnecting: allRemoteContextMenuTargetsConnecting,
                                     allRemoteContextMenuTargetsDisconnected: allRemoteContextMenuTargetsDisconnected,
-                                    settings: tabItemSettings
+                                    settings: tabItemSettings,
+                                    livePresentation: livePresentation,
+                                    frozenPresentation: $frozenTabItemPresentation
                                 )
                                 .equatable()
                             }
@@ -10176,6 +10198,11 @@ struct VerticalTabsSidebar: View {
             dragAutoScrollController.stop()
             dropIndicator = nil
         }
+        .onChange(of: tabs.map(\.id)) { tabIds in
+            guard let frozenTabItemPresentation,
+                  !tabIds.contains(frozenTabItemPresentation.tabId) else { return }
+            self.frozenTabItemPresentation = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: SidebarDragLifecycleNotification.requestClear)) { notification in
             guard draggedTabId != nil else { return }
             let reason = SidebarDragLifecycleNotification.reason(from: notification)
@@ -10200,8 +10227,6 @@ enum ShortcutHintModifierPolicy {
         for modifierFlags: NSEvent.ModifierFlags,
         defaults: UserDefaults = .standard
     ) -> Bool {
-        let shortcut = KeyboardShortcutSettings.shortcut(for: .selectWorkspaceByNumber)
-        guard !shortcut.hasChord else { return false }
         let normalized = modifierFlags.intersection(.deviceIndependentFlagsMask)
             .subtracting([.numericPad, .function, .capsLock])
         guard normalized == [.command] else {
@@ -12450,18 +12475,8 @@ enum SidebarTrailingAccessoryWidthPolicy {
     static let closeButtonWidth: CGFloat = 16
 
     static func width(
-        canCloseWorkspace: Bool,
-        showsWorkspaceShortcutHint: Bool,
-        workspaceShortcutLabel: String?,
-        debugXOffset: Double
+        canCloseWorkspace: Bool
     ) -> CGFloat {
-        if showsWorkspaceShortcutHint, let workspaceShortcutLabel {
-            return SidebarWorkspaceShortcutHintMetrics.slotWidth(
-                label: workspaceShortcutLabel,
-                debugXOffset: debugXOffset
-            )
-        }
-
         return canCloseWorkspace ? closeButtonWidth : 0
     }
 }
@@ -12476,6 +12491,11 @@ enum SidebarTrailingAccessoryWidthPolicy {
 // and bridge only sidebar-visible workspace changes into local state.
 // Do NOT add @EnvironmentObject or new @Binding without updating ==.
 // Do NOT remove .equatable() from the ForEach call site in VerticalTabsSidebar.
+private final class SidebarTabItemContextMenuState: ObservableObject {
+    var isVisible = false
+    var hasDeferredWorkspaceObservationInvalidation = false
+}
+
 private struct TabItemView: View, Equatable {
     private static let workspaceObservationCoalesceInterval: RunLoop.SchedulerTimeType.Stride = .milliseconds(40)
 
@@ -12528,7 +12548,10 @@ private struct TabItemView: View, Equatable {
     let allRemoteContextMenuTargetsConnecting: Bool
     let allRemoteContextMenuTargetsDisconnected: Bool
     let settings: SidebarTabItemSettingsSnapshot
+    let livePresentation: SidebarTabItemPresentationSnapshot
+    @Binding var frozenPresentation: SidebarTabItemPresentationSnapshot?
     @State private var workspaceObservationGeneration: UInt64 = 0
+    @StateObject private var contextMenuState = SidebarTabItemContextMenuState()
     @State private var isHovering = false
     @State private var rowHeight: CGFloat = 1
 
@@ -12665,10 +12688,7 @@ private struct TabItemView: View, Equatable {
 
     private var trailingAccessoryWidth: CGFloat {
         SidebarTrailingAccessoryWidthPolicy.width(
-            canCloseWorkspace: canCloseWorkspace,
-            showsWorkspaceShortcutHint: showsWorkspaceShortcutHint,
-            workspaceShortcutLabel: workspaceShortcutLabel,
-            debugXOffset: sidebarShortcutHintXOffset
+            canCloseWorkspace: canCloseWorkspace
         )
     }
 
@@ -13025,12 +13045,13 @@ private struct TabItemView: View, Equatable {
                                     .underline()
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                Text(pullRequestStatusLabel(pullRequest.status, checks: pullRequest.checks))
+                                Text(pullRequestStatusLabel(pullRequest.status))
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                             }
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(pullRequestForegroundColor)
+                            .opacity(pullRequest.isStale ? 0.5 : 1)
                         }
                         .buttonStyle(.plain)
                         .safeHelp(String(localized: "sidebar.pullRequest.openTooltip", defaultValue: "Open \(pullRequest.label) #\(String(pullRequest.number))"))
@@ -13126,7 +13147,7 @@ private struct TabItemView: View, Equatable {
                 "desc=\"\(debugCommandPaletteTextPreview(description))\""
             )
 #endif
-            workspaceObservationGeneration &+= 1
+            scheduleWorkspaceObservationInvalidation()
         }
         .onReceive(
             tab.sidebarObservationPublisher
@@ -13146,7 +13167,7 @@ private struct TabItemView: View, Equatable {
                 "desc=\"\(debugCommandPaletteTextPreview(description))\""
             )
 #endif
-            workspaceObservationGeneration &+= 1
+            scheduleWorkspaceObservationInvalidation()
         }
         .onDrag {
             #if DEBUG
@@ -13177,6 +13198,7 @@ private struct TabItemView: View, Equatable {
             updateSelection()
         }
         .onHover { hovering in
+            guard !contextMenuState.isVisible else { return }
             isHovering = hovering
         }
         .accessibilityElement(children: .combine)
@@ -13188,7 +13210,37 @@ private struct TabItemView: View, Equatable {
         .accessibilityAction(named: Text(moveDownActionText)) {
             moveBy(1)
         }
-        .contextMenu { workspaceContextMenu }
+        .contextMenu {
+            workspaceContextMenu
+                .onAppear {
+                    contextMenuState.isVisible = true
+                    contextMenuState.hasDeferredWorkspaceObservationInvalidation = false
+                    frozenPresentation = livePresentation
+                }
+                .onDisappear {
+                    contextMenuState.isVisible = false
+                    frozenPresentation = nil
+                    if isHovering {
+                        isHovering = false
+                    }
+                    flushDeferredWorkspaceObservationInvalidation()
+                }
+        }
+    }
+
+    private func scheduleWorkspaceObservationInvalidation() {
+        // Keep the context menu stable while background workspace telemetry keeps arriving.
+        if contextMenuState.isVisible {
+            contextMenuState.hasDeferredWorkspaceObservationInvalidation = true
+            return
+        }
+        workspaceObservationGeneration &+= 1
+    }
+
+    private func flushDeferredWorkspaceObservationInvalidation() {
+        guard contextMenuState.hasDeferredWorkspaceObservationInvalidation else { return }
+        contextMenuState.hasDeferredWorkspaceObservationInvalidation = false
+        workspaceObservationGeneration &+= 1
     }
 
     private func contextMenuLabel(multi: String, single: String, isMulti: Bool) -> String {
@@ -13803,7 +13855,7 @@ private struct TabItemView: View, Equatable {
         let label: String
         let url: URL
         let status: SidebarPullRequestStatus
-        let checks: SidebarPullRequestChecksStatus?
+        let isStale: Bool
     }
 
     private func pullRequestDisplays(orderedPanelIds: [UUID]) -> [PullRequestDisplay] {
@@ -13814,7 +13866,7 @@ private struct TabItemView: View, Equatable {
                 label: pullRequest.label,
                 url: pullRequest.url,
                 status: pullRequest.status,
-                checks: pullRequest.checks
+                isStale: pullRequest.isStale
             )
         }
     }
@@ -13856,10 +13908,7 @@ private struct TabItemView: View, Equatable {
         NSWorkspace.shared.open(url)
     }
 
-    private func pullRequestStatusLabel(
-        _ status: SidebarPullRequestStatus,
-        checks _: SidebarPullRequestChecksStatus?
-    ) -> String {
+    private func pullRequestStatusLabel(_ status: SidebarPullRequestStatus) -> String {
         switch status {
         case .open: return String(localized: "sidebar.pullRequest.statusOpen", defaultValue: "open")
         case .merged: return String(localized: "sidebar.pullRequest.statusMerged", defaultValue: "merged")
