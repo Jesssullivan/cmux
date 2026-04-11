@@ -5128,6 +5128,1432 @@ struct SettingsView: View {
         section.matches(settingsSearchText)
     }
 
+
+    @ViewBuilder
+    private var settingsAppSection: some View {
+        if sectionVisible(.app) {
+        SettingsSectionHeader(title: String(localized: "settings.section.app", defaultValue: "App"), section: .app)
+            .id(SettingsSection.app)
+        SettingsCard {
+          Group { // app card rows part 1
+            SettingsCardRow(
+                configurationReview: .json("app.language"),
+                String(localized: "settings.app.language", defaultValue: "Language"),
+                subtitle: appLanguage != LanguageSettings.languageAtLaunch.rawValue
+                    ? String(localized: "settings.app.language.restartSubtitle", defaultValue: "Restart cmux to apply")
+                    : nil,
+                controlWidth: pickerColumnWidth
+            ) {
+                Picker("", selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .onChange(of: appLanguage) { newValue in
+                    guard !isResettingSettings else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
+                        // Re-check current value to handle rapid changes
+                        let current = appLanguage
+                        if let lang = AppLanguage(rawValue: current) {
+                            LanguageSettings.apply(lang)
+                        }
+                        if current != LanguageSettings.languageAtLaunch.rawValue {
+                            showLanguageRestartAlert = true
+                        }
+                    }
+                }
+            }
+
+            SettingsCardDivider()
+
+            ThemePickerRow(
+                configurationReview: .json("app.appearance"),
+                selectedMode: appearanceMode,
+                onSelect: { mode in
+                    appearanceMode = mode.rawValue
+                }
+            )
+
+            SettingsCardDivider()
+
+            AppIconPickerRow(
+                configurationReview: .json("app.appIcon"),
+                selectedMode: appIconMode,
+                onSelect: { mode in
+                    appIconMode = mode.rawValue
+                    AppIconSettings.applyIcon(mode)
+                }
+            )
+
+            SettingsCardDivider()
+
+            SettingsPickerRow(
+                configurationReview: .json("app.newWorkspacePlacement"),
+                String(localized: "settings.app.newWorkspacePlacement", defaultValue: "New Workspace Placement"),
+                subtitle: selectedWorkspacePlacement.description,
+                controlWidth: pickerColumnWidth,
+                selection: $newWorkspacePlacement
+            ) {
+                ForEach(NewWorkspacePlacement.allCases) { placement in
+                    Text(placement.displayName).tag(placement.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.minimalMode"),
+                String(localized: "settings.app.minimalMode", defaultValue: "Minimal Mode"),
+                subtitle: minimalModeSubtitle
+            ) {
+                Toggle("", isOn: minimalModeBinding)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsMinimalModeToggle")
+                    .accessibilityLabel(
+                        String(localized: "settings.app.minimalMode", defaultValue: "Minimal Mode")
+                    )
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.keepWorkspaceOpenWhenClosingLastSurface"),
+                String(localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut", defaultValue: "Keep Workspace Open When Closing Last Surface"),
+                subtitle: closeWorkspaceOnLastSurfaceShortcutSubtitle
+            ) {
+                Toggle("", isOn: keepWorkspaceOpenOnLastSurfaceShortcutBinding)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.focusPaneOnFirstClick"),
+                String(localized: "settings.app.paneFirstClickFocus", defaultValue: "Focus Pane on First Click"),
+                subtitle: paneFirstClickFocusSubtitle
+            ) {
+                Toggle("", isOn: $paneFirstClickFocusEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityLabel(
+                        String(localized: "settings.app.paneFirstClickFocus", defaultValue: "Focus Pane on First Click")
+                    )
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.preferredEditor"),
+                String(localized: "settings.app.preferredEditor", defaultValue: "Open Files With"),
+                subtitle: String(localized: "settings.app.preferredEditor.subtitle", defaultValue: "Command to open files on Cmd-click. Leave empty for system default.")
+            ) {
+                TextField(
+                    String(localized: "settings.app.preferredEditor.placeholder", defaultValue: "e.g. code, zed, subl"),
+                    text: $preferredEditorCommand
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 200)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.reorderOnNotification"),
+                String(localized: "settings.app.reorderOnNotification", defaultValue: "Reorder on Notification"),
+                subtitle: String(localized: "settings.app.reorderOnNotification.subtitle", defaultValue: "Move workspaces to the top when they receive a notification. Disable for stable shortcut positions.")
+            ) {
+                Toggle("", isOn: $workspaceAutoReorder)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("notifications.dockBadge"),
+                String(localized: "settings.app.dockBadge", defaultValue: "Dock Badge"),
+                subtitle: String(localized: "settings.app.dockBadge.subtitle", defaultValue: "Show unread count on app icon (Dock and Cmd+Tab).")
+            ) {
+                Toggle("", isOn: $notificationDockBadgeEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("notifications.showInMenuBar"),
+                String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar"),
+                subtitle: String(localized: "settings.app.showInMenuBar.subtitle", defaultValue: "Keep cmux in the menu bar for unread notifications and quick actions.")
+            ) {
+                Toggle("", isOn: $showMenuBarExtra)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityLabel(
+                        String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar")
+                    )
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("notifications.unreadPaneRing"),
+                String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring"),
+                subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Show a blue ring around panes with unread notifications.")
+            ) {
+                Toggle("", isOn: $notificationPaneRingEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityLabel(
+                        String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring")
+                    )
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("notifications.paneFlash"),
+                String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash"),
+                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a blue outline when cmux highlights a pane.")
+            ) {
+                Toggle("", isOn: $notificationPaneFlashEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityLabel(
+                        String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash")
+                    )
+            }
+          } // end app card rows part 1
+
+          Group { // app card rows part 2
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .action,
+                "Desktop Notifications",
+                subtitle: notificationPermissionSubtitle
+            ) {
+                HStack(spacing: 6) {
+                    Text(notificationPermissionStatusText)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(notificationPermissionStatusColor)
+                        .frame(width: 98, alignment: .trailing)
+
+                    Button(notificationPermissionActionTitle) {
+                        handleNotificationPermissionAction()
+                    }
+                    .controlSize(.small)
+
+                    Button("Send Test") {
+                        notificationStore.sendSettingsTestNotification()
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("notifications.sound", "notifications.customSoundFilePath"),
+                String(localized: "settings.notifications.sound.title", defaultValue: "Notification Sound"),
+                subtitle: String(localized: "settings.notifications.sound.subtitle", defaultValue: "Sound played when a notification arrives."),
+                controlWidth: notificationSoundControlWidth
+            ) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Picker("", selection: $notificationSound) {
+                            ForEach(NotificationSoundSettings.systemSounds, id: \.value) { sound in
+                                Text(sound.label).tag(sound.value)
+                            }
+                        }
+                        .labelsHidden()
+                        Button {
+                            previewNotificationSound()
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!canPreviewNotificationSound)
+                    }
+
+                    if notificationSound == NotificationSoundSettings.customFileValue {
+                        HStack(spacing: 6) {
+                            Text(notificationSoundCustomFileDisplayName)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(width: 170, alignment: .trailing)
+                            Button(
+                                String(
+                                    localized: "settings.notifications.sound.custom.choose.button",
+                                    defaultValue: "Choose..."
+                                )
+                            ) {
+                                chooseNotificationSoundFile()
+                            }
+                            .controlSize(.small)
+                            Button(
+                                String(
+                                    localized: "settings.notifications.sound.custom.clear.button",
+                                    defaultValue: "Clear"
+                                )
+                            ) {
+                                notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
+                                refreshNotificationCustomSoundStatus()
+                            }
+                            .controlSize(.small)
+                            .disabled(!hasCustomNotificationSoundFilePath)
+                        }
+                        if let notificationCustomSoundStatusMessage {
+                            Text(notificationCustomSoundStatusMessage)
+                                .font(.system(size: 11))
+                                .foregroundStyle(notificationCustomSoundStatusIsError ? Color.red : Color.secondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 260, alignment: .trailing)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("notifications.command"),
+                "Notification Command",
+                subtitle: "Run a shell command when a notification arrives. $CMUX_NOTIFICATION_TITLE, $CMUX_NOTIFICATION_SUBTITLE, $CMUX_NOTIFICATION_BODY are set."
+            ) {
+                TextField("say \"done\"", text: $notificationCustomCommand)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 200)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.sendAnonymousTelemetry"),
+                String(localized: "settings.app.telemetry", defaultValue: "Send anonymous telemetry"),
+                subtitle: sendAnonymousTelemetry != telemetryValueAtLaunch
+                    ? String(localized: "settings.app.telemetry.subtitleChanged", defaultValue: "Change takes effect on next launch.")
+                    : String(localized: "settings.app.telemetry.subtitle", defaultValue: "Share anonymized crash and usage data to help improve cmux.")
+            ) {
+                Toggle("", isOn: $sendAnonymousTelemetry)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.warnBeforeQuit"),
+                String(localized: "settings.app.warnBeforeQuit", defaultValue: "Warn Before Quit"),
+                subtitle: warnBeforeQuitShortcut
+                    ? String(localized: "settings.app.warnBeforeQuit.subtitleOn", defaultValue: "Show a confirmation before quitting with Cmd+Q.")
+                    : String(localized: "settings.app.warnBeforeQuit.subtitleOff", defaultValue: "Cmd+Q quits immediately without confirmation.")
+            ) {
+                Toggle("", isOn: $warnBeforeQuitShortcut)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.confirmCloseRunningProcess", defaultValue: "Confirm Close Running Process"),
+                subtitle: confirmCloseRunningProcess
+                    ? String(localized: "settings.app.confirmCloseRunningProcess.subtitleOn", defaultValue: "Show a confirmation before closing a workspace with a running command.")
+                    : String(localized: "settings.app.confirmCloseRunningProcess.subtitleOff", defaultValue: "Close workspaces without confirmation, even with running commands.")
+            ) {
+                Toggle("", isOn: $confirmCloseRunningProcess)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.confirmClosePinnedWorkspace", defaultValue: "Confirm Close Pinned Workspace"),
+                subtitle: confirmClosePinnedWorkspace
+                    ? String(localized: "settings.app.confirmClosePinnedWorkspace.subtitleOn", defaultValue: "Show a confirmation before closing a pinned workspace.")
+                    : String(localized: "settings.app.confirmClosePinnedWorkspace.subtitleOff", defaultValue: "Close pinned workspaces without extra confirmation.")
+            ) {
+                Toggle("", isOn: $confirmClosePinnedWorkspace)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.confirmCloseWindow", defaultValue: "Confirm Close Window"),
+                subtitle: confirmCloseWindow
+                    ? String(localized: "settings.app.confirmCloseWindow.subtitleOn", defaultValue: "Show a confirmation before closing a window with workspaces.")
+                    : String(localized: "settings.app.confirmCloseWindow.subtitleOff", defaultValue: "Close windows without confirmation.")
+            ) {
+                Toggle("", isOn: $confirmCloseWindow)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.confirmBatchClose", defaultValue: "Confirm Batch Close"),
+                subtitle: confirmBatchClose
+                    ? String(localized: "settings.app.confirmBatchClose.subtitleOn", defaultValue: "Show a confirmation before closing multiple tabs or workspaces at once.")
+                    : String(localized: "settings.app.confirmBatchClose.subtitleOff", defaultValue: "Close multiple tabs or workspaces without confirmation.")
+            ) {
+                Toggle("", isOn: $confirmBatchClose)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+          } // end app card rows part 2
+
+          Group { // app card rows part 3
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.renameSelectsExistingName"),
+                String(localized: "settings.app.renameSelectsName", defaultValue: "Rename Selects Existing Name"),
+                subtitle: commandPaletteRenameSelectAllOnFocus
+                    ? String(localized: "settings.app.renameSelectsName.subtitleOn", defaultValue: "Command Palette rename starts with all text selected.")
+                    : String(localized: "settings.app.renameSelectsName.subtitleOff", defaultValue: "Command Palette rename keeps the caret at the end.")
+            ) {
+                Toggle("", isOn: $commandPaletteRenameSelectAllOnFocus)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("app.commandPaletteSearchesAllSurfaces"),
+                String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Surfaces"),
+                subtitle: commandPaletteSearchAllSurfaces
+                    ? String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOn", defaultValue: "Cmd+P also matches terminal, browser, and markdown surfaces across workspaces.")
+                    : String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOff", defaultValue: "Cmd+P matches workspace rows only.")
+            ) {
+                Toggle("", isOn: $commandPaletteSearchAllSurfaces)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("CommandPaletteSearchAllSurfacesToggle")
+                    .accessibilityLabel(
+                        String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Surfaces")
+                    )
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.hideAllDetails"),
+                String(localized: "settings.app.hideAllSidebarDetails", defaultValue: "Hide All Sidebar Details"),
+                subtitle: sidebarHideAllDetails
+                    ? String(localized: "settings.app.hideAllSidebarDetails.subtitleOn", defaultValue: "Show only the workspace title row. Overrides the detail toggles below.")
+                    : String(localized: "settings.app.hideAllSidebarDetails.subtitleOff", defaultValue: "Show secondary workspace details as controlled by the toggles below.")
+            ) {
+                Toggle("", isOn: $sidebarHideAllDetails)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsPickerRow(
+                configurationReview: .json("sidebar.branchLayout"),
+                String(localized: "settings.app.sidebarBranchLayout", defaultValue: "Sidebar Branch Layout"),
+                subtitle: sidebarBranchVerticalLayout
+                    ? String(localized: "settings.app.sidebarBranchLayout.subtitleVertical", defaultValue: "Vertical: each branch appears on its own line.")
+                    : String(localized: "settings.app.sidebarBranchLayout.subtitleInline", defaultValue: "Inline: all branches share one line."),
+                controlWidth: pickerColumnWidth,
+                selection: $sidebarBranchVerticalLayout
+            ) {
+                Text(String(localized: "settings.app.sidebarBranchLayout.vertical", defaultValue: "Vertical")).tag(true)
+                Text(String(localized: "settings.app.sidebarBranchLayout.inline", defaultValue: "Inline")).tag(false)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showNotificationMessage"),
+                String(localized: "settings.app.showNotificationMessage", defaultValue: "Show Notification Message in Sidebar"),
+                subtitle: String(localized: "settings.app.showNotificationMessage.subtitle", defaultValue: "Display the latest notification message below the workspace title.")
+            ) {
+                Toggle("", isOn: $sidebarShowNotificationMessage)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showBranchDirectory"),
+                String(localized: "settings.app.showBranchDirectory", defaultValue: "Show Branch + Directory in Sidebar"),
+                subtitle: String(localized: "settings.app.showBranchDirectory.subtitle", defaultValue: "Display the built-in git branch and working-directory row.")
+            ) {
+                Toggle("", isOn: $sidebarShowBranchDirectory)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showPullRequests"),
+                String(localized: "settings.app.showPullRequests", defaultValue: "Show Pull Requests in Sidebar"),
+                subtitle: String(localized: "settings.app.showPullRequests.subtitle", defaultValue: "Display review items (PR/MR/etc.) with status, number, and clickable link.")
+            ) {
+                Toggle("", isOn: $sidebarShowPullRequest)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.openPullRequestLinksInCmuxBrowser"),
+                String(localized: "settings.app.openSidebarPRLinks", defaultValue: "Open Sidebar PR Links in cmux Browser"),
+                subtitle: openSidebarPullRequestLinksInCmuxBrowser
+                    ? String(localized: "settings.app.openSidebarPRLinks.subtitleOn", defaultValue: "Clicks open inside cmux browser.")
+                    : String(localized: "settings.app.openSidebarPRLinks.subtitleOff", defaultValue: "Clicks open in your default browser.")
+            ) {
+                Toggle("", isOn: $openSidebarPullRequestLinksInCmuxBrowser)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.openPortLinksInCmuxBrowser"),
+                String(localized: "settings.app.openSidebarPortLinks", defaultValue: "Open Sidebar Port Links in cmux Browser"),
+                subtitle: openSidebarPortLinksInCmuxBrowser
+                    ? String(localized: "settings.app.openSidebarPortLinks.subtitleOn", defaultValue: "Port clicks open inside cmux browser.")
+                    : String(localized: "settings.app.openSidebarPortLinks.subtitleOff", defaultValue: "Port clicks open in your default browser.")
+            ) {
+                Toggle("", isOn: $openSidebarPortLinksInCmuxBrowser)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showSSH"),
+                String(localized: "settings.app.showSSH", defaultValue: "Show SSH in Sidebar"),
+                subtitle: String(localized: "settings.app.showSSH.subtitle", defaultValue: "Display the SSH target for remote workspaces in its own row.")
+            ) {
+                Toggle("", isOn: $sidebarShowSSH)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showPorts"),
+                String(localized: "settings.app.showPorts", defaultValue: "Show Listening Ports in Sidebar"),
+                subtitle: String(localized: "settings.app.showPorts.subtitle", defaultValue: "Display detected listening ports for the active workspace.")
+            ) {
+                Toggle("", isOn: $sidebarShowPorts)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showLog"),
+                String(localized: "settings.app.showLog", defaultValue: "Show Latest Log in Sidebar"),
+                subtitle: String(localized: "settings.app.showLog.subtitle", defaultValue: "Display the latest imperative log/status message.")
+            ) {
+                Toggle("", isOn: $sidebarShowLog)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showProgress"),
+                String(localized: "settings.app.showProgress", defaultValue: "Show Progress in Sidebar"),
+                subtitle: String(localized: "settings.app.showProgress.subtitle", defaultValue: "Display the built-in progress bar from set_progress.")
+            ) {
+                Toggle("", isOn: $sidebarShowProgress)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebar.showCustomMetadata"),
+                String(localized: "settings.app.showMetadata", defaultValue: "Show Custom Metadata in Sidebar"),
+                subtitle: String(localized: "settings.app.showMetadata.subtitle", defaultValue: "Display custom metadata from report_meta/set_status and report_meta_block.")
+            ) {
+                Toggle("", isOn: $sidebarShowMetadata)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            .disabled(sidebarHideAllDetails)
+          } // end app card rows part 3
+        }
+        } // end if sectionVisible(.app)
+    }
+
+    @ViewBuilder
+    private var settingsWorkspaceColorsSection: some View {
+        if sectionVisible(.workspaceColors) {
+        SettingsSectionHeader(title: String(localized: "settings.section.workspaceColors", defaultValue: "Workspace Colors"), section: .workspaceColors)
+            .id(SettingsSection.workspaceColors)
+        SettingsCard {
+            SettingsPickerRow(
+                configurationReview: .json("workspaceColors.indicatorStyle"),
+                String(localized: "settings.workspaceColors.indicator", defaultValue: "Workspace Color Indicator"),
+                controlWidth: pickerColumnWidth,
+                selection: sidebarIndicatorStyleSelection
+            ) {
+                ForEach(SidebarActiveTabIndicatorStyle.allCases) { style in
+                    Text(style.displayName).tag(style.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("workspaceColors.selectionColor"),
+                String(localized: "settings.workspaceColors.selectionColor", defaultValue: "Selection Highlight"),
+                subtitle: String(localized: "settings.workspaceColors.selectionColor.subtitle", defaultValue: "Background color of the selected workspace in the sidebar.")
+            ) {
+                HStack(spacing: 8) {
+                    if sidebarSelectionColorHex != nil {
+                        Button(String(localized: "settings.workspaceColors.selectionColor.reset", defaultValue: "Reset")) {
+                            sidebarSelectionColorHex = nil
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    ColorPicker(
+                        "",
+                        selection: selectionColorBinding,
+                        supportsOpacity: false
+                    )
+                    .labelsHidden()
+                    .frame(width: 38)
+
+                    Text(sidebarSelectionColorHex ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 76, alignment: .trailing)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("workspaceColors.notificationBadgeColor"),
+                String(localized: "settings.workspaceColors.notificationBadgeColor", defaultValue: "Notification Badge"),
+                subtitle: String(localized: "settings.workspaceColors.notificationBadgeColor.subtitle", defaultValue: "Color of the unread notification badge on workspace tabs.")
+            ) {
+                HStack(spacing: 8) {
+                    if sidebarNotificationBadgeColorHex != nil {
+                        Button(String(localized: "settings.workspaceColors.notificationBadgeColor.reset", defaultValue: "Reset")) {
+                            sidebarNotificationBadgeColorHex = nil
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    ColorPicker(
+                        "",
+                        selection: notificationBadgeColorBinding,
+                        supportsOpacity: false
+                    )
+                    .labelsHidden()
+                    .frame(width: 38)
+
+                    Text(sidebarNotificationBadgeColorHex ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 76, alignment: .trailing)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(
+                String(
+                    localized: "settings.workspaceColors.dictionaryNote",
+                    defaultValue: "Edit settings.json to add or remove named colors. \"Choose Custom Color...\" still adds local Custom N entries."
+                )
+            )
+
+            if workspaceTabPaletteEntries.isEmpty {
+                SettingsCardNote(
+                    String(
+                        localized: "settings.workspaceColors.emptyPalette",
+                        defaultValue: "No palette entries. Add colors in settings.json or use \"Choose Custom Color...\" from a workspace context menu."
+                    )
+                )
+            } else {
+                ForEach(Array(workspaceTabPaletteEntries.enumerated()), id: \.element.name) { index, entry in
+                    if index > 0 {
+                        SettingsCardDivider()
+                    }
+                    SettingsCardRow(
+                        configurationReview: .json("workspaceColors.colors"),
+                        entry.name,
+                        subtitle: baseTabColorHex(for: entry.name).map {
+                            String(localized: "settings.workspaceColors.base", defaultValue: "Base: \($0)")
+                        } ?? String(
+                            localized: "settings.workspaceColors.customEntry",
+                            defaultValue: "Named palette entry."
+                        )
+                    ) {
+                        HStack(spacing: 8) {
+                            ColorPicker(
+                                "",
+                                selection: tabColorBinding(for: entry.name),
+                                supportsOpacity: false
+                            )
+                            .labelsHidden()
+                            .frame(width: 38)
+
+                            Text(entry.hex)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 76, alignment: .trailing)
+
+                            if baseTabColorHex(for: entry.name) == nil {
+                                Button(String(localized: "settings.workspaceColors.remove", defaultValue: "Remove")) {
+                                    removeWorkspaceColor(named: entry.name)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .action,
+                String(localized: "settings.workspaceColors.resetPalette", defaultValue: "Reset Palette"),
+                subtitle: String(
+                    localized: "settings.workspaceColors.resetPalette.subtitleV2",
+                    defaultValue: "Restore the built-in palette and remove extra named colors."
+                )
+            ) {
+                Button(String(localized: "settings.workspaceColors.resetPalette.button", defaultValue: "Reset")) {
+                    resetWorkspaceTabColors()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        } // end if sectionVisible(.workspaceColors)
+    }
+
+    @ViewBuilder
+    private var settingsSidebarAppearanceSection: some View {
+        if sectionVisible(.sidebarAppearance) {
+        SettingsSectionHeader(title: String(localized: "settings.section.sidebarAppearance", defaultValue: "Sidebar Appearance"), section: .sidebarAppearance)
+            .id(SettingsSection.sidebarAppearance)
+        SettingsCard {
+            SettingsCardRow(
+                configurationReview: .json("sidebarAppearance.matchTerminalBackground"),
+                String(localized: "settings.sidebarAppearance.matchTerminalBackground", defaultValue: "Match Terminal Background"),
+                subtitle: String(localized: "settings.sidebarAppearance.matchTerminalBackground.subtitle", defaultValue: "Use the same background color and transparency as the terminal.")
+            ) {
+                Toggle("", isOn: $sidebarMatchTerminalBackground)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebarAppearance.lightModeTintColor"),
+                String(localized: "settings.sidebarAppearance.tintColorLight", defaultValue: "Light Mode Tint"),
+                subtitle: String(localized: "settings.sidebarAppearance.tintColorLight.subtitle", defaultValue: "Sidebar tint color when using light appearance.")
+            ) {
+                HStack(spacing: 8) {
+                    ColorPicker(
+                        String(localized: "settings.sidebarAppearance.tintColorLight.picker", defaultValue: "Light tint"),
+                        selection: settingsSidebarTintLightBinding,
+                        supportsOpacity: false
+                    )
+                    .labelsHidden()
+                    .frame(width: 38)
+
+                    Text(sidebarTintHexLight ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 76, alignment: .trailing)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebarAppearance.darkModeTintColor"),
+                String(localized: "settings.sidebarAppearance.tintColorDark", defaultValue: "Dark Mode Tint"),
+                subtitle: String(localized: "settings.sidebarAppearance.tintColorDark.subtitle", defaultValue: "Sidebar tint color when using dark appearance.")
+            ) {
+                HStack(spacing: 8) {
+                    ColorPicker(
+                        String(localized: "settings.sidebarAppearance.tintColorDark.picker", defaultValue: "Dark tint"),
+                        selection: settingsSidebarTintDarkBinding,
+                        supportsOpacity: false
+                    )
+                    .labelsHidden()
+                    .frame(width: 38)
+
+                    Text(sidebarTintHexDark ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 76, alignment: .trailing)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("sidebarAppearance.tintOpacity"),
+                String(localized: "settings.sidebarAppearance.tintOpacity", defaultValue: "Tint Opacity"),
+                subtitle: String(localized: "settings.sidebarAppearance.tintOpacity.subtitle", defaultValue: "How strongly the tint color shows over the sidebar material.")
+            ) {
+                HStack(spacing: 8) {
+                    Slider(value: $sidebarTintOpacity, in: 0...1)
+                        .frame(width: 140)
+                    Text(String(format: "%.0f%%", sidebarTintOpacity * 100))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, alignment: .trailing)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .action,
+                String(localized: "settings.sidebarAppearance.reset", defaultValue: "Reset Sidebar Tint"),
+                subtitle: String(localized: "settings.sidebarAppearance.reset.subtitle", defaultValue: "Restore default sidebar appearance.")
+            ) {
+                Button(String(localized: "settings.sidebarAppearance.reset.button", defaultValue: "Reset")) {
+                    sidebarTintHexLight = nil
+                    sidebarTintHexDark = nil
+                    sidebarTintHex = SidebarTintDefaults.hex
+                    sidebarTintOpacity = SidebarTintDefaults.opacity
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        } // end if sectionVisible(.sidebarAppearance)
+    }
+
+    @ViewBuilder
+    private var settingsAutomationSection: some View {
+        if sectionVisible(.automation) {
+        SettingsSectionHeader(title: String(localized: "settings.section.automation", defaultValue: "Automation"), section: .automation)
+            .id(SettingsSection.automation)
+        SettingsCard {
+            SettingsPickerRow(
+                configurationReview: .json("automation.socketControlMode"),
+                String(localized: "settings.automation.socketMode", defaultValue: "Socket Control Mode"),
+                subtitle: selectedSocketControlMode.description,
+                controlWidth: pickerColumnWidth,
+                selection: socketModeSelection,
+                accessibilityId: "AutomationSocketModePicker"
+            ) {
+                ForEach(SocketControlMode.uiCases) { mode in
+                    Text(mode.displayName).tag(mode.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.automation.socketMode.note", defaultValue: "Controls access to the local Unix socket for programmatic control. Choose a mode that matches your threat model."))
+            if selectedSocketControlMode == .password {
+                SettingsCardDivider()
+                SettingsCardRow(
+                    configurationReview: .json("automation.socketPassword"),
+                    String(localized: "settings.automation.socketPassword", defaultValue: "Socket Password"),
+                    subtitle: hasSocketPasswordConfigured
+                        ? String(localized: "settings.automation.socketPassword.subtitleSet", defaultValue: "Stored in Application Support.")
+                        : String(localized: "settings.automation.socketPassword.subtitleUnset", defaultValue: "No password set. External clients will be blocked until one is configured.")
+                ) {
+                    HStack(spacing: 8) {
+                        SecureField(String(localized: "settings.automation.socketPassword.placeholder", defaultValue: "Password"), text: $socketPasswordDraft)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 170)
+                        Button(hasSocketPasswordConfigured ? String(localized: "settings.automation.socketPassword.change", defaultValue: "Change") : String(localized: "settings.automation.socketPassword.set", defaultValue: "Set")) {
+                            saveSocketPassword()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(socketPasswordDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if hasSocketPasswordConfigured {
+                            Button(String(localized: "settings.automation.socketPassword.clear", defaultValue: "Clear")) {
+                                clearSocketPassword()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                if let message = socketPasswordStatusMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(socketPasswordStatusIsError ? Color.red : Color.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 8)
+                }
+            }
+            if selectedSocketControlMode == .allowAll {
+                SettingsCardDivider()
+                Text(String(localized: "settings.automation.openAccessWarning", defaultValue: "Warning: Full open access makes the control socket world-readable/writable on this Mac and disables auth checks. Use only for local debugging."))
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
+            SettingsCardNote(String(localized: "settings.automation.socketOverrides.note", defaultValue: "Overrides: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE, and CMUX_SOCKET_PATH (set CMUX_ALLOW_SOCKET_OVERRIDE=1 for stable/nightly builds)."))
+        }
+
+        SettingsCard {
+            SettingsCardRow(
+                configurationReview: .json("automation.claudeCodeIntegration"),
+                String(localized: "settings.automation.agentIntegration", defaultValue: "Agent Integration"),
+                subtitle: claudeCodeHooksEnabled
+                    ? String(localized: "settings.automation.agentIntegration.subtitleOn", defaultValue: "Sidebar shows agent session status and notifications.")
+                    : String(localized: "settings.automation.agentIntegration.subtitleOff", defaultValue: "Agent harness runs without cmux integration.")
+            ) {
+                Toggle("", isOn: $claudeCodeHooksEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsAgentHooksToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.automation.agentIntegration.note", defaultValue: "When enabled, cmux wraps the agent command to inject session tracking and notification hooks. Disable if you prefer to manage agent hooks yourself."))
+        }
+
+        SettingsCard {
+            SettingsCardRow(
+                configurationReview: .json("automation.claudeBinaryPath"),
+                String(localized: "settings.automation.agentIntegration.binaryPath", defaultValue: "Agent Binary Path"),
+                subtitle: String(localized: "settings.automation.agentIntegration.binaryPath.subtitle", defaultValue: "Custom path to the agent binary. Leave empty to use PATH.")
+            ) {
+                TextField(
+                    String(localized: "settings.automation.agentIntegration.binaryPath.placeholder", defaultValue: "e.g. /usr/local/bin/claude"),
+                    text: $customClaudePath
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 200)
+            }
+        }
+
+        SettingsCard {
+            SettingsCardRow(
+                String(localized: "settings.automation.warmAgentPool", defaultValue: "Warm Agent Pool"),
+                subtitle: warmClaudePoolSize > 0
+                    ? String(localized: "settings.automation.warmAgentPool.subtitleOn", defaultValue: "Pre-spawns agent sessions for instant launch via ⇧⌘K.")
+                    : String(localized: "settings.automation.warmAgentPool.subtitleOff", defaultValue: "Agent sessions launch on demand (no pre-warming).")
+            ) {
+                Stepper(value: $warmClaudePoolSize, in: 0...3) {
+                    Text("\(warmClaudePoolSize)")
+                        .monospacedDigit()
+                }
+                .frame(width: 100)
+            }
+        }
+
+        SettingsCard {
+            SettingsCardRow(
+                configurationReview: .json("automation.cursorIntegration"),
+                String(localized: "settings.automation.cursor", defaultValue: "Cursor Integration"),
+                subtitle: cursorHooksEnabled
+                    ? String(localized: "settings.automation.cursor.subtitleOn", defaultValue: "Sidebar shows Cursor agent status and notifications.")
+                    : String(localized: "settings.automation.cursor.subtitleOff", defaultValue: "Cursor runs without cmux integration.")
+            ) {
+                Toggle("", isOn: $cursorHooksEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsCursorHooksToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.automation.cursor.note", defaultValue: "Hooks must be installed with `cmux cursor install-hooks`. They no-op outside cmux terminals."))
+        }
+
+        SettingsCard {
+            SettingsCardRow(
+                configurationReview: .json("automation.geminiIntegration"),
+                String(localized: "settings.automation.gemini", defaultValue: "Gemini CLI Integration"),
+                subtitle: geminiHooksEnabled
+                    ? String(localized: "settings.automation.gemini.subtitleOn", defaultValue: "Sidebar shows Gemini session status and notifications.")
+                    : String(localized: "settings.automation.gemini.subtitleOff", defaultValue: "Gemini runs without cmux integration.")
+            ) {
+                Toggle("", isOn: $geminiHooksEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsGeminiHooksToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.automation.gemini.note", defaultValue: "Hooks must be installed with `cmux gemini install-hooks`. They no-op outside cmux terminals."))
+        }
+
+        SettingsCard {
+            SettingsCardRow(configurationReview: .json("automation.portBase"), String(localized: "settings.automation.portBase", defaultValue: "Port Base"), subtitle: String(localized: "settings.automation.portBase.subtitle", defaultValue: "Starting port for CMUX_PORT env var."), controlWidth: pickerColumnWidth) {
+                TextField("", value: $cmuxPortBase, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(configurationReview: .json("automation.portRange"), String(localized: "settings.automation.portRange", defaultValue: "Port Range Size"), subtitle: String(localized: "settings.automation.portRange.subtitle", defaultValue: "Number of ports per workspace."), controlWidth: pickerColumnWidth) {
+                TextField("", value: $cmuxPortRange, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.automation.port.note", defaultValue: "Each workspace gets CMUX_PORT and CMUX_PORT_END env vars with a dedicated port range. New terminals inherit these values."))
+        }
+        } // end if sectionVisible(.automation)
+    }
+
+    @ViewBuilder
+    private var settingsCustomCommandsAndBrowserSection: some View {
+        if sectionVisible(.customCommands) {
+        SettingsSectionHeader(title: String(localized: "settings.section.customCommands", defaultValue: "Custom Commands"), section: .customCommands)
+            .id(SettingsSection.customCommands)
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 6) {
+                SettingsCardRow(
+                    configurationReview: .json("customCommands.trustedDirectories"),
+                    String(localized: "settings.customCommands.trustedDirectories", defaultValue: "Trusted Directories"),
+                    subtitle: String(localized: "settings.customCommands.trustedDirectories.subtitle", defaultValue: "Commands from cmux.json in these directories run without confirmation. One path per line.")
+                ) {
+                    EmptyView()
+                }
+
+                TextEditor(text: $trustedDirectoriesDraft)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 120)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .onChange(of: trustedDirectoriesDraft) { _ in
+                        saveTrustedDirectories()
+                    }
+            }
+
+            SettingsCardDivider()
+            SettingsCardNote(String(localized: "settings.customCommands.trustedDirectories.note", defaultValue: "Place a cmux.json in your project root to define custom commands. Trust a directory from the confirmation dialog, or add paths here. For git repos, trusting the root covers all subdirectories."))
+        }
+        } // end if sectionVisible(.customCommands)
+
+        if sectionVisible(.browser) {
+        SettingsSectionHeader(title: String(localized: "settings.section.browser", defaultValue: "Browser"), section: .browser)
+            .id(SettingsSection.browser)
+            .accessibilityIdentifier("SettingsBrowserSection")
+        SettingsCard {
+            SettingsPickerRow(
+                configurationReview: .json("browser.defaultSearchEngine"),
+                String(localized: "settings.browser.searchEngine", defaultValue: "Default Search Engine"),
+                subtitle: String(localized: "settings.browser.searchEngine.subtitle", defaultValue: "Used by the browser address bar when input is not a URL."),
+                controlWidth: pickerColumnWidth,
+                selection: $browserSearchEngine
+            ) {
+                ForEach(BrowserSearchEngine.allCases) { engine in
+                    Text(engine.displayName).tag(engine.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(configurationReview: .json("browser.showSearchSuggestions"), String(localized: "settings.browser.searchSuggestions", defaultValue: "Show Search Suggestions")) {
+                Toggle("", isOn: $browserSearchSuggestionsEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsPickerRow(
+                configurationReview: .json("browser.theme"),
+                String(localized: "settings.browser.theme", defaultValue: "Browser Theme"),
+                subtitle: selectedBrowserThemeMode == .system
+                    ? String(localized: "settings.browser.theme.subtitleSystem", defaultValue: "System follows app and macOS appearance.")
+                    : String(localized: "settings.browser.theme.subtitleForced", defaultValue: "\(selectedBrowserThemeMode.displayName) forces that color scheme for compatible pages."),
+                controlWidth: pickerColumnWidth,
+                selection: browserThemeModeSelection
+            ) {
+                ForEach(BrowserThemeMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("browser.openTerminalLinksInCmuxBrowser"),
+                String(localized: "settings.browser.openTerminalLinks", defaultValue: "Open Terminal Links in cmux Browser"),
+                subtitle: String(localized: "settings.browser.openTerminalLinks.subtitle", defaultValue: "When off, links clicked in terminal output open in your default browser.")
+            ) {
+                Toggle("", isOn: $openTerminalLinksInCmuxBrowser)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("browser.interceptTerminalOpenCommandInCmuxBrowser"),
+                String(localized: "settings.browser.interceptOpen", defaultValue: "Intercept open http(s) in Terminal"),
+                subtitle: String(localized: "settings.browser.interceptOpen.subtitle", defaultValue: "When off, `open https://...` and `open http://...` always use your default browser.")
+            ) {
+                Toggle("", isOn: $interceptTerminalOpenCommandInCmuxBrowser)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            if openTerminalLinksInCmuxBrowser || interceptTerminalOpenCommandInCmuxBrowser {
+                SettingsCardDivider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    SettingsCardRow(
+                        configurationReview: .json("browser.hostsToOpenInEmbeddedBrowser"),
+                        String(localized: "settings.browser.hostWhitelist", defaultValue: "Hosts to Open in Embedded Browser"),
+                        subtitle: String(localized: "settings.browser.hostWhitelist.subtitle", defaultValue: "Applies to terminal link clicks and intercepted `open https://...` calls. Only these hosts open in cmux. Others open in your default browser. One host or wildcard per line (for example: example.com, *.internal.example). Leave empty to open all hosts in cmux.")
+                    ) {
+                        EmptyView()
+                    }
+
+                    TextEditor(text: $browserHostWhitelist)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 60, maxHeight: 120)
+                        .scrollContentBackground(.hidden)
+                        .padding(6)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
+
+                SettingsCardDivider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    SettingsCardRow(
+                        configurationReview: .json("browser.urlsToAlwaysOpenExternally"),
+                        String(localized: "settings.browser.externalPatterns", defaultValue: "URLs to Always Open Externally"),
+                        subtitle: String(localized: "settings.browser.externalPatterns.subtitle", defaultValue: "Applies to terminal link clicks and intercepted `open https://...` calls. One rule per line. Plain text matches any URL substring, or prefix with `re:` for regex (for example: openai.com/usage, re:^https?://[^/]*\\.example\\.com/(billing|usage)).")
+                    ) {
+                        EmptyView()
+                    }
+
+                    TextEditor(text: $browserExternalOpenPatterns)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 60, maxHeight: 120)
+                        .scrollContentBackground(.hidden)
+                        .padding(6)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
+            }
+
+            SettingsCardDivider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "settings.browser.httpAllowlist", defaultValue: "HTTP Hosts Allowed in Embedded Browser"))
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text(String(localized: "settings.browser.httpAllowlist.description", defaultValue: "Controls which HTTP (non-HTTPS) hosts can open in cmux without a warning prompt. Defaults include localhost, 127.0.0.1, ::1, 0.0.0.0, and *.localtest.me."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                TextEditor(text: $browserInsecureHTTPAllowlistDraft)
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .frame(minHeight: 86)
+                    .padding(6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(nsColor: .textBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    )
+                    .accessibilityIdentifier("SettingsBrowserHTTPAllowlistField")
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(String(localized: "settings.browser.httpAllowlist.hint", defaultValue: "One host or wildcard per line (for example: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Spacer(minLength: 0)
+
+                        Button(String(localized: "settings.browser.httpAllowlist.save", defaultValue: "Save")) {
+                            saveBrowserInsecureHTTPAllowlist()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!browserInsecureHTTPAllowlistHasUnsavedChanges)
+                        .accessibilityIdentifier("SettingsBrowserHTTPAllowlistSaveButton")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(String(localized: "settings.browser.httpAllowlist.hint", defaultValue: "One host or wildcard per line (for example: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            Spacer(minLength: 0)
+                            Button(String(localized: "settings.browser.httpAllowlist.save", defaultValue: "Save")) {
+                                saveBrowserInsecureHTTPAllowlist()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!browserInsecureHTTPAllowlistHasUnsavedChanges)
+                            .accessibilityIdentifier("SettingsBrowserHTTPAllowlistSaveButton")
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            SettingsCardDivider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(localized: "settings.browser.import", defaultValue: "Import Browser Data"))
+                        .font(.system(size: 13, weight: .semibold))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(String(localized: "browser.import.hint.title", defaultValue: "Import browser data"))
+                            .font(.system(size: 12.5, weight: .semibold))
+
+                        Text(browserImportSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(String(localized: "browser.import.hint.settingsFootnote", defaultValue: "You can always find this in Settings > Browser."))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
+                    )
+                }
+
+                HStack(spacing: 8) {
+                    Button(String(localized: "settings.browser.import.choose", defaultValue: "Choose…")) {
+                        DispatchQueue.main.async {
+                            BrowserDataImportCoordinator.shared.presentImportDialog()
+                            refreshDetectedImportBrowsers()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsBrowserImportChooseButton")
+
+                    Button(String(localized: "settings.browser.import.refresh", defaultValue: "Refresh")) {
+                        refreshDetectedImportBrowsers()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .accessibilityIdentifier("SettingsBrowserImportActions")
+
+                Toggle(
+                    String(localized: "settings.browser.import.hint.show", defaultValue: "Show import hint on blank browser tabs"),
+                    isOn: browserImportHintVisibilityBinding
+                )
+                .controlSize(.small)
+                .accessibilityIdentifier("SettingsBrowserImportHintToggle")
+
+                Text(browserImportHintSettingsNote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .id(SettingsNavigationTarget.browserImport)
+            .accessibilityIdentifier("SettingsBrowserImportSection")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("browser.reactGrabVersion"),
+                String(localized: "settings.browser.reactGrabVersion", defaultValue: "React Grab Version"),
+                subtitle: String(localized: "settings.browser.reactGrabVersion.subtitle", defaultValue: "Pinned npm version of react-grab injected by the toolbar button (Cmd+Shift+G). Only versions with a known integrity hash are accepted.")
+            ) {
+                TextField("", text: $reactGrabVersion)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+                    .font(.system(.body, design: .monospaced))
+                    .accessibilityIdentifier("SettingsReactGrabVersionField")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(configurationReview: .action, String(localized: "settings.browser.history", defaultValue: "Browsing History"), subtitle: browserHistorySubtitle) {
+                Button(String(localized: "settings.browser.history.clearButton", defaultValue: "Clear History…")) {
+                    showClearBrowserHistoryConfirmation = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(browserHistoryEntryCount == 0)
+            }
+        }
+        } // end if sectionVisible(.browser)
+    }
+
+    @ViewBuilder
+    private var settingsHotkeyAndShortcutsSection: some View {
+        GlobalHotkeySection()
+
+        if sectionVisible(.keyboardShortcuts) {
+        SettingsSectionHeader(title: String(localized: "settings.section.keyboardShortcuts", defaultValue: "Keyboard Shortcuts"), section: .keyboardShortcuts)
+            .id(SettingsSection.keyboardShortcuts)
+            .accessibilityIdentifier("SettingsKeyboardShortcutsSection")
+        SettingsCard {
+            SettingsCardRow(
+                configurationReview: .action,
+                String(localized: "settings.shortcuts.chords", defaultValue: "Shortcut Chords"),
+                subtitle: String(localized: "settings.shortcuts.chords.subtitle", defaultValue: "Add tmux-style multi-step shortcuts in settings.json, for example [\"ctrl+b\", \"c\"].")
+            ) {
+                HStack(spacing: 8) {
+                    Link(String(localized: "settings.shortcuts.chords.docsButton", defaultValue: "Chord docs"), destination: shortcutChordsDocsURL)
+                        .font(.caption)
+                        .accessibilityIdentifier("SettingsKeyboardShortcutsChordDocsLink")
+
+                    Button(String(localized: "settings.app.settingsFile.openButton", defaultValue: "Open settings.json")) {
+                        openCmuxSettingsFileInTextEdit()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsKeyboardShortcutsOpenSettingsFileButton")
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                configurationReview: .json("shortcuts.showModifierHoldHints"),
+                String(localized: "settings.shortcuts.showHints", defaultValue: "Show Cmd/Ctrl-Hold Shortcut Hints"),
+                subtitle: showShortcutHintsOnCommandHold
+                    ? String(localized: "settings.shortcuts.showHints.subtitleOn", defaultValue: "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (pane tabs) shows shortcut hint pills.")
+                    : String(localized: "settings.shortcuts.showHints.subtitleOff", defaultValue: "Holding Cmd or Ctrl keeps shortcut hint pills hidden.")
+            ) {
+                Toggle("", isOn: $showShortcutHintsOnCommandHold)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            let actions = KeyboardShortcutSettings.Action.allCases.filter {
+                $0 != SystemWideHotkeySettings.action
+            }
+            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                ShortcutSettingRow(action: action)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                if index < actions.count - 1 {
+                    SettingsCardDivider()
+                }
+            }
+        }
+        .id(shortcutResetToken)
+
+        Text(String(localized: "settings.shortcuts.recordHint", defaultValue: "Click a shortcut value to record a new shortcut."))
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(.leading, 2)
+            .accessibilityIdentifier("ShortcutRecordingHint")
+        } // end if sectionVisible(.keyboardShortcuts)
+
+        if sectionVisible(.reset) {
+        SettingsSectionHeader(title: String(localized: "settings.section.reset", defaultValue: "Reset"), section: .reset)
+            .id(SettingsSection.reset)
+        SettingsCard {
+            HStack {
+                Spacer(minLength: 0)
+                Button(String(localized: "settings.reset.resetAll", defaultValue: "Reset All Settings")) {
+                    resetAllSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+        }
+        } // end if sectionVisible(.reset)
+    }
+
+
     var body: some View {
         let _ = keyboardShortcutSettingsObserver.revision
         let _ = Self.validateBypassedSettingsConfigurationReviews()
@@ -5146,1418 +6572,12 @@ struct SettingsView: View {
             ZStack(alignment: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                  Group { // Group: app section
-                    if sectionVisible(.app) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.app", defaultValue: "App"), section: .app)
-                        .id(SettingsSection.app)
-                    SettingsCard {
-                      Group { // app card rows part 1
-                        SettingsCardRow(
-                            configurationReview: .json("app.language"),
-                            String(localized: "settings.app.language", defaultValue: "Language"),
-                            subtitle: appLanguage != LanguageSettings.languageAtLaunch.rawValue
-                                ? String(localized: "settings.app.language.restartSubtitle", defaultValue: "Restart cmux to apply")
-                                : nil,
-                            controlWidth: pickerColumnWidth
-                        ) {
-                            Picker("", selection: $appLanguage) {
-                                ForEach(AppLanguage.allCases) { lang in
-                                    Text(lang.displayName).tag(lang.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .onChange(of: appLanguage) { newValue in
-                                guard !isResettingSettings else { return }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-                                    // Re-check current value to handle rapid changes
-                                    let current = appLanguage
-                                    if let lang = AppLanguage(rawValue: current) {
-                                        LanguageSettings.apply(lang)
-                                    }
-                                    if current != LanguageSettings.languageAtLaunch.rawValue {
-                                        showLanguageRestartAlert = true
-                                    }
-                                }
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        ThemePickerRow(
-                            configurationReview: .json("app.appearance"),
-                            selectedMode: appearanceMode,
-                            onSelect: { mode in
-                                appearanceMode = mode.rawValue
-                            }
-                        )
-
-                        SettingsCardDivider()
-
-                        AppIconPickerRow(
-                            configurationReview: .json("app.appIcon"),
-                            selectedMode: appIconMode,
-                            onSelect: { mode in
-                                appIconMode = mode.rawValue
-                                AppIconSettings.applyIcon(mode)
-                            }
-                        )
-
-                        SettingsCardDivider()
-
-                        SettingsPickerRow(
-                            configurationReview: .json("app.newWorkspacePlacement"),
-                            String(localized: "settings.app.newWorkspacePlacement", defaultValue: "New Workspace Placement"),
-                            subtitle: selectedWorkspacePlacement.description,
-                            controlWidth: pickerColumnWidth,
-                            selection: $newWorkspacePlacement
-                        ) {
-                            ForEach(NewWorkspacePlacement.allCases) { placement in
-                                Text(placement.displayName).tag(placement.rawValue)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.minimalMode"),
-                            String(localized: "settings.app.minimalMode", defaultValue: "Minimal Mode"),
-                            subtitle: minimalModeSubtitle
-                        ) {
-                            Toggle("", isOn: minimalModeBinding)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityIdentifier("SettingsMinimalModeToggle")
-                                .accessibilityLabel(
-                                    String(localized: "settings.app.minimalMode", defaultValue: "Minimal Mode")
-                                )
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.keepWorkspaceOpenWhenClosingLastSurface"),
-                            String(localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut", defaultValue: "Keep Workspace Open When Closing Last Surface"),
-                            subtitle: closeWorkspaceOnLastSurfaceShortcutSubtitle
-                        ) {
-                            Toggle("", isOn: keepWorkspaceOpenOnLastSurfaceShortcutBinding)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.focusPaneOnFirstClick"),
-                            String(localized: "settings.app.paneFirstClickFocus", defaultValue: "Focus Pane on First Click"),
-                            subtitle: paneFirstClickFocusSubtitle
-                        ) {
-                            Toggle("", isOn: $paneFirstClickFocusEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityLabel(
-                                    String(localized: "settings.app.paneFirstClickFocus", defaultValue: "Focus Pane on First Click")
-                                )
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.preferredEditor"),
-                            String(localized: "settings.app.preferredEditor", defaultValue: "Open Files With"),
-                            subtitle: String(localized: "settings.app.preferredEditor.subtitle", defaultValue: "Command to open files on Cmd-click. Leave empty for system default.")
-                        ) {
-                            TextField(
-                                String(localized: "settings.app.preferredEditor.placeholder", defaultValue: "e.g. code, zed, subl"),
-                                text: $preferredEditorCommand
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 200)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.reorderOnNotification"),
-                            String(localized: "settings.app.reorderOnNotification", defaultValue: "Reorder on Notification"),
-                            subtitle: String(localized: "settings.app.reorderOnNotification.subtitle", defaultValue: "Move workspaces to the top when they receive a notification. Disable for stable shortcut positions.")
-                        ) {
-                            Toggle("", isOn: $workspaceAutoReorder)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("notifications.dockBadge"),
-                            String(localized: "settings.app.dockBadge", defaultValue: "Dock Badge"),
-                            subtitle: String(localized: "settings.app.dockBadge.subtitle", defaultValue: "Show unread count on app icon (Dock and Cmd+Tab).")
-                        ) {
-                            Toggle("", isOn: $notificationDockBadgeEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("notifications.showInMenuBar"),
-                            String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar"),
-                            subtitle: String(localized: "settings.app.showInMenuBar.subtitle", defaultValue: "Keep cmux in the menu bar for unread notifications and quick actions.")
-                        ) {
-                            Toggle("", isOn: $showMenuBarExtra)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityLabel(
-                                    String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar")
-                                )
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("notifications.unreadPaneRing"),
-                            String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring"),
-                            subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Show a blue ring around panes with unread notifications.")
-                        ) {
-                            Toggle("", isOn: $notificationPaneRingEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityLabel(
-                                    String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring")
-                                )
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("notifications.paneFlash"),
-                            String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash"),
-                            subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a blue outline when cmux highlights a pane.")
-                        ) {
-                            Toggle("", isOn: $notificationPaneFlashEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityLabel(
-                                    String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash")
-                                )
-                        }
-                      } // end app card rows part 1
-
-                      Group { // app card rows part 2
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .action,
-                            "Desktop Notifications",
-                            subtitle: notificationPermissionSubtitle
-                        ) {
-                            HStack(spacing: 6) {
-                                Text(notificationPermissionStatusText)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(notificationPermissionStatusColor)
-                                    .frame(width: 98, alignment: .trailing)
-
-                                Button(notificationPermissionActionTitle) {
-                                    handleNotificationPermissionAction()
-                                }
-                                .controlSize(.small)
-
-                                Button("Send Test") {
-                                    notificationStore.sendSettingsTestNotification()
-                                }
-                                .controlSize(.small)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("notifications.sound", "notifications.customSoundFilePath"),
-                            String(localized: "settings.notifications.sound.title", defaultValue: "Notification Sound"),
-                            subtitle: String(localized: "settings.notifications.sound.subtitle", defaultValue: "Sound played when a notification arrives."),
-                            controlWidth: notificationSoundControlWidth
-                        ) {
-                            VStack(alignment: .trailing, spacing: 6) {
-                                HStack(spacing: 6) {
-                                    Picker("", selection: $notificationSound) {
-                                        ForEach(NotificationSoundSettings.systemSounds, id: \.value) { sound in
-                                            Text(sound.label).tag(sound.value)
-                                        }
-                                    }
-                                    .labelsHidden()
-                                    Button {
-                                        previewNotificationSound()
-                                    } label: {
-                                        Image(systemName: "play.fill")
-                                            .font(.system(size: 9))
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .disabled(!canPreviewNotificationSound)
-                                }
-
-                                if notificationSound == NotificationSoundSettings.customFileValue {
-                                    HStack(spacing: 6) {
-                                        Text(notificationSoundCustomFileDisplayName)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                            .frame(width: 170, alignment: .trailing)
-                                        Button(
-                                            String(
-                                                localized: "settings.notifications.sound.custom.choose.button",
-                                                defaultValue: "Choose..."
-                                            )
-                                        ) {
-                                            chooseNotificationSoundFile()
-                                        }
-                                        .controlSize(.small)
-                                        Button(
-                                            String(
-                                                localized: "settings.notifications.sound.custom.clear.button",
-                                                defaultValue: "Clear"
-                                            )
-                                        ) {
-                                            notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
-                                            refreshNotificationCustomSoundStatus()
-                                        }
-                                        .controlSize(.small)
-                                        .disabled(!hasCustomNotificationSoundFilePath)
-                                    }
-                                    if let notificationCustomSoundStatusMessage {
-                                        Text(notificationCustomSoundStatusMessage)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(notificationCustomSoundStatusIsError ? Color.red : Color.secondary)
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.trailing)
-                                            .frame(width: 260, alignment: .trailing)
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("notifications.command"),
-                            "Notification Command",
-                            subtitle: "Run a shell command when a notification arrives. $CMUX_NOTIFICATION_TITLE, $CMUX_NOTIFICATION_SUBTITLE, $CMUX_NOTIFICATION_BODY are set."
-                        ) {
-                            TextField("say \"done\"", text: $notificationCustomCommand)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 200)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.sendAnonymousTelemetry"),
-                            String(localized: "settings.app.telemetry", defaultValue: "Send anonymous telemetry"),
-                            subtitle: sendAnonymousTelemetry != telemetryValueAtLaunch
-                                ? String(localized: "settings.app.telemetry.subtitleChanged", defaultValue: "Change takes effect on next launch.")
-                                : String(localized: "settings.app.telemetry.subtitle", defaultValue: "Share anonymized crash and usage data to help improve cmux.")
-                        ) {
-                            Toggle("", isOn: $sendAnonymousTelemetry)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.warnBeforeQuit"),
-                            String(localized: "settings.app.warnBeforeQuit", defaultValue: "Warn Before Quit"),
-                            subtitle: warnBeforeQuitShortcut
-                                ? String(localized: "settings.app.warnBeforeQuit.subtitleOn", defaultValue: "Show a confirmation before quitting with Cmd+Q.")
-                                : String(localized: "settings.app.warnBeforeQuit.subtitleOff", defaultValue: "Cmd+Q quits immediately without confirmation.")
-                        ) {
-                            Toggle("", isOn: $warnBeforeQuitShortcut)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            String(localized: "settings.app.confirmCloseRunningProcess", defaultValue: "Confirm Close Running Process"),
-                            subtitle: confirmCloseRunningProcess
-                                ? String(localized: "settings.app.confirmCloseRunningProcess.subtitleOn", defaultValue: "Show a confirmation before closing a workspace with a running command.")
-                                : String(localized: "settings.app.confirmCloseRunningProcess.subtitleOff", defaultValue: "Close workspaces without confirmation, even with running commands.")
-                        ) {
-                            Toggle("", isOn: $confirmCloseRunningProcess)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            String(localized: "settings.app.confirmClosePinnedWorkspace", defaultValue: "Confirm Close Pinned Workspace"),
-                            subtitle: confirmClosePinnedWorkspace
-                                ? String(localized: "settings.app.confirmClosePinnedWorkspace.subtitleOn", defaultValue: "Show a confirmation before closing a pinned workspace.")
-                                : String(localized: "settings.app.confirmClosePinnedWorkspace.subtitleOff", defaultValue: "Close pinned workspaces without extra confirmation.")
-                        ) {
-                            Toggle("", isOn: $confirmClosePinnedWorkspace)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            String(localized: "settings.app.confirmCloseWindow", defaultValue: "Confirm Close Window"),
-                            subtitle: confirmCloseWindow
-                                ? String(localized: "settings.app.confirmCloseWindow.subtitleOn", defaultValue: "Show a confirmation before closing a window with workspaces.")
-                                : String(localized: "settings.app.confirmCloseWindow.subtitleOff", defaultValue: "Close windows without confirmation.")
-                        ) {
-                            Toggle("", isOn: $confirmCloseWindow)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            String(localized: "settings.app.confirmBatchClose", defaultValue: "Confirm Batch Close"),
-                            subtitle: confirmBatchClose
-                                ? String(localized: "settings.app.confirmBatchClose.subtitleOn", defaultValue: "Show a confirmation before closing multiple tabs or workspaces at once.")
-                                : String(localized: "settings.app.confirmBatchClose.subtitleOff", defaultValue: "Close multiple tabs or workspaces without confirmation.")
-                        ) {
-                            Toggle("", isOn: $confirmBatchClose)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                      } // end app card rows part 2
-
-                      Group { // app card rows part 3
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.renameSelectsExistingName"),
-                            String(localized: "settings.app.renameSelectsName", defaultValue: "Rename Selects Existing Name"),
-                            subtitle: commandPaletteRenameSelectAllOnFocus
-                                ? String(localized: "settings.app.renameSelectsName.subtitleOn", defaultValue: "Command Palette rename starts with all text selected.")
-                                : String(localized: "settings.app.renameSelectsName.subtitleOff", defaultValue: "Command Palette rename keeps the caret at the end.")
-                        ) {
-                            Toggle("", isOn: $commandPaletteRenameSelectAllOnFocus)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("app.commandPaletteSearchesAllSurfaces"),
-                            String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Surfaces"),
-                            subtitle: commandPaletteSearchAllSurfaces
-                                ? String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOn", defaultValue: "Cmd+P also matches terminal, browser, and markdown surfaces across workspaces.")
-                                : String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOff", defaultValue: "Cmd+P matches workspace rows only.")
-                        ) {
-                            Toggle("", isOn: $commandPaletteSearchAllSurfaces)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityIdentifier("CommandPaletteSearchAllSurfacesToggle")
-                                .accessibilityLabel(
-                                    String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Surfaces")
-                                )
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.hideAllDetails"),
-                            String(localized: "settings.app.hideAllSidebarDetails", defaultValue: "Hide All Sidebar Details"),
-                            subtitle: sidebarHideAllDetails
-                                ? String(localized: "settings.app.hideAllSidebarDetails.subtitleOn", defaultValue: "Show only the workspace title row. Overrides the detail toggles below.")
-                                : String(localized: "settings.app.hideAllSidebarDetails.subtitleOff", defaultValue: "Show secondary workspace details as controlled by the toggles below.")
-                        ) {
-                            Toggle("", isOn: $sidebarHideAllDetails)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsPickerRow(
-                            configurationReview: .json("sidebar.branchLayout"),
-                            String(localized: "settings.app.sidebarBranchLayout", defaultValue: "Sidebar Branch Layout"),
-                            subtitle: sidebarBranchVerticalLayout
-                                ? String(localized: "settings.app.sidebarBranchLayout.subtitleVertical", defaultValue: "Vertical: each branch appears on its own line.")
-                                : String(localized: "settings.app.sidebarBranchLayout.subtitleInline", defaultValue: "Inline: all branches share one line."),
-                            controlWidth: pickerColumnWidth,
-                            selection: $sidebarBranchVerticalLayout
-                        ) {
-                            Text(String(localized: "settings.app.sidebarBranchLayout.vertical", defaultValue: "Vertical")).tag(true)
-                            Text(String(localized: "settings.app.sidebarBranchLayout.inline", defaultValue: "Inline")).tag(false)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showNotificationMessage"),
-                            String(localized: "settings.app.showNotificationMessage", defaultValue: "Show Notification Message in Sidebar"),
-                            subtitle: String(localized: "settings.app.showNotificationMessage.subtitle", defaultValue: "Display the latest notification message below the workspace title.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowNotificationMessage)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showBranchDirectory"),
-                            String(localized: "settings.app.showBranchDirectory", defaultValue: "Show Branch + Directory in Sidebar"),
-                            subtitle: String(localized: "settings.app.showBranchDirectory.subtitle", defaultValue: "Display the built-in git branch and working-directory row.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowBranchDirectory)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showPullRequests"),
-                            String(localized: "settings.app.showPullRequests", defaultValue: "Show Pull Requests in Sidebar"),
-                            subtitle: String(localized: "settings.app.showPullRequests.subtitle", defaultValue: "Display review items (PR/MR/etc.) with status, number, and clickable link.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowPullRequest)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.openPullRequestLinksInCmuxBrowser"),
-                            String(localized: "settings.app.openSidebarPRLinks", defaultValue: "Open Sidebar PR Links in cmux Browser"),
-                            subtitle: openSidebarPullRequestLinksInCmuxBrowser
-                                ? String(localized: "settings.app.openSidebarPRLinks.subtitleOn", defaultValue: "Clicks open inside cmux browser.")
-                                : String(localized: "settings.app.openSidebarPRLinks.subtitleOff", defaultValue: "Clicks open in your default browser.")
-                        ) {
-                            Toggle("", isOn: $openSidebarPullRequestLinksInCmuxBrowser)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.openPortLinksInCmuxBrowser"),
-                            String(localized: "settings.app.openSidebarPortLinks", defaultValue: "Open Sidebar Port Links in cmux Browser"),
-                            subtitle: openSidebarPortLinksInCmuxBrowser
-                                ? String(localized: "settings.app.openSidebarPortLinks.subtitleOn", defaultValue: "Port clicks open inside cmux browser.")
-                                : String(localized: "settings.app.openSidebarPortLinks.subtitleOff", defaultValue: "Port clicks open in your default browser.")
-                        ) {
-                            Toggle("", isOn: $openSidebarPortLinksInCmuxBrowser)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showSSH"),
-                            String(localized: "settings.app.showSSH", defaultValue: "Show SSH in Sidebar"),
-                            subtitle: String(localized: "settings.app.showSSH.subtitle", defaultValue: "Display the SSH target for remote workspaces in its own row.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowSSH)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showPorts"),
-                            String(localized: "settings.app.showPorts", defaultValue: "Show Listening Ports in Sidebar"),
-                            subtitle: String(localized: "settings.app.showPorts.subtitle", defaultValue: "Display detected listening ports for the active workspace.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowPorts)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showLog"),
-                            String(localized: "settings.app.showLog", defaultValue: "Show Latest Log in Sidebar"),
-                            subtitle: String(localized: "settings.app.showLog.subtitle", defaultValue: "Display the latest imperative log/status message.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowLog)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showProgress"),
-                            String(localized: "settings.app.showProgress", defaultValue: "Show Progress in Sidebar"),
-                            subtitle: String(localized: "settings.app.showProgress.subtitle", defaultValue: "Display the built-in progress bar from set_progress.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowProgress)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebar.showCustomMetadata"),
-                            String(localized: "settings.app.showMetadata", defaultValue: "Show Custom Metadata in Sidebar"),
-                            subtitle: String(localized: "settings.app.showMetadata.subtitle", defaultValue: "Display custom metadata from report_meta/set_status and report_meta_block.")
-                        ) {
-                            Toggle("", isOn: $sidebarShowMetadata)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-                        .disabled(sidebarHideAllDetails)
-                      } // end app card rows part 3
-                    }
-                    } // end if sectionVisible(.app)
-                  } // end Group: app section
-                  Group { // Group: workspaceColors section
-                    if sectionVisible(.workspaceColors) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.workspaceColors", defaultValue: "Workspace Colors"), section: .workspaceColors)
-                        .id(SettingsSection.workspaceColors)
-                    SettingsCard {
-                        SettingsPickerRow(
-                            configurationReview: .json("workspaceColors.indicatorStyle"),
-                            String(localized: "settings.workspaceColors.indicator", defaultValue: "Workspace Color Indicator"),
-                            controlWidth: pickerColumnWidth,
-                            selection: sidebarIndicatorStyleSelection
-                        ) {
-                            ForEach(SidebarActiveTabIndicatorStyle.allCases) { style in
-                                Text(style.displayName).tag(style.rawValue)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("workspaceColors.selectionColor"),
-                            String(localized: "settings.workspaceColors.selectionColor", defaultValue: "Selection Highlight"),
-                            subtitle: String(localized: "settings.workspaceColors.selectionColor.subtitle", defaultValue: "Background color of the selected workspace in the sidebar.")
-                        ) {
-                            HStack(spacing: 8) {
-                                if sidebarSelectionColorHex != nil {
-                                    Button(String(localized: "settings.workspaceColors.selectionColor.reset", defaultValue: "Reset")) {
-                                        sidebarSelectionColorHex = nil
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                }
-
-                                ColorPicker(
-                                    "",
-                                    selection: selectionColorBinding,
-                                    supportsOpacity: false
-                                )
-                                .labelsHidden()
-                                .frame(width: 38)
-
-                                Text(sidebarSelectionColorHex ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 76, alignment: .trailing)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("workspaceColors.notificationBadgeColor"),
-                            String(localized: "settings.workspaceColors.notificationBadgeColor", defaultValue: "Notification Badge"),
-                            subtitle: String(localized: "settings.workspaceColors.notificationBadgeColor.subtitle", defaultValue: "Color of the unread notification badge on workspace tabs.")
-                        ) {
-                            HStack(spacing: 8) {
-                                if sidebarNotificationBadgeColorHex != nil {
-                                    Button(String(localized: "settings.workspaceColors.notificationBadgeColor.reset", defaultValue: "Reset")) {
-                                        sidebarNotificationBadgeColorHex = nil
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                }
-
-                                ColorPicker(
-                                    "",
-                                    selection: notificationBadgeColorBinding,
-                                    supportsOpacity: false
-                                )
-                                .labelsHidden()
-                                .frame(width: 38)
-
-                                Text(sidebarNotificationBadgeColorHex ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 76, alignment: .trailing)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardNote(
-                            String(
-                                localized: "settings.workspaceColors.dictionaryNote",
-                                defaultValue: "Edit settings.json to add or remove named colors. \"Choose Custom Color...\" still adds local Custom N entries."
-                            )
-                        )
-
-                        if workspaceTabPaletteEntries.isEmpty {
-                            SettingsCardNote(
-                                String(
-                                    localized: "settings.workspaceColors.emptyPalette",
-                                    defaultValue: "No palette entries. Add colors in settings.json or use \"Choose Custom Color...\" from a workspace context menu."
-                                )
-                            )
-                        } else {
-                            ForEach(Array(workspaceTabPaletteEntries.enumerated()), id: \.element.name) { index, entry in
-                                if index > 0 {
-                                    SettingsCardDivider()
-                                }
-                                SettingsCardRow(
-                                    configurationReview: .json("workspaceColors.colors"),
-                                    entry.name,
-                                    subtitle: baseTabColorHex(for: entry.name).map {
-                                        String(localized: "settings.workspaceColors.base", defaultValue: "Base: \($0)")
-                                    } ?? String(
-                                        localized: "settings.workspaceColors.customEntry",
-                                        defaultValue: "Named palette entry."
-                                    )
-                                ) {
-                                    HStack(spacing: 8) {
-                                        ColorPicker(
-                                            "",
-                                            selection: tabColorBinding(for: entry.name),
-                                            supportsOpacity: false
-                                        )
-                                        .labelsHidden()
-                                        .frame(width: 38)
-
-                                        Text(entry.hex)
-                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 76, alignment: .trailing)
-
-                                        if baseTabColorHex(for: entry.name) == nil {
-                                            Button(String(localized: "settings.workspaceColors.remove", defaultValue: "Remove")) {
-                                                removeWorkspaceColor(named: entry.name)
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .controlSize(.small)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .action,
-                            String(localized: "settings.workspaceColors.resetPalette", defaultValue: "Reset Palette"),
-                            subtitle: String(
-                                localized: "settings.workspaceColors.resetPalette.subtitleV2",
-                                defaultValue: "Restore the built-in palette and remove extra named colors."
-                            )
-                        ) {
-                            Button(String(localized: "settings.workspaceColors.resetPalette.button", defaultValue: "Reset")) {
-                                resetWorkspaceTabColors()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                    } // end if sectionVisible(.workspaceColors)
-                  } // end Group: workspaceColors section
-                  Group { // Group: sidebarAppearance section
-                    if sectionVisible(.sidebarAppearance) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.sidebarAppearance", defaultValue: "Sidebar Appearance"), section: .sidebarAppearance)
-                        .id(SettingsSection.sidebarAppearance)
-                    SettingsCard {
-                        SettingsCardRow(
-                            configurationReview: .json("sidebarAppearance.matchTerminalBackground"),
-                            String(localized: "settings.sidebarAppearance.matchTerminalBackground", defaultValue: "Match Terminal Background"),
-                            subtitle: String(localized: "settings.sidebarAppearance.matchTerminalBackground.subtitle", defaultValue: "Use the same background color and transparency as the terminal.")
-                        ) {
-                            Toggle("", isOn: $sidebarMatchTerminalBackground)
-                                .labelsHidden()
-                                .toggleStyle(.switch)
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebarAppearance.lightModeTintColor"),
-                            String(localized: "settings.sidebarAppearance.tintColorLight", defaultValue: "Light Mode Tint"),
-                            subtitle: String(localized: "settings.sidebarAppearance.tintColorLight.subtitle", defaultValue: "Sidebar tint color when using light appearance.")
-                        ) {
-                            HStack(spacing: 8) {
-                                ColorPicker(
-                                    String(localized: "settings.sidebarAppearance.tintColorLight.picker", defaultValue: "Light tint"),
-                                    selection: settingsSidebarTintLightBinding,
-                                    supportsOpacity: false
-                                )
-                                .labelsHidden()
-                                .frame(width: 38)
-
-                                Text(sidebarTintHexLight ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 76, alignment: .trailing)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebarAppearance.darkModeTintColor"),
-                            String(localized: "settings.sidebarAppearance.tintColorDark", defaultValue: "Dark Mode Tint"),
-                            subtitle: String(localized: "settings.sidebarAppearance.tintColorDark.subtitle", defaultValue: "Sidebar tint color when using dark appearance.")
-                        ) {
-                            HStack(spacing: 8) {
-                                ColorPicker(
-                                    String(localized: "settings.sidebarAppearance.tintColorDark.picker", defaultValue: "Dark tint"),
-                                    selection: settingsSidebarTintDarkBinding,
-                                    supportsOpacity: false
-                                )
-                                .labelsHidden()
-                                .frame(width: 38)
-
-                                Text(sidebarTintHexDark ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 76, alignment: .trailing)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("sidebarAppearance.tintOpacity"),
-                            String(localized: "settings.sidebarAppearance.tintOpacity", defaultValue: "Tint Opacity"),
-                            subtitle: String(localized: "settings.sidebarAppearance.tintOpacity.subtitle", defaultValue: "How strongly the tint color shows over the sidebar material.")
-                        ) {
-                            HStack(spacing: 8) {
-                                Slider(value: $sidebarTintOpacity, in: 0...1)
-                                    .frame(width: 140)
-                                Text(String(format: "%.0f%%", sidebarTintOpacity * 100))
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 36, alignment: .trailing)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .action,
-                            String(localized: "settings.sidebarAppearance.reset", defaultValue: "Reset Sidebar Tint"),
-                            subtitle: String(localized: "settings.sidebarAppearance.reset.subtitle", defaultValue: "Restore default sidebar appearance.")
-                        ) {
-                            Button(String(localized: "settings.sidebarAppearance.reset.button", defaultValue: "Reset")) {
-                                sidebarTintHexLight = nil
-                                sidebarTintHexDark = nil
-                                sidebarTintHex = SidebarTintDefaults.hex
-                                sidebarTintOpacity = SidebarTintDefaults.opacity
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                    } // end if sectionVisible(.sidebarAppearance)
-                  } // end Group: sidebarAppearance section
-                  Group { // Group: automation section
-                    if sectionVisible(.automation) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.automation", defaultValue: "Automation"), section: .automation)
-                        .id(SettingsSection.automation)
-                    SettingsCard {
-                        SettingsPickerRow(
-                            configurationReview: .json("automation.socketControlMode"),
-                            String(localized: "settings.automation.socketMode", defaultValue: "Socket Control Mode"),
-                            subtitle: selectedSocketControlMode.description,
-                            controlWidth: pickerColumnWidth,
-                            selection: socketModeSelection,
-                            accessibilityId: "AutomationSocketModePicker"
-                        ) {
-                            ForEach(SocketControlMode.uiCases) { mode in
-                                Text(mode.displayName).tag(mode.rawValue)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardNote(String(localized: "settings.automation.socketMode.note", defaultValue: "Controls access to the local Unix socket for programmatic control. Choose a mode that matches your threat model."))
-                        if selectedSocketControlMode == .password {
-                            SettingsCardDivider()
-                            SettingsCardRow(
-                                configurationReview: .json("automation.socketPassword"),
-                                String(localized: "settings.automation.socketPassword", defaultValue: "Socket Password"),
-                                subtitle: hasSocketPasswordConfigured
-                                    ? String(localized: "settings.automation.socketPassword.subtitleSet", defaultValue: "Stored in Application Support.")
-                                    : String(localized: "settings.automation.socketPassword.subtitleUnset", defaultValue: "No password set. External clients will be blocked until one is configured.")
-                            ) {
-                                HStack(spacing: 8) {
-                                    SecureField(String(localized: "settings.automation.socketPassword.placeholder", defaultValue: "Password"), text: $socketPasswordDraft)
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 170)
-                                    Button(hasSocketPasswordConfigured ? String(localized: "settings.automation.socketPassword.change", defaultValue: "Change") : String(localized: "settings.automation.socketPassword.set", defaultValue: "Set")) {
-                                        saveSocketPassword()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .disabled(socketPasswordDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                    if hasSocketPasswordConfigured {
-                                        Button(String(localized: "settings.automation.socketPassword.clear", defaultValue: "Clear")) {
-                                            clearSocketPassword()
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
-                                    }
-                                }
-                            }
-                            if let message = socketPasswordStatusMessage {
-                                Text(message)
-                                    .font(.caption)
-                                    .foregroundStyle(socketPasswordStatusIsError ? Color.red : Color.secondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.bottom, 8)
-                            }
-                        }
-                        if selectedSocketControlMode == .allowAll {
-                            SettingsCardDivider()
-                            Text(String(localized: "settings.automation.openAccessWarning", defaultValue: "Warning: Full open access makes the control socket world-readable/writable on this Mac and disables auth checks. Use only for local debugging."))
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                        }
-                        SettingsCardNote(String(localized: "settings.automation.socketOverrides.note", defaultValue: "Overrides: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE, and CMUX_SOCKET_PATH (set CMUX_ALLOW_SOCKET_OVERRIDE=1 for stable/nightly builds)."))
-                    }
-
-                    SettingsCard {
-                        SettingsCardRow(
-                            configurationReview: .json("automation.claudeCodeIntegration"),
-                            String(localized: "settings.automation.agentIntegration", defaultValue: "Agent Integration"),
-                            subtitle: claudeCodeHooksEnabled
-                                ? String(localized: "settings.automation.agentIntegration.subtitleOn", defaultValue: "Sidebar shows agent session status and notifications.")
-                                : String(localized: "settings.automation.agentIntegration.subtitleOff", defaultValue: "Agent harness runs without cmux integration.")
-                        ) {
-                            Toggle("", isOn: $claudeCodeHooksEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityIdentifier("SettingsAgentHooksToggle")
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardNote(String(localized: "settings.automation.agentIntegration.note", defaultValue: "When enabled, cmux wraps the agent command to inject session tracking and notification hooks. Disable if you prefer to manage agent hooks yourself."))
-                    }
-
-                    SettingsCard {
-                        SettingsCardRow(
-                            configurationReview: .json("automation.claudeBinaryPath"),
-                            String(localized: "settings.automation.agentIntegration.binaryPath", defaultValue: "Agent Binary Path"),
-                            subtitle: String(localized: "settings.automation.agentIntegration.binaryPath.subtitle", defaultValue: "Custom path to the agent binary. Leave empty to use PATH.")
-                        ) {
-                            TextField(
-                                String(localized: "settings.automation.agentIntegration.binaryPath.placeholder", defaultValue: "e.g. /usr/local/bin/claude"),
-                                text: $customClaudePath
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 200)
-                        }
-                    }
-
-                    SettingsCard {
-                        SettingsCardRow(
-                            String(localized: "settings.automation.warmAgentPool", defaultValue: "Warm Agent Pool"),
-                            subtitle: warmClaudePoolSize > 0
-                                ? String(localized: "settings.automation.warmAgentPool.subtitleOn", defaultValue: "Pre-spawns agent sessions for instant launch via ⇧⌘K.")
-                                : String(localized: "settings.automation.warmAgentPool.subtitleOff", defaultValue: "Agent sessions launch on demand (no pre-warming).")
-                        ) {
-                            Stepper(value: $warmClaudePoolSize, in: 0...3) {
-                                Text("\(warmClaudePoolSize)")
-                                    .monospacedDigit()
-                            }
-                            .frame(width: 100)
-                        }
-                    }
-
-                    SettingsCard {
-                        SettingsCardRow(
-                            configurationReview: .json("automation.cursorIntegration"),
-                            String(localized: "settings.automation.cursor", defaultValue: "Cursor Integration"),
-                            subtitle: cursorHooksEnabled
-                                ? String(localized: "settings.automation.cursor.subtitleOn", defaultValue: "Sidebar shows Cursor agent status and notifications.")
-                                : String(localized: "settings.automation.cursor.subtitleOff", defaultValue: "Cursor runs without cmux integration.")
-                        ) {
-                            Toggle("", isOn: $cursorHooksEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityIdentifier("SettingsCursorHooksToggle")
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardNote(String(localized: "settings.automation.cursor.note", defaultValue: "Hooks must be installed with `cmux cursor install-hooks`. They no-op outside cmux terminals."))
-                    }
-
-                    SettingsCard {
-                        SettingsCardRow(
-                            configurationReview: .json("automation.geminiIntegration"),
-                            String(localized: "settings.automation.gemini", defaultValue: "Gemini CLI Integration"),
-                            subtitle: geminiHooksEnabled
-                                ? String(localized: "settings.automation.gemini.subtitleOn", defaultValue: "Sidebar shows Gemini session status and notifications.")
-                                : String(localized: "settings.automation.gemini.subtitleOff", defaultValue: "Gemini runs without cmux integration.")
-                        ) {
-                            Toggle("", isOn: $geminiHooksEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityIdentifier("SettingsGeminiHooksToggle")
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardNote(String(localized: "settings.automation.gemini.note", defaultValue: "Hooks must be installed with `cmux gemini install-hooks`. They no-op outside cmux terminals."))
-                    }
-
-                    SettingsCard {
-                        SettingsCardRow(configurationReview: .json("automation.portBase"), String(localized: "settings.automation.portBase", defaultValue: "Port Base"), subtitle: String(localized: "settings.automation.portBase.subtitle", defaultValue: "Starting port for CMUX_PORT env var."), controlWidth: pickerColumnWidth) {
-                            TextField("", value: $cmuxPortBase, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(configurationReview: .json("automation.portRange"), String(localized: "settings.automation.portRange", defaultValue: "Port Range Size"), subtitle: String(localized: "settings.automation.portRange.subtitle", defaultValue: "Number of ports per workspace."), controlWidth: pickerColumnWidth) {
-                            TextField("", value: $cmuxPortRange, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardNote(String(localized: "settings.automation.port.note", defaultValue: "Each workspace gets CMUX_PORT and CMUX_PORT_END env vars with a dedicated port range. New terminals inherit these values."))
-                    }
-                    } // end if sectionVisible(.automation)
-                  } // end Group: automation section
-                  Group { // Group: customCommands + browser sections
-                    if sectionVisible(.customCommands) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.customCommands", defaultValue: "Custom Commands"), section: .customCommands)
-                        .id(SettingsSection.customCommands)
-                    SettingsCard {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SettingsCardRow(
-                                configurationReview: .json("customCommands.trustedDirectories"),
-                                String(localized: "settings.customCommands.trustedDirectories", defaultValue: "Trusted Directories"),
-                                subtitle: String(localized: "settings.customCommands.trustedDirectories.subtitle", defaultValue: "Commands from cmux.json in these directories run without confirmation. One path per line.")
-                            ) {
-                                EmptyView()
-                            }
-
-                            TextEditor(text: $trustedDirectoriesDraft)
-                                .font(.system(.body, design: .monospaced))
-                                .frame(minHeight: 60, maxHeight: 120)
-                                .scrollContentBackground(.hidden)
-                                .padding(6)
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .cornerRadius(6)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                                )
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 12)
-                                .onChange(of: trustedDirectoriesDraft) { _ in
-                                    saveTrustedDirectories()
-                                }
-                        }
-
-                        SettingsCardDivider()
-                        SettingsCardNote(String(localized: "settings.customCommands.trustedDirectories.note", defaultValue: "Place a cmux.json in your project root to define custom commands. Trust a directory from the confirmation dialog, or add paths here. For git repos, trusting the root covers all subdirectories."))
-                    }
-                    } // end if sectionVisible(.customCommands)
-
-                    if sectionVisible(.browser) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.browser", defaultValue: "Browser"), section: .browser)
-                        .id(SettingsSection.browser)
-                        .accessibilityIdentifier("SettingsBrowserSection")
-                    SettingsCard {
-                        SettingsPickerRow(
-                            configurationReview: .json("browser.defaultSearchEngine"),
-                            String(localized: "settings.browser.searchEngine", defaultValue: "Default Search Engine"),
-                            subtitle: String(localized: "settings.browser.searchEngine.subtitle", defaultValue: "Used by the browser address bar when input is not a URL."),
-                            controlWidth: pickerColumnWidth,
-                            selection: $browserSearchEngine
-                        ) {
-                            ForEach(BrowserSearchEngine.allCases) { engine in
-                                Text(engine.displayName).tag(engine.rawValue)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(configurationReview: .json("browser.showSearchSuggestions"), String(localized: "settings.browser.searchSuggestions", defaultValue: "Show Search Suggestions")) {
-                            Toggle("", isOn: $browserSearchSuggestionsEnabled)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsPickerRow(
-                            configurationReview: .json("browser.theme"),
-                            String(localized: "settings.browser.theme", defaultValue: "Browser Theme"),
-                            subtitle: selectedBrowserThemeMode == .system
-                                ? String(localized: "settings.browser.theme.subtitleSystem", defaultValue: "System follows app and macOS appearance.")
-                                : String(localized: "settings.browser.theme.subtitleForced", defaultValue: "\(selectedBrowserThemeMode.displayName) forces that color scheme for compatible pages."),
-                            controlWidth: pickerColumnWidth,
-                            selection: browserThemeModeSelection
-                        ) {
-                            ForEach(BrowserThemeMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode.rawValue)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("browser.openTerminalLinksInCmuxBrowser"),
-                            String(localized: "settings.browser.openTerminalLinks", defaultValue: "Open Terminal Links in cmux Browser"),
-                            subtitle: String(localized: "settings.browser.openTerminalLinks.subtitle", defaultValue: "When off, links clicked in terminal output open in your default browser.")
-                        ) {
-                            Toggle("", isOn: $openTerminalLinksInCmuxBrowser)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("browser.interceptTerminalOpenCommandInCmuxBrowser"),
-                            String(localized: "settings.browser.interceptOpen", defaultValue: "Intercept open http(s) in Terminal"),
-                            subtitle: String(localized: "settings.browser.interceptOpen.subtitle", defaultValue: "When off, `open https://...` and `open http://...` always use your default browser.")
-                        ) {
-                            Toggle("", isOn: $interceptTerminalOpenCommandInCmuxBrowser)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        if openTerminalLinksInCmuxBrowser || interceptTerminalOpenCommandInCmuxBrowser {
-                            SettingsCardDivider()
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                SettingsCardRow(
-                                    configurationReview: .json("browser.hostsToOpenInEmbeddedBrowser"),
-                                    String(localized: "settings.browser.hostWhitelist", defaultValue: "Hosts to Open in Embedded Browser"),
-                                    subtitle: String(localized: "settings.browser.hostWhitelist.subtitle", defaultValue: "Applies to terminal link clicks and intercepted `open https://...` calls. Only these hosts open in cmux. Others open in your default browser. One host or wildcard per line (for example: example.com, *.internal.example). Leave empty to open all hosts in cmux.")
-                                ) {
-                                    EmptyView()
-                                }
-
-                                TextEditor(text: $browserHostWhitelist)
-                                    .font(.system(.body, design: .monospaced))
-                                    .frame(minHeight: 60, maxHeight: 120)
-                                    .scrollContentBackground(.hidden)
-                                    .padding(6)
-                                    .background(Color(nsColor: .controlBackgroundColor))
-                                    .cornerRadius(6)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                                    )
-                                    .padding(.horizontal, 16)
-                                    .padding(.bottom, 12)
-                            }
-
-                            SettingsCardDivider()
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                SettingsCardRow(
-                                    configurationReview: .json("browser.urlsToAlwaysOpenExternally"),
-                                    String(localized: "settings.browser.externalPatterns", defaultValue: "URLs to Always Open Externally"),
-                                    subtitle: String(localized: "settings.browser.externalPatterns.subtitle", defaultValue: "Applies to terminal link clicks and intercepted `open https://...` calls. One rule per line. Plain text matches any URL substring, or prefix with `re:` for regex (for example: openai.com/usage, re:^https?://[^/]*\\.example\\.com/(billing|usage)).")
-                                ) {
-                                    EmptyView()
-                                }
-
-                                TextEditor(text: $browserExternalOpenPatterns)
-                                    .font(.system(.body, design: .monospaced))
-                                    .frame(minHeight: 60, maxHeight: 120)
-                                    .scrollContentBackground(.hidden)
-                                    .padding(6)
-                                    .background(Color(nsColor: .controlBackgroundColor))
-                                    .cornerRadius(6)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                                    )
-                                    .padding(.horizontal, 16)
-                                    .padding(.bottom, 12)
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(String(localized: "settings.browser.httpAllowlist", defaultValue: "HTTP Hosts Allowed in Embedded Browser"))
-                                .font(.system(size: 13, weight: .semibold))
-
-                            Text(String(localized: "settings.browser.httpAllowlist.description", defaultValue: "Controls which HTTP (non-HTTPS) hosts can open in cmux without a warning prompt. Defaults include localhost, 127.0.0.1, ::1, 0.0.0.0, and *.localtest.me."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            TextEditor(text: $browserInsecureHTTPAllowlistDraft)
-                                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                                .frame(minHeight: 86)
-                                .padding(6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color(nsColor: .textBackgroundColor))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                                )
-                                .accessibilityIdentifier("SettingsBrowserHTTPAllowlistField")
-
-                            ViewThatFits(in: .horizontal) {
-                                HStack(alignment: .center, spacing: 10) {
-                                    Text(String(localized: "settings.browser.httpAllowlist.hint", defaultValue: "One host or wildcard per line (for example: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    Spacer(minLength: 0)
-
-                                    Button(String(localized: "settings.browser.httpAllowlist.save", defaultValue: "Save")) {
-                                        saveBrowserInsecureHTTPAllowlist()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .disabled(!browserInsecureHTTPAllowlistHasUnsavedChanges)
-                                    .accessibilityIdentifier("SettingsBrowserHTTPAllowlistSaveButton")
-                                }
-
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(String(localized: "settings.browser.httpAllowlist.hint", defaultValue: "One host or wildcard per line (for example: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    HStack {
-                                        Spacer(minLength: 0)
-                                        Button(String(localized: "settings.browser.httpAllowlist.save", defaultValue: "Save")) {
-                                            saveBrowserInsecureHTTPAllowlist()
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
-                                        .disabled(!browserInsecureHTTPAllowlistHasUnsavedChanges)
-                                        .accessibilityIdentifier("SettingsBrowserHTTPAllowlistSaveButton")
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-
-                        SettingsCardDivider()
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(String(localized: "settings.browser.import", defaultValue: "Import Browser Data"))
-                                    .font(.system(size: 13, weight: .semibold))
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(String(localized: "browser.import.hint.title", defaultValue: "Import browser data"))
-                                        .font(.system(size: 12.5, weight: .semibold))
-
-                                    Text(browserImportSubtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    Text(String(localized: "browser.import.hint.settingsFootnote", defaultValue: "You can always find this in Settings > Browser."))
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(.tertiary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color(nsColor: .controlBackgroundColor))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
-                                )
-                            }
-
-                            HStack(spacing: 8) {
-                                Button(String(localized: "settings.browser.import.choose", defaultValue: "Choose…")) {
-                                    DispatchQueue.main.async {
-                                        BrowserDataImportCoordinator.shared.presentImportDialog()
-                                        refreshDetectedImportBrowsers()
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityIdentifier("SettingsBrowserImportChooseButton")
-
-                                Button(String(localized: "settings.browser.import.refresh", defaultValue: "Refresh")) {
-                                    refreshDetectedImportBrowsers()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                            .accessibilityIdentifier("SettingsBrowserImportActions")
-
-                            Toggle(
-                                String(localized: "settings.browser.import.hint.show", defaultValue: "Show import hint on blank browser tabs"),
-                                isOn: browserImportHintVisibilityBinding
-                            )
-                            .controlSize(.small)
-                            .accessibilityIdentifier("SettingsBrowserImportHintToggle")
-
-                            Text(browserImportHintSettingsNote)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .id(SettingsNavigationTarget.browserImport)
-                        .accessibilityIdentifier("SettingsBrowserImportSection")
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("browser.reactGrabVersion"),
-                            String(localized: "settings.browser.reactGrabVersion", defaultValue: "React Grab Version"),
-                            subtitle: String(localized: "settings.browser.reactGrabVersion.subtitle", defaultValue: "Pinned npm version of react-grab injected by the toolbar button (Cmd+Shift+G). Only versions with a known integrity hash are accepted.")
-                        ) {
-                            TextField("", text: $reactGrabVersion)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 100)
-                                .font(.system(.body, design: .monospaced))
-                                .accessibilityIdentifier("SettingsReactGrabVersionField")
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(configurationReview: .action, String(localized: "settings.browser.history", defaultValue: "Browsing History"), subtitle: browserHistorySubtitle) {
-                            Button(String(localized: "settings.browser.history.clearButton", defaultValue: "Clear History…")) {
-                                showClearBrowserHistoryConfirmation = true
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(browserHistoryEntryCount == 0)
-                        }
-                    }
-                    } // end if sectionVisible(.browser)
-                  } // end Group: customCommands + browser sections
-                  Group { // Group: hotkey + keyboardShortcuts + reset sections
-                    GlobalHotkeySection()
-
-                    if sectionVisible(.keyboardShortcuts) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.keyboardShortcuts", defaultValue: "Keyboard Shortcuts"), section: .keyboardShortcuts)
-                        .id(SettingsSection.keyboardShortcuts)
-                        .accessibilityIdentifier("SettingsKeyboardShortcutsSection")
-                    SettingsCard {
-                        SettingsCardRow(
-                            configurationReview: .action,
-                            String(localized: "settings.shortcuts.chords", defaultValue: "Shortcut Chords"),
-                            subtitle: String(localized: "settings.shortcuts.chords.subtitle", defaultValue: "Add tmux-style multi-step shortcuts in settings.json, for example [\"ctrl+b\", \"c\"].")
-                        ) {
-                            HStack(spacing: 8) {
-                                Link(String(localized: "settings.shortcuts.chords.docsButton", defaultValue: "Chord docs"), destination: shortcutChordsDocsURL)
-                                    .font(.caption)
-                                    .accessibilityIdentifier("SettingsKeyboardShortcutsChordDocsLink")
-
-                                Button(String(localized: "settings.app.settingsFile.openButton", defaultValue: "Open settings.json")) {
-                                    openCmuxSettingsFileInTextEdit()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityIdentifier("SettingsKeyboardShortcutsOpenSettingsFileButton")
-                            }
-                        }
-
-                        SettingsCardDivider()
-
-                        SettingsCardRow(
-                            configurationReview: .json("shortcuts.showModifierHoldHints"),
-                            String(localized: "settings.shortcuts.showHints", defaultValue: "Show Cmd/Ctrl-Hold Shortcut Hints"),
-                            subtitle: showShortcutHintsOnCommandHold
-                                ? String(localized: "settings.shortcuts.showHints.subtitleOn", defaultValue: "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (pane tabs) shows shortcut hint pills.")
-                                : String(localized: "settings.shortcuts.showHints.subtitleOff", defaultValue: "Holding Cmd or Ctrl keeps shortcut hint pills hidden.")
-                        ) {
-                            Toggle("", isOn: $showShortcutHintsOnCommandHold)
-                                .labelsHidden()
-                                .controlSize(.small)
-                        }
-
-                        SettingsCardDivider()
-
-                        let actions = KeyboardShortcutSettings.Action.allCases.filter {
-                            $0 != SystemWideHotkeySettings.action
-                        }
-                        ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                            ShortcutSettingRow(action: action)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 9)
-                            if index < actions.count - 1 {
-                                SettingsCardDivider()
-                            }
-                        }
-                    }
-                    .id(shortcutResetToken)
-
-                    Text(String(localized: "settings.shortcuts.recordHint", defaultValue: "Click a shortcut value to record a new shortcut."))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 2)
-                        .accessibilityIdentifier("ShortcutRecordingHint")
-                    } // end if sectionVisible(.keyboardShortcuts)
-
-                    if sectionVisible(.reset) {
-                    SettingsSectionHeader(title: String(localized: "settings.section.reset", defaultValue: "Reset"), section: .reset)
-                        .id(SettingsSection.reset)
-                    SettingsCard {
-                        HStack {
-                            Spacer(minLength: 0)
-                            Button(String(localized: "settings.reset.resetAll", defaultValue: "Reset All Settings")) {
-                                resetAllSettings()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.regular)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                    }
-                    } // end if sectionVisible(.reset)
-                  } // end Group: hotkey + keyboardShortcuts + reset sections
+                  settingsAppSection
+                  settingsWorkspaceColorsSection
+                  settingsSidebarAppearanceSection
+                  settingsAutomationSection
+                  settingsCustomCommandsAndBrowserSection
+                  settingsHotkeyAndShortcutsSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
