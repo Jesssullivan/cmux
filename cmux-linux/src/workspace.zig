@@ -119,23 +119,30 @@ pub const Workspace = struct {
     }
 
     /// Create a new browser panel in this workspace.
+    /// Returns error.WebKitNotAvailable when built without WebKitGTK (-Dno-webkit).
     pub fn createBrowserPanel(self: *Workspace, url: ?[]const u8) !*Panel {
-        const id = generateId();
-        const panel = try self.alloc.create(Panel);
-        panel.* = .{
-            .id = id,
-            .panel_type = .browser,
-            .url = if (url) |u| self.alloc.dupe(u8, u) catch null else null,
-        };
+        if (comptime !c.has_webkit) {
+            _ = self;
+            _ = url;
+            return error.WebKitNotAvailable;
+        } else {
+            const id = generateId();
+            const panel = try self.alloc.create(Panel);
+            panel.* = .{
+                .id = id,
+                .panel_type = .browser,
+                .url = if (url) |u| self.alloc.dupe(u8, u) catch null else null,
+            };
 
-        // Create the WebKitGTK browser widget
-        const widget = try @import("browser.zig").BrowserView.create(url);
-        panel.widget = widget;
+            // Create the WebKitGTK browser widget
+            const widget = try @import("browser.zig").BrowserView.create(url);
+            panel.widget = widget;
 
-        try self.panels.put(self.alloc, id, panel);
-        try self.ordered_panels.append(self.alloc, id);
-        self.focused_panel_id = id;
-        return panel;
+            try self.panels.put(self.alloc, id, panel);
+            try self.ordered_panels.append(self.alloc, id);
+            self.focused_panel_id = id;
+            return panel;
+        }
     }
 
     /// Create a mock panel for test mode (no GL surface, no GTK widget).

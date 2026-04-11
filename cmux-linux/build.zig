@@ -12,13 +12,22 @@ pub fn build(b: *std.Build) void {
     else
         b.path("src/main.zig");
 
+    const enable_webkit = !headless and !no_webkit;
+
+    // Build options for conditional compilation (WebKitGTK availability)
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "enable_webkit", enable_webkit);
+
+    const root_module = b.createModule(.{
+        .root_source_file = root_source,
+        .target = target,
+        .optimize = optimize,
+    });
+    root_module.addImport("build_options", build_options.createModule());
+
     const exe = b.addExecutable(.{
         .name = if (headless) "cmux-term" else "cmux",
-        .root_module = b.createModule(.{
-            .root_source_file = root_source,
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = root_module,
     });
 
     if (!headless) {
