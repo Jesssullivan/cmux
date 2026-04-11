@@ -491,7 +491,9 @@ jobs:
           ZIG_VERSION="0.15.2"
           ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
           echo "Downloading: $ZIG_URL"
-          curl -fSL "$ZIG_URL" | tar xJ --strip-components=1 -C /usr/local
+          mkdir -p /opt/zig
+          curl -fSL "$ZIG_URL" | tar xJ --strip-components=1 -C /opt/zig
+          ln -s /opt/zig/zig /usr/local/bin/zig
           zig version
 
       - name: Build zig-ctap2
