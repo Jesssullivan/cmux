@@ -9,7 +9,8 @@
 #   - Runner registered with --replace to prevent stale registrations
 #
 # Prerequisites:
-#   - Linux x86_64 with AMD GPU (RDNA 2+ for OpenGL 4.6)
+#   - Linux x86_64 or aarch64 with optional AMD GPU (RDNA 2+ for OpenGL 4.6)
+#   - Tested on: Rocky 9/10, Ubuntu 24.04, Fedora 42
 #   - sudo access to create user and install packages
 #   - Network access to GitHub API
 #
@@ -29,7 +30,13 @@ RUNNER_LABELS="self-hosted,linux,gpu,cmux-test"
 REPO="Jesssullivan/cmux"
 RUNNER_DIR="${HOME}/actions-runner"
 RUNNER_VERSION="2.322.0"
-RUNNER_ARCH="linux-x64"
+# Detect architecture for runner and Zig downloads
+MACHINE_ARCH="$(uname -m)"
+case "$MACHINE_ARCH" in
+    x86_64)  RUNNER_ARCH="linux-x64"; ZIG_ARCH="x86_64" ;;
+    aarch64) RUNNER_ARCH="linux-arm64"; ZIG_ARCH="aarch64" ;;
+    *)       echo "ERROR: Unsupported architecture: $MACHINE_ARCH"; exit 1 ;;
+esac
 
 echo "=== cmux-linux GPU Runner Setup ==="
 echo "Runner name: $RUNNER_NAME"
@@ -63,6 +70,7 @@ elif command -v dnf &>/dev/null; then
         freetype-devel harfbuzz-devel fontconfig-devel \
         libpng-devel oniguruma-devel mesa-libGL-devel \
         libsecret-devel libnotify-devel \
+        wayland-devel wayland-protocols-devel \
         mesa-utils vulkan-tools \
         xorg-x11-server-Xvfb socat gdb \
         dejavu-sans-fonts liberation-fonts \
@@ -114,7 +122,7 @@ echo "=== Installing Zig 0.15.2 ==="
 
 ZIG_VERSION="0.15.2"
 ZIG_DIR="${HOME}/.local/zig"
-ZIG_TARBALL="zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+ZIG_TARBALL="zig-linux-${ZIG_ARCH}-${ZIG_VERSION}.tar.xz"
 ZIG_URL="https://ziglang.org/builds/${ZIG_TARBALL}"
 
 if [ -x "${ZIG_DIR}/zig" ] && "${ZIG_DIR}/zig" version 2>/dev/null | grep -q "${ZIG_VERSION}"; then
