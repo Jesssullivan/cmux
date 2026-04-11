@@ -456,7 +456,7 @@ jobs:
           dnf install -y dnf-plugins-core
           dnf config-manager --set-enabled crb
           dnf install -y \
-            xz tar \
+            xz tar curl \
             git \
             gcc gcc-c++ \
             pkg-config \
@@ -485,10 +485,13 @@ jobs:
           echo "libadwaita version: $ADWAITA_VER"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: |
+          # Install Zig manually — mlugg/setup-zig overwrites $PATH in
+          # Rocky 10 containers, breaking sh access for subsequent steps.
+          ZIG_VERSION="0.15.2"
+          curl -L "https://ziglang.org/builds/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" \
+            | tar xJ --strip-components=1 -C /usr/local
+          zig version
 
       - name: Build zig-ctap2
         run: |
