@@ -456,7 +456,7 @@ jobs:
           dnf install -y dnf-plugins-core
           dnf config-manager --set-enabled crb
           dnf install -y \
-            xz tar curl \
+            xz tar curl file \
             git \
             gcc gcc-c++ \
             pkg-config \
