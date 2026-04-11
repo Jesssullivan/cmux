@@ -2546,6 +2546,15 @@ final class BrowserPanel: Panel, ObservableObject {
                 forMainFrameOnly: true
             )
         )
+        // Keep a native cache of whether the focused page element can currently accept
+        // plain-text paste so Cmd+Shift+V is only consumed when the browser can use it.
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: CmuxWebView.pasteAsPlainTextFocusTrackingBootstrapScriptSource,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
     }
 
     private func bindWebView(_ webView: CmuxWebView) {
