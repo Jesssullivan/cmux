@@ -5146,11 +5146,12 @@ struct SettingsView: View {
             ZStack(alignment: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                  Group {
+                  Group { // Group: app section
                     if sectionVisible(.app) {
                     SettingsSectionHeader(title: String(localized: "settings.section.app", defaultValue: "App"), section: .app)
                         .id(SettingsSection.app)
                     SettingsCard {
+                      Group { // app card rows part 1
                         SettingsCardRow(
                             configurationReview: .json("app.language"),
                             String(localized: "settings.app.language", defaultValue: "Language"),
@@ -5342,7 +5343,9 @@ struct SettingsView: View {
                                     String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash")
                                 )
                         }
+                      } // end app card rows part 1
 
+                      Group { // app card rows part 2
                         SettingsCardDivider()
 
                         SettingsCardRow(
@@ -5528,7 +5531,9 @@ struct SettingsView: View {
                                 .labelsHidden()
                                 .controlSize(.small)
                         }
+                      } // end app card rows part 2
 
+                      Group { // app card rows part 3
                         SettingsCardDivider()
 
                         SettingsCardRow(
@@ -5723,9 +5728,11 @@ struct SettingsView: View {
                                 .controlSize(.small)
                         }
                         .disabled(sidebarHideAllDetails)
+                      } // end app card rows part 3
                     }
                     } // end if sectionVisible(.app)
-
+                  } // end Group: app section
+                  Group { // Group: workspaceColors section
                     if sectionVisible(.workspaceColors) {
                     SettingsSectionHeader(title: String(localized: "settings.section.workspaceColors", defaultValue: "Workspace Colors"), section: .workspaceColors)
                         .id(SettingsSection.workspaceColors)
@@ -5878,7 +5885,8 @@ struct SettingsView: View {
                         }
                     }
                     } // end if sectionVisible(.workspaceColors)
-
+                  } // end Group: workspaceColors section
+                  Group { // Group: sidebarAppearance section
                     if sectionVisible(.sidebarAppearance) {
                     SettingsSectionHeader(title: String(localized: "settings.section.sidebarAppearance", defaultValue: "Sidebar Appearance"), section: .sidebarAppearance)
                         .id(SettingsSection.sidebarAppearance)
@@ -5975,9 +5983,8 @@ struct SettingsView: View {
                         }
                     }
                     } // end if sectionVisible(.sidebarAppearance)
-                  } // end Group 1 (app, workspaceColors, sidebarAppearance)
-
-                  Group {
+                  } // end Group: sidebarAppearance section
+                  Group { // Group: automation section
                     if sectionVisible(.automation) {
                     SettingsSectionHeader(title: String(localized: "settings.section.automation", defaultValue: "Automation"), section: .automation)
                         .id(SettingsSection.automation)
@@ -6152,7 +6159,8 @@ struct SettingsView: View {
                         SettingsCardNote(String(localized: "settings.automation.port.note", defaultValue: "Each workspace gets CMUX_PORT and CMUX_PORT_END env vars with a dedicated port range. New terminals inherit these values."))
                     }
                     } // end if sectionVisible(.automation)
-
+                  } // end Group: automation section
+                  Group { // Group: customCommands + browser sections
                     if sectionVisible(.customCommands) {
                     SettingsSectionHeader(title: String(localized: "settings.section.customCommands", defaultValue: "Custom Commands"), section: .customCommands)
                         .id(SettingsSection.customCommands)
@@ -6467,7 +6475,8 @@ struct SettingsView: View {
                         }
                     }
                     } // end if sectionVisible(.browser)
-
+                  } // end Group: customCommands + browser sections
+                  Group { // Group: hotkey + keyboardShortcuts + reset sections
                     GlobalHotkeySection()
 
                     if sectionVisible(.keyboardShortcuts) {
@@ -6548,7 +6557,7 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                     }
                     } // end if sectionVisible(.reset)
-                  } // end Group 2 (automation, customCommands, browser, keyboardShortcuts, reset)
+                  } // end Group: hotkey + keyboardShortcuts + reset sections
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
