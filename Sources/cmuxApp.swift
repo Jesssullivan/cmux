@@ -5146,6 +5146,7 @@ struct SettingsView: View {
             ZStack(alignment: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                  Group {
                     if sectionVisible(.app) {
                     SettingsSectionHeader(title: String(localized: "settings.section.app", defaultValue: "App"), section: .app)
                         .id(SettingsSection.app)
@@ -5974,7 +5975,9 @@ struct SettingsView: View {
                         }
                     }
                     } // end if sectionVisible(.sidebarAppearance)
+                  } // end Group 1 (app, workspaceColors, sidebarAppearance)
 
+                  Group {
                     if sectionVisible(.automation) {
                     SettingsSectionHeader(title: String(localized: "settings.section.automation", defaultValue: "Automation"), section: .automation)
                         .id(SettingsSection.automation)
@@ -6545,6 +6548,7 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                     }
                     } // end if sectionVisible(.reset)
+                  } // end Group 2 (automation, customCommands, browser, keyboardShortcuts, reset)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
