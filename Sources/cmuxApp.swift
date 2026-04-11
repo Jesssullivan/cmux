@@ -5467,6 +5467,7 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
+                configurationReview: .settingsOnly,
                 String(localized: "settings.app.confirmCloseRunningProcess", defaultValue: "Confirm Close Running Process"),
                 subtitle: confirmCloseRunningProcess
                     ? String(localized: "settings.app.confirmCloseRunningProcess.subtitleOn", defaultValue: "Show a confirmation before closing a workspace with a running command.")
@@ -5480,6 +5481,7 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
+                configurationReview: .settingsOnly,
                 String(localized: "settings.app.confirmClosePinnedWorkspace", defaultValue: "Confirm Close Pinned Workspace"),
                 subtitle: confirmClosePinnedWorkspace
                     ? String(localized: "settings.app.confirmClosePinnedWorkspace.subtitleOn", defaultValue: "Show a confirmation before closing a pinned workspace.")
@@ -5493,6 +5495,7 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
+                configurationReview: .settingsOnly,
                 String(localized: "settings.app.confirmCloseWindow", defaultValue: "Confirm Close Window"),
                 subtitle: confirmCloseWindow
                     ? String(localized: "settings.app.confirmCloseWindow.subtitleOn", defaultValue: "Show a confirmation before closing a window with workspaces.")
@@ -5506,6 +5509,7 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
+                configurationReview: .settingsOnly,
                 String(localized: "settings.app.confirmBatchClose", defaultValue: "Confirm Batch Close"),
                 subtitle: confirmBatchClose
                     ? String(localized: "settings.app.confirmBatchClose.subtitleOn", defaultValue: "Show a confirmation before closing multiple tabs or workspaces at once.")
@@ -6078,6 +6082,7 @@ struct SettingsView: View {
 
         SettingsCard {
             SettingsCardRow(
+                configurationReview: .settingsOnly,
                 String(localized: "settings.automation.warmAgentPool", defaultValue: "Warm Agent Pool"),
                 subtitle: warmClaudePoolSize > 0
                     ? String(localized: "settings.automation.warmAgentPool.subtitleOn", defaultValue: "Pre-spawns agent sessions for instant launch via ⇧⌘K.")
