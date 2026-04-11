@@ -489,7 +489,7 @@ jobs:
           # Install Zig manually — mlugg/setup-zig overwrites $PATH in
           # Rocky 10 containers, breaking sh access for subsequent steps.
           ZIG_VERSION="0.15.2"
-          ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
           echo "Downloading: $ZIG_URL"
           curl -fSL "$ZIG_URL" | tar xJ --strip-components=1 -C /usr/local
           zig version
