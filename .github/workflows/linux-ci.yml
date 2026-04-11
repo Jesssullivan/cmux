@@ -452,10 +452,9 @@ jobs:
       - name: Install dependencies
         run: |
           # Rocky 10: libadwaita-devel and oniguruma-devel live in CRB, not AppStream.
-          # dnf5 (Rocky 10) changed config-manager syntax; try both, fall back to sed.
-          dnf config-manager --set-enabled crb 2>/dev/null || \
-            dnf config-manager setopt crb.enabled=1 2>/dev/null || \
-            sed -i 's/enabled=0/enabled=1/' /etc/yum.repos.d/*-crb.repo 2>/dev/null || true
+          # The base container image ships dnf 4.20 without config-manager plugin.
+          dnf install -y dnf-plugins-core
+          dnf config-manager --set-enabled crb
           dnf install -y \
             git \
             gcc gcc-c++ \
