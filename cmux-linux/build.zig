@@ -5,6 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const headless = b.option(bool, "headless", "Build terminal-only mode (no GTK4/GUI)") orelse false;
+    const no_webkit = b.option(bool, "no-webkit", "Build without WebKitGTK (no browser panel). Use on RHEL/Rocky where WebKitGTK is unavailable.") orelse false;
 
     const root_source = if (headless)
         b.path("src/main_headless.zig")
@@ -21,11 +22,14 @@ pub fn build(b: *std.Build) void {
     });
 
     if (!headless) {
-        // Full GUI mode: GTK4 + libadwaita + OpenGL + WebKitGTK
+        // Full GUI mode: GTK4 + libadwaita + OpenGL
         exe.root_module.linkSystemLibrary("gtk4", .{});
         exe.root_module.linkSystemLibrary("libadwaita-1", .{});
         exe.root_module.linkSystemLibrary("gl", .{});
-        exe.root_module.linkSystemLibrary("webkitgtk-6.0", .{});
+        if (!no_webkit) {
+            // Browser panel: WebKitGTK 6.0 (not available on RHEL/Rocky)
+            exe.root_module.linkSystemLibrary("webkitgtk-6.0", .{});
+        }
     }
 
     // libghostty: shared library built from ghostty submodule.

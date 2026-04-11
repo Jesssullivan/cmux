@@ -524,7 +524,8 @@ jobs:
       - name: Build cmux-linux (Rocky 10)
         run: |
           cd cmux-linux
-          zig build -Doptimize=ReleaseFast
+          # WebKitGTK is not available in Rocky/RHEL repos — build without browser panel
+          zig build -Doptimize=ReleaseFast -Dno-webkit=true
 
       - name: Tier 0 — Validate desktop + metainfo (Rocky 10)
         run: |
