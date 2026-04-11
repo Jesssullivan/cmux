@@ -3460,6 +3460,16 @@ struct ContentView: View {
             syncTrafficLightInset()
         })
 
+        view = AnyView(view.onChange(of: sidebarMatchTerminalBackground) { _ in
+            guard sidebarState.isVisible,
+                  sidebarBlendMode == SidebarBlendModeOption.withinWindow.rawValue else { return }
+            if let observedWindow {
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: observedWindow)
+            } else {
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows()
+            }
+        })
+
         view = AnyView(view.onChange(of: isMinimalMode) { _, _ in
             syncTrafficLightInset()
         })
@@ -6242,6 +6252,14 @@ struct ContentView: View {
             return .splitRight
         case "palette.terminalSplitDown":
             return .splitDown
+        case "palette.terminalFind":
+            return .find
+        case "palette.terminalFindNext":
+            return .findNext
+        case "palette.terminalFindPrevious":
+            return .findPrevious
+        case "palette.terminalHideFind":
+            return .hideFind
         case "palette.toggleSplitZoom":
             return .toggleSplitZoom
         case "palette.triggerFlash":
@@ -6280,7 +6298,7 @@ struct ContentView: View {
         case "palette.terminalFindNext":
             return "⌘G"
         case "palette.terminalFindPrevious":
-            return "⌘⇧G"
+            return "⌥⌘G"
         case "palette.terminalHideFind":
             return "⌘⇧F"
         case "palette.terminalUseSelectionForFind":
@@ -7037,7 +7055,7 @@ struct ContentView: View {
                 commandId: "palette.terminalFindPrevious",
                 title: constant(String(localized: "command.terminalFindPrevious.title", defaultValue: "Find Previous")),
                 subtitle: terminalPanelSubtitle,
-                shortcutHint: "⌘⇧G",
+                shortcutHint: "⌥⌘G",
                 keywords: ["terminal", "find", "previous", "search"],
                 when: { $0.bool(CommandPaletteContextKeys.panelIsTerminal) }
             )
@@ -7411,7 +7429,9 @@ struct ContentView: View {
             }
         }
         registry.register(commandId: "palette.browserReactGrab") {
-            tabManager.toggleReactGrabFocusedBrowser()
+            if !tabManager.toggleReactGrabFromCurrentFocus() {
+                NSSound.beep()
+            }
         }
         registry.register(commandId: "palette.browserZoomIn") {
             if !tabManager.zoomInFocusedBrowser() {
@@ -13217,6 +13237,10 @@ private struct TabItemView: View, Equatable {
             multi: String(localized: "contextMenu.markWorkspacesUnread", defaultValue: "Mark Workspaces as Unread"),
             single: String(localized: "contextMenu.markWorkspaceUnread", defaultValue: "Mark Workspace as Unread"),
             isMulti: isMulti)
+        let clearLatestNotificationLabel = contextMenuLabel(
+            multi: String(localized: "contextMenu.clearLatestNotifications", defaultValue: "Clear Latest Notifications"),
+            single: String(localized: "contextMenu.clearLatestNotification", defaultValue: "Clear Latest Notification"),
+            isMulti: isMulti)
         let renameWorkspaceShortcut = KeyboardShortcutSettings.shortcut(for: .renameWorkspace)
         let editWorkspaceDescriptionShortcut = KeyboardShortcutSettings.shortcut(for: .editWorkspaceDescription)
         let closeWorkspaceShortcut = KeyboardShortcutSettings.shortcut(for: .closeWorkspace)
@@ -13404,6 +13428,11 @@ private struct TabItemView: View, Equatable {
             markTabsUnread(targetIds)
         }
         .disabled(!hasReadNotifications(in: targetIds))
+
+        Button(clearLatestNotificationLabel) {
+            clearLatestNotifications(targetIds)
+        }
+        .disabled(!hasLatestNotifications(in: targetIds))
     }
 
     private var selectionBackgroundColor: NSColor {
@@ -13569,6 +13598,12 @@ private struct TabItemView: View, Equatable {
         }
     }
 
+    private func clearLatestNotifications(_ targetIds: [UUID]) {
+        for id in targetIds {
+            notificationStore.clearLatestNotification(forTabId: id)
+        }
+    }
+
     private func hasUnreadNotifications(in targetIds: [UUID]) -> Bool {
         let targetSet = Set(targetIds)
         return notificationStore.notifications.contains { targetSet.contains($0.tabId) && !$0.isRead }
@@ -13577,6 +13612,10 @@ private struct TabItemView: View, Equatable {
     private func hasReadNotifications(in targetIds: [UUID]) -> Bool {
         let targetSet = Set(targetIds)
         return notificationStore.notifications.contains { targetSet.contains($0.tabId) && $0.isRead }
+    }
+
+    private func hasLatestNotifications(in targetIds: [UUID]) -> Bool {
+        targetIds.contains { notificationStore.latestNotification(forTabId: $0) != nil }
     }
 
     private func syncSelectionAfterMutation() {

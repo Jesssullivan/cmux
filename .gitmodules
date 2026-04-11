@@ -17,3 +17,6 @@
 [submodule "vendor/zig-keychain"]
 	path = vendor/zig-keychain
 	url = https://github.com/Jesssullivan/zig-keychain.git
+[submodule "vendor/zig-notify"]
+	path = vendor/zig-notify
+	url = https://github.com/Jesssullivan/zig-notify.git

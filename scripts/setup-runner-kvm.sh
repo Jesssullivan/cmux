@@ -85,12 +85,16 @@ echo "KVM: $(ls -la /dev/kvm)"
 echo "KVM group membership: OK"
 
 # Verify QEMU can use KVM
+# Rocky 10+ only ships /usr/libexec/qemu-kvm (no qemu-system-x86_64 in PATH)
 if command -v qemu-system-x86_64 &>/dev/null; then
-    echo "QEMU: $(qemu-system-x86_64 --version | head -1)"
+    QEMU_BIN="qemu-system-x86_64"
+elif [ -x /usr/libexec/qemu-kvm ]; then
+    QEMU_BIN="/usr/libexec/qemu-kvm"
 else
-    echo "ERROR: qemu-system-x86_64 not found in PATH"
+    echo "ERROR: no QEMU KVM binary found (checked qemu-system-x86_64 and /usr/libexec/qemu-kvm)"
     exit 1
 fi
+echo "QEMU: $($QEMU_BIN --version | head -1)"
 
 # ── 3. Install Nix (if not present) ───────────────────────────────────
 

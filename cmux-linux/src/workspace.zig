@@ -119,7 +119,14 @@ pub const Workspace = struct {
     }
 
     /// Create a new browser panel in this workspace.
-    pub fn createBrowserPanel(self: *Workspace, url: ?[]const u8) !*Panel {
+    /// Returns error.WebKitNotAvailable when built without WebKitGTK (-Dno-webkit).
+    pub const createBrowserPanel = if (c.has_webkit) createBrowserPanelWebkit else createBrowserPanelStub;
+
+    fn createBrowserPanelStub(_: *Workspace, _: ?[]const u8) !*Panel {
+        return error.WebKitNotAvailable;
+    }
+
+    fn createBrowserPanelWebkit(self: *Workspace, url: ?[]const u8) !*Panel {
         const id = generateId();
         const panel = try self.alloc.create(Panel);
         panel.* = .{

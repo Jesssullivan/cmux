@@ -229,20 +229,20 @@ const methods = .{
     .{ "surface.move", handleSurfaceMove },
     .{ "surface.reorder", handleSurfaceReorder },
     .{ "surface.drag_to_split", handleSurfaceDragToSplit },
-    .{ "browser.open_split", handleBrowserOpenSplit },
-    .{ "browser.navigate", handleBrowserNavigate },
-    .{ "browser.back", handleBrowserBack },
-    .{ "browser.forward", handleBrowserForward },
-    .{ "browser.reload", handleBrowserReload },
-    .{ "browser.url.get", handleBrowserUrlGet },
-    .{ "browser.focus_webview", handleBrowserFocusWebview },
-    .{ "browser.is_webview_focused", handleBrowserIsWebviewFocused },
-    .{ "browser.show_devtools", handleBrowserShowDevtools },
-    .{ "browser.close_devtools", handleBrowserCloseDevtools },
-    .{ "browser.find", handleBrowserFind },
-    .{ "browser.find_next", handleBrowserFindNext },
-    .{ "browser.find_previous", handleBrowserFindPrevious },
-    .{ "browser.find_finish", handleBrowserFindFinish },
+    .{ "browser.open_split", if (c.has_webkit) handleBrowserOpenSplit else handleBrowserUnavailable },
+    .{ "browser.navigate", if (c.has_webkit) handleBrowserNavigate else handleBrowserUnavailable },
+    .{ "browser.back", if (c.has_webkit) handleBrowserBack else handleBrowserUnavailable },
+    .{ "browser.forward", if (c.has_webkit) handleBrowserForward else handleBrowserUnavailable },
+    .{ "browser.reload", if (c.has_webkit) handleBrowserReload else handleBrowserUnavailable },
+    .{ "browser.url.get", if (c.has_webkit) handleBrowserUrlGet else handleBrowserUnavailable },
+    .{ "browser.focus_webview", if (c.has_webkit) handleBrowserFocusWebview else handleBrowserUnavailable },
+    .{ "browser.is_webview_focused", if (c.has_webkit) handleBrowserIsWebviewFocused else handleBrowserUnavailable },
+    .{ "browser.show_devtools", if (c.has_webkit) handleBrowserShowDevtools else handleBrowserUnavailable },
+    .{ "browser.close_devtools", if (c.has_webkit) handleBrowserCloseDevtools else handleBrowserUnavailable },
+    .{ "browser.find", if (c.has_webkit) handleBrowserFind else handleBrowserUnavailable },
+    .{ "browser.find_next", if (c.has_webkit) handleBrowserFindNext else handleBrowserUnavailable },
+    .{ "browser.find_previous", if (c.has_webkit) handleBrowserFindPrevious else handleBrowserUnavailable },
+    .{ "browser.find_finish", if (c.has_webkit) handleBrowserFindFinish else handleBrowserUnavailable },
     .{ "notification.create", handleNotificationCreate },
     .{ "notification.create_for_surface", handleNotificationCreateForSurface },
     .{ "notification.list", handleNotificationList },
@@ -1186,6 +1186,11 @@ fn handleSurfaceDragToSplit(alloc: Allocator, params: json.Value) []const u8 {
 }
 
 // ── Browser Handlers ────────────────────────────────────────────────────
+
+/// Stub for browser commands when built without WebKitGTK (-Dno-webkit).
+fn handleBrowserUnavailable(_: Allocator, _: json.Value) []const u8 {
+    return "{\"error\":\"browser panel requires WebKitGTK (built with -Dno-webkit)\"}";
+}
 
 const browser_mod = @import("browser.zig");
 

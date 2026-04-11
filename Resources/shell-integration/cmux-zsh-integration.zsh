@@ -1064,6 +1064,7 @@ _cmux_command_starts_nested_shell() {
 }
 
 _cmux_preexec() {
+    _cmux_restore_terminal_identity_after_startup
     _cmux_tmux_sync_cmux_environment
     local cmd="${1## }"
 
@@ -1269,6 +1270,13 @@ _cmux_fix_path() {
         fi
     fi
     add-zsh-hook -d precmd _cmux_fix_path
+}
+
+_cmux_restore_terminal_identity_after_startup() {
+    if [[ -n "${CMUX_ZSH_RESTORE_TERM:-}" ]]; then
+        builtin export TERM="$CMUX_ZSH_RESTORE_TERM"
+        builtin unset CMUX_ZSH_RESTORE_TERM
+    fi
 }
 
 _cmux_zshexit() {

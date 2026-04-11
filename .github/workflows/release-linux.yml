@@ -66,6 +66,7 @@ jobs:
           cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
           cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
           cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Doptimize=ReleaseFast && cd ../..
 
       - name: Build libghostty
         run: |
@@ -242,6 +243,7 @@ jobs:
           cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
           cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
           cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Doptimize=ReleaseFast && cd ../..
 
       - name: Build libghostty
         run: |
