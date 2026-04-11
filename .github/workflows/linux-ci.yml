@@ -117,6 +117,13 @@ jobs:
           zig build test
           echo "libzig-keychain.a: $(ls -lh zig-out/lib/libzig-keychain.a)"
 
+      - name: Build + test zig-notify
+        run: |
+          cd vendor/zig-notify
+          zig build -Doptimize=ReleaseFast
+          zig build test
+          echo "libzig-notify.a: $(ls -lh zig-out/lib/libzig-notify.a)"
+
       - name: Build cmuxd
         run: |
           if [ -d cmuxd ]; then
@@ -335,6 +342,11 @@ jobs:
           cd vendor/zig-keychain
           zig build -Doptimize=ReleaseFast
 
+      - name: Build zig-notify
+        run: |
+          cd vendor/zig-notify
+          zig build -Doptimize=ReleaseFast
+
       - name: Build libghostty
         run: |
           cd ghostty
@@ -409,6 +421,11 @@ jobs:
           cd vendor/zig-keychain
           zig build -Doptimize=ReleaseFast
 
+      - name: Build zig-notify
+        run: |
+          cd vendor/zig-notify
+          zig build -Doptimize=ReleaseFast
+
       - name: Build libghostty
         run: |
           cd ghostty
@@ -425,3 +442,100 @@ jobs:
           desktop-file-validate dist/linux/com.jesssullivan.cmux.desktop
           appstreamcli validate --no-net dist/linux/com.jesssullivan.cmux.metainfo.xml
           echo "Tier 0 (Arch) passed"
+
+  # ── Rocky 10 container: RHEL ecosystem ────────────────────────────
+  rocky10:
+    name: Rocky Linux 10 (RHEL 10)
+    runs-on: ubuntu-latest
+    container: rockylinux:10
+    steps:
+      - name: Install dependencies
+        run: |
+          # Rocky 10 uses dnf5; GTK4/libadwaita are in base repos (no EPEL)
+          dnf install -y \
+            git \
+            gcc gcc-c++ \
+            pkg-config \
+            gtk4-devel \
+            libadwaita-devel \
+            libsecret-devel \
+            libnotify-devel \
+            wayland-devel \
+            wayland-protocols-devel \
+            freetype-devel harfbuzz-devel fontconfig-devel \
+            libpng-devel oniguruma-devel mesa-libGL-devel
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Verify GTK4 version
+        run: |
+          GTK_VER=$(pkg-config --modversion gtk4)
+          echo "GTK4 version: $GTK_VER"
+          ADWAITA_VER=$(pkg-config --modversion libadwaita-1)
+          echo "libadwaita version: $ADWAITA_VER"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+          use-cache: false
+
+      - name: Build zig-ctap2
+        run: |
+          cd vendor/ctap2
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-crypto
+        run: |
+          cd vendor/zig-crypto
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-keychain
+        run: |
+          cd vendor/zig-keychain
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build zig-notify
+        run: |
+          cd vendor/zig-notify
+          zig build -Doptimize=ReleaseFast
+
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+
+      - name: Build cmux-linux (Rocky 10)
+        run: |
+          cd cmux-linux
+          zig build -Doptimize=ReleaseFast
+
+      - name: Tier 0 — Validate desktop + metainfo (Rocky 10)
+        run: |
+          dnf install -y desktop-file-utils appstream
+          desktop-file-validate dist/linux/com.jesssullivan.cmux.desktop
+          appstreamcli validate --no-net dist/linux/com.jesssullivan.cmux.metainfo.xml
+          echo "Tier 0 (Rocky 10) passed"
+
+      - name: Tier 1 — Static binary checks (Rocky 10)
+        run: |
+          BINARY="cmux-linux/zig-out/bin/cmux"
+          export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
+
+          echo "=== ELF magic check ==="
+          file "$BINARY" | grep -q "ELF 64-bit" || { echo "FAIL: not a 64-bit ELF"; exit 1; }
+
+          echo "=== Executable bit ==="
+          [ -x "$BINARY" ] || { echo "FAIL: not executable"; exit 1; }
+
+          echo "=== Shared library dependencies ==="
+          ldd "$BINARY"
+          ldd "$BINARY" | grep -q "libgtk-4" || { echo "FAIL: libgtk-4 not linked"; exit 1; }
+          ldd "$BINARY" | grep -q "libadwaita" || { echo "FAIL: libadwaita not linked"; exit 1; }
+
+          echo "Static binary checks (Rocky 10) passed"
