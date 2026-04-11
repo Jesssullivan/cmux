@@ -451,7 +451,8 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          # Rocky 10 uses dnf5; GTK4/libadwaita are in base repos (no EPEL)
+          # Rocky 10: libadwaita-devel and oniguruma-devel live in CRB, not AppStream
+          dnf config-manager --set-enabled crb || dnf config-manager setopt crb.enabled=1
           dnf install -y \
             git \
             gcc gcc-c++ \
@@ -463,7 +464,8 @@ jobs:
             wayland-devel \
             wayland-protocols-devel \
             freetype-devel harfbuzz-devel fontconfig-devel \
-            libpng-devel oniguruma-devel mesa-libGL-devel
+            libpng-devel oniguruma-devel mesa-libGL-devel \
+            glslang
 
       - uses: actions/checkout@v4
         with:
