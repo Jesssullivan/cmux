@@ -57,7 +57,14 @@ jobs:
           test -c /dev/kvm || { echo "ERROR: /dev/kvm not found"; exit 1; }
           test -r /dev/kvm || { echo "ERROR: /dev/kvm not readable"; exit 1; }
           echo "=== QEMU version ==="
-          qemu-system-x86_64 --version | head -1
+          # Rocky 10+ only ships /usr/libexec/qemu-kvm (no qemu-system-x86_64 in PATH)
+          if command -v qemu-system-x86_64 &>/dev/null; then
+            qemu-system-x86_64 --version | head -1
+          elif [ -x /usr/libexec/qemu-kvm ]; then
+            /usr/libexec/qemu-kvm --version | head -1
+          else
+            echo "WARNING: no QEMU binary found in PATH (Nix provides it at build time)"
+          fi
 
       - name: Rocky 9 package test
         if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
