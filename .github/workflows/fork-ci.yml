@@ -74,6 +74,9 @@ jobs:
   nix-check:
     name: Nix flake check
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,12 +85,10 @@ jobs:
       - name: Strip non-version tags from ghostty
         run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
 
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/determinate-nix-action@v3
         with:
-          # relaxed sandbox allows __noChroot derivations (needed for
-          # libghostty: Zig build-time tools require /lib64 dynamic linker)
           extra-conf: "sandbox = relaxed"
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flakehub-cache-action@v3
 
       - name: Verify dev shell
         run: nix develop --command bash -c 'echo "zig $(zig version) — dev shell OK"'
