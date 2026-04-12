@@ -212,7 +212,12 @@
   };
 
   nixConfig = {
-    extra-substituters = ["https://ghostty.cachix.org"];
-    extra-trusted-public-keys = ["ghostty.cachix.org-1:QB389yTa6gTyneehvqG58y0WnHjQOqgnA+wBnpWWxns="];
+    extra-substituters = [
+      "https://ghostty.cachix.org"
+      "https://cache.flakehub.com"
+    ];
+    extra-trusted-public-keys = [
+      "ghostty.cachix.org-1:QB389yTa6gTyneehvqG58y0WnHjQOqgnA+wBnpWWxns="
+    ];
   };
 }
