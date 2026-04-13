@@ -24,7 +24,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -213,7 +213,7 @@ jobs:
             freetype-devel harfbuzz-devel fontconfig-devel \
             libpng-devel oniguruma-devel mesa-libGL-devel
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 

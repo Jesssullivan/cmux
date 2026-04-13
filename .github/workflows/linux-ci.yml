@@ -30,7 +30,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -73,7 +73,7 @@ jobs:
     name: Zig vendor libs (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -307,7 +307,7 @@ jobs:
             libpng-dev libonig-dev libgl-dev \
             glslang-tools spirv-cross
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -407,7 +407,7 @@ jobs:
             libpng-dev libonig-dev libgl-dev \
             glslang-tools spirv-cross
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -507,7 +507,7 @@ jobs:
             freetype-devel harfbuzz-devel fontconfig-devel \
             libpng-devel oniguruma-devel mesa-libGL-devel
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -588,7 +588,7 @@ jobs:
             freetype2 harfbuzz fontconfig \
             libpng oniguruma mesa
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -672,7 +672,7 @@ jobs:
             libpng-devel oniguruma-devel mesa-libGL-devel \
             glslang
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
