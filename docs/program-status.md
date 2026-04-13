@@ -68,16 +68,32 @@ Draft update text is already prepared in:
 
 - `docs/tracker-refresh-drafts.md`
 
-### 3. Explicit parity promotion
+### 3. Linux parity honesty
+
+The main Linux risk is no longer “is there source code?” It is whether the
+current docs and tracker are honest about what is implemented versus what is
+still scaffolding.
+
+The biggest currently non-promotable surfaces are:
+
+- the Linux WebAuthn bridge installs, but request handling is still stubbed
+- the socket/control-plane surface includes several stubbed verbs and mostly
+  no-op Linux action/clipboard callbacks
+- `cmux-term` remains placeholder-only
+
+### 4. Explicit parity promotion
 
 Capabilities must not be promoted based on source presence alone.
 
 The biggest remaining parity gaps are:
 
+- Linux WebAuthn bridge completion, not just WebAuthn validation
+- Linux socket/control-plane parity for write/read and structural commands
 - browser/WebAuthn proof on Tier A distros
 - explicit browser/WebAuthn status recording on Debian 12
 - terminal-first proof on Rocky 10
-- session restore staying below `full` until restore is actually proven
+- session restore and headless mode staying below `full` until implementation
+  and proof exist
 
 ## Current Automation Coverage
 
@@ -149,6 +165,8 @@ Interpretation:
 - `#55` and `#187` are the tracker items most in need of refresh
 - `#199` and `#201` are real, but parallel
 - `#76` is intentionally non-blocking
+- the tracker still does not isolate the Linux WebAuthn, socket-parity, or
+  headless/runtime gaps as dedicated issues
 
 ## Current Non-Blockers
 

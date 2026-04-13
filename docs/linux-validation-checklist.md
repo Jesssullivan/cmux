@@ -150,6 +150,8 @@ Promote to `full` when:
 
 Promote to `full` when:
 - command coverage is verified on a Tier A distro
+- `surface.send_text`, `surface.read_text`, and the core structural operations are implemented and exercised
+- Linux action/clipboard host callbacks are wired for the validated workflow
 - no Linux-specific routing regressions remain open for the validated surface
 
 ### Browser panel
@@ -164,7 +166,11 @@ Keep `distro-specific` while:
 ### WebAuthn
 
 Promote to `full` only when:
+- the bridge request/response path is implemented end-to-end, not just installed
 - a real hardware-backed ceremony succeeds on a validated Tier A distro
+
+Current note:
+- [webauthn_bridge.zig](/Users/jess/git/cmux/cmux-linux/src/webauthn_bridge.zig:61) still has a stub message handler
 
 ### Notifications and lock integration
 
@@ -178,6 +184,19 @@ Promote to `full` only when:
 
 Current note:
 - [session.zig](/Users/jess/git/cmux/cmux-linux/src/session.zig:245) currently returns `false` for restore
+
+### Headless / server mode (`cmux-term`)
+
+Promote to `partial` when:
+- the binary initializes a real terminal runtime
+- a Unix socket control path exists
+- PTY/shell lifecycle exists
+
+Promote to `full` only when:
+- a real SSH/server workflow is validated end-to-end
+
+Current note:
+- [main_headless.zig](/Users/jess/git/cmux/cmux-linux/src/main_headless.zig:23) is still placeholder-only
 
 ## Existing Automation
 
@@ -197,5 +216,10 @@ Current note:
   temporary coverage, not as the target distro itself
 - Rocky 10 tracking and repo issue wording need to match current reality
 - Debian 12 baseline automation exists, but broader browser/WebAuthn status still needs explicit proof
+- Linux WebAuthn bridge install exists, but the message-handling path is still stubbed
+- several Linux socket/control-plane verbs remain stubs, including `surface.send_text`, `surface.read_text`, `pane.break`, `pane.join`, `surface.move`, and `surface.reorder`
+- Linux action and clipboard callbacks are still mostly no-op in the current host layer
 - browser/WebAuthn validation needs a clearly recorded Tier A proof path
 - session restore is not yet ready for promotion
+- `cmux-term` is still placeholder-only
+- fresh package-install proof is not PR-gated today; the KVM workflow runs on push/manual on the self-hosted runner

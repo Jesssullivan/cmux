@@ -126,6 +126,104 @@ Important boundary:
 - this lane should not block Linux parity or distro validation
 ```
 
+## Proposed issue: Linux WebAuthn bridge completion
+
+Suggested issue body:
+
+```md
+## Summary
+
+Linux browser panels currently install a WebAuthn bridge, but the native handler
+is still stubbed.
+
+This is an implementation gap, not just a validation gap.
+
+## Current State
+
+- browser panel setup installs the bridge
+- the native message handler still has TODOs for request parsing, CTAP2 dispatch,
+  and JS reply handling
+- current parity docs should treat Linux WebAuthn as not yet supported end-to-end
+
+## Scope
+
+- parse WebKit bridge messages
+- route requests through the Linux CTAP2 path
+- reply to the page with success/error responses
+- run one real hardware-backed ceremony on a Tier A distro
+
+## Exit Criteria
+
+- Linux WebAuthn request handling is implemented end-to-end
+- one real hardware-backed ceremony succeeds on Ubuntu 24.04 or Fedora 42
+- parity docs can move WebAuthn above `unsupported`
+```
+
+## Proposed issue: Linux socket/control-plane parity audit
+
+Suggested issue body:
+
+```md
+## Summary
+
+Linux socket/API coverage is materially broader on paper than in actual
+implementation.
+
+Several important verbs still acknowledge success without performing the real
+behavior, and some host callbacks are still no-op.
+
+## Current Gaps
+
+- `surface.send_text`
+- `surface.read_text`
+- `pane.break`
+- `pane.join`
+- `surface.move`
+- `surface.reorder`
+- Linux action/clipboard host callbacks
+
+## Scope
+
+- audit Linux socket/API coverage against the macOS control plane
+- implement the highest-value stubbed verbs first
+- document any intentionally deferred commands explicitly
+
+## Exit Criteria
+
+- high-value stubbed verbs are either implemented or explicitly documented as unsupported
+- Linux parity docs stop overstating socket/control-plane readiness
+- one validated Linux distro exercises the implemented command surface
+```
+
+## Proposed issue: Linux session restore and headless runtime
+
+Suggested issue body:
+
+```md
+## Summary
+
+Linux session save/restore and `cmux-term` headless mode are both still below
+the promotable line.
+
+## Current State
+
+- session restore still returns `false` after loading a valid snapshot
+- `cmux-term` is still a placeholder entrypoint and does not start a real
+  terminal/socket runtime
+
+## Scope
+
+- decide whether restore and headless mode should stay one lane or split later
+- implement restore behavior or narrow the documented promise
+- implement a real headless runtime only if it remains part of the supported
+  Linux surface
+
+## Exit Criteria
+
+- session restore status is explicit and proven
+- `cmux-term` is either a real supported mode or explicitly documented as deferred
+```
+
 ## `#201` Tailnet Direct Remote Sessions
 
 Suggested update comment:
@@ -147,4 +245,23 @@ References:
 
 - `docs/linux-program-plan.md`
 - `daemon/remote/README.md`
+```
+
+## Milestone Cleanup
+
+Suggested action:
+
+```md
+Milestone hygiene is behind the codebase.
+
+Current state:
+
+- `M6`, `M7`, `M8`, and `M9` are still open with `0` open issues
+- `M12 — QEMU Distro Testing` is the only milestone with active open work
+
+Suggested cleanup:
+
+1. close `M6`, `M7`, `M8`, and `M9` after confirming they are fully historical
+2. keep `M12` as the active validation milestone
+3. if a broader Linux milestone is still useful, create one that reflects parity + distro proof rather than older architecture phases
 ```

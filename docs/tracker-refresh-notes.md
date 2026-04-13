@@ -21,6 +21,7 @@ Ready-to-edit text lives in:
 Current problem:
 - still reads like a forward-looking Linux architecture epic
 - does not reflect how much of `cmux-linux` already exists in-tree
+- currently hides several important Linux gaps inside one large umbrella
 
 Current repo reality:
 - `cmux-linux` has substantial terminal, workspace, socket, browser, cookie,
@@ -31,6 +32,7 @@ Current repo reality:
 Recommended refresh:
 - keep it open, but rewrite it as a program umbrella
 - split implementation-complete milestones from validation/packaging milestones
+- either add checklist items or spin out dedicated issues for WebAuthn bridge completion, socket/API parity, and headless/session restore
 - reference `docs/linux-program-plan.md` and `docs/linux-parity-matrix.md`
 
 ### `#76` RFC: Linux client naming
@@ -98,13 +100,31 @@ Recommended refresh:
 - `docs/linux-parity-matrix.md`
 - `docs/linux-mvp-architecture.md`
 
+## Missing Explicit Tracker Coverage
+
+Current problem:
+- several high-priority Linux gaps are visible in code and docs, but not as
+  dedicated tracker items
+
+Current repo reality:
+- Linux WebAuthn install exists, but the handler is stubbed
+- Linux socket/control-plane parity still has stubbed verbs and host callbacks
+- session restore and `cmux-term` are not yet promotable
+
+Recommended refresh:
+- either open dedicated issues for those gaps or add explicit checklist items
+  under `#55`
+- keep them separate from distro-validation tracking so implementation gaps do
+  not get mislabeled as “just needs testing”
+
 ## Suggested Update Order
 
 1. `#187` Rocky 10
 2. `#55` Linux epic
-3. `#76` naming RFC
-4. `#199` fork landscape
-5. `#201` remote/Tailnet lane wording
+3. missing explicit Linux gap coverage under `#55` or new issues
+4. `#76` naming RFC
+5. `#199` fork landscape
+6. `#201` remote/Tailnet lane wording
 
 ## Rule
 

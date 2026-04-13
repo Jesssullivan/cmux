@@ -99,6 +99,7 @@ Core domains:
 Required output:
 - a maintained parity matrix in `docs/linux-parity-matrix.md`
 - a validation checklist in `docs/linux-validation-checklist.md`
+- explicit distinction between validation gaps and still-stubbed Linux surfaces
 
 ### 3. Distro Validation
 
@@ -157,7 +158,19 @@ and the current distro support reality.
 Container and Nix proof are now useful, but package-install proof and explicit
 browser/WebAuthn proof still lag on the target distro matrix.
 
-### 4. CI runtime upkeep
+### 4. Stubbed parity surfaces
+
+Some Linux features are still present only as scaffolding:
+
+- WebAuthn bridge install exists, but the handler is still stubbed
+- several socket/control-plane verbs still acknowledge without implementing the
+  real behavior
+- session restore and `cmux-term` are not yet promotable
+
+These should stay visible as implementation work, not be misread as validation
+only.
+
+### 5. CI runtime upkeep
 
 The branch is green, but workflow runtime hygiene still needs maintenance as
 GitHub-hosted actions deprecate older Node versions.
