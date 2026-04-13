@@ -16,11 +16,11 @@ runtime proof, CI proof, or explicit manual validation.
 
 | Capability | Current state | Evidence | Distro note | Next proof needed |
 |---|---|---|---|---|
-| Terminal surfaces and split tree | `partial` | [surface.zig](/Users/jess/git/cmux/cmux-linux/src/surface.zig:1), [split_tree.zig](/Users/jess/git/cmux/cmux-linux/src/split_tree.zig:1), [workspace.zig](/Users/jess/git/cmux/cmux-linux/src/workspace.zig:1), [tab_manager.zig](/Users/jess/git/cmux/cmux-linux/src/tab_manager.zig:1) | all Linux targets | runtime/UI validation across Tier A distros |
+| Terminal surfaces and split tree | `partial` | [surface.zig](/Users/jess/git/cmux/cmux-linux/src/surface.zig:1), [split_tree.zig](/Users/jess/git/cmux/cmux-linux/src/split_tree.zig:1), [workspace.zig](/Users/jess/git/cmux/cmux-linux/src/workspace.zig:1), [tab_manager.zig](/Users/jess/git/cmux/cmux-linux/src/tab_manager.zig:1) | all Linux targets | runtime/UI validation across Ubuntu 24.04 and Fedora 42, plus Debian/Rocky baseline proof |
 | Socket/API control plane | `partial` | [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:1) | all Linux targets | parity audit against macOS command surface |
 | Browser panel | `distro-specific` | [browser.zig](/Users/jess/git/cmux/cmux-linux/src/browser.zig:1), [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:232) | unavailable in `-Dno-webkit` builds; Rocky is currently constrained | browser smoke on Ubuntu, Debian, Fedora |
 | Browser navigation/focus commands | `distro-specific` | [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:232) | same WebKit constraint as browser panel | command-level browser smoke |
-| Browser devtools and find | `distro-specific` | [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:240), [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:243) | same WebKit constraint as browser panel | interactive validation on Tier A distros |
+| Browser devtools and find | `distro-specific` | [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:240), [socket.zig](/Users/jess/git/cmux/cmux-linux/src/socket.zig:243) | same WebKit constraint as browser panel | interactive validation on Ubuntu 24.04 and Fedora 42 |
 | WebAuthn bridge | `distro-specific` | [webauthn_bridge.zig](/Users/jess/git/cmux/cmux-linux/src/webauthn_bridge.zig:1), [browser.zig](/Users/jess/git/cmux/cmux-linux/src/browser.zig:9) | meaningful only where browser/WebKit path exists | manual ceremony on real hardware |
 | Persistent cookies | `distro-specific` | [browser.zig](/Users/jess/git/cmux/cmux-linux/src/browser.zig:170) | same WebKit constraint as browser panel | cookie persistence/import validation |
 | Notifications | `partial` | [notifications.zig](/Users/jess/git/cmux/cmux-linux/src/notifications.zig:1), [main.zig](/Users/jess/git/cmux/cmux-linux/src/main.zig:56) | all Linux targets | desktop notification smoke on GNOME/Wayland |
@@ -33,15 +33,21 @@ runtime proof, CI proof, or explicit manual validation.
 
 ## Distro Interpretation
 
-### Tier A
+### Broad-Feature Targets
 
 These should move toward broad feature parity:
 
 - Ubuntu 24.04
-- Debian 12
 - Fedora 42
 
-### Tier B
+### Package / Runtime Baseline
+
+These are important supported distros, but the repo should record browser
+status explicitly instead of assuming broad feature parity:
+
+- Debian 12
+
+### Constrained Targets
 
 These are supported with explicit constraints:
 

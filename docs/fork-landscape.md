@@ -144,7 +144,9 @@ deciding what is actually blocked.
 
 `cmux-linux` has different practical capability classes today:
 
-- `Ubuntu 24.04`, `Debian 12`, `Fedora 42`: candidates for full-feature Linux
+- `Ubuntu 24.04`, `Fedora 42`: current broad-feature Linux targets
+- `Debian 12`: package/runtime baseline with browser status still needing
+  explicit proof
 - `Rocky 10`: currently a constrained, terminal-first target because WebKitGTK
   is not a normal system-package path there
 

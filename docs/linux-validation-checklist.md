@@ -16,12 +16,11 @@ Use it alongside:
 - treat Rocky 10 as terminal-first unless browser support is proven in a real
   packaging path
 
-## Tier A: Full-Feature Distros
+## Tier A: Broad-Feature Distros
 
 Targets:
 
 - Ubuntu 24.04
-- Debian 12
 - Fedora 42
 
 Required proof on each distro:
@@ -81,7 +80,38 @@ Suggested coverage source:
 - save a session
 - relaunch and confirm current restore behavior matches the documented status
 
-## Tier B: Constrained Distros
+## Tier B: Package / Runtime Baseline
+
+Target:
+
+- Debian 12
+
+Required proof:
+
+### 1. Package install
+
+- package installs successfully
+- `cmux` binary is on `PATH`
+- runtime dependencies resolve
+
+### 2. Runtime launch
+
+- app launches without immediate crash
+- terminal surface appears
+- initial workspace is interactive
+
+### 3. Terminal and socket baseline
+
+- terminal surface is interactive
+- split and focus flows work
+- basic socket/API queries return expected shape
+
+### 4. Browser status
+
+- record browser and WebAuthn status explicitly
+- do not assume Debian 12 is already full-feature just because package install passes
+
+## Tier C: Constrained Distros
 
 Target:
 
@@ -114,7 +144,7 @@ Required proof:
 ### Terminal surfaces and split tree
 
 Promote to `full` when:
-- at least one Tier A distro and Rocky 10 pass the terminal/split smoke
+- at least one Tier A distro, Debian 12 baseline, and Rocky 10 pass the terminal/split smoke
 
 ### Socket/API control plane
 
@@ -128,6 +158,7 @@ Promote to `full` only for Tier A when:
 - open, navigate, focus, devtools, and find all work on validated distros
 
 Keep `distro-specific` while:
+- Debian 12 browser status is not yet fully proven
 - Rocky remains terminal-first
 
 ### WebAuthn
@@ -165,5 +196,6 @@ Current note:
 - Rocky 9 is still being used as an RPM-path proxy and should be treated as
   temporary coverage, not as the target distro itself
 - Rocky 10 tracking and repo issue wording need to match current reality
+- Debian 12 still needs explicit classification between packaging baseline and broader feature support
 - browser/WebAuthn validation needs a clearly recorded Tier A proof path
 - session restore is not yet ready for promotion

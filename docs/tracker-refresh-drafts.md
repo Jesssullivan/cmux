@@ -76,9 +76,10 @@ The current execution docs are now:
 
 The critical-path interpretation is:
 
-1. validate Tier A distros (`Ubuntu 24.04`, `Debian 12`, `Fedora 42`)
-2. validate Rocky 10 as terminal-first
-3. keep Linux delivery separate from manual upstream correspondence
+1. validate broad-feature distros (`Ubuntu 24.04`, `Fedora 42`)
+2. validate `Debian 12` as a package/runtime baseline and record browser status explicitly
+3. validate `Rocky 10` as terminal-first
+4. keep Linux delivery separate from manual upstream correspondence
 ```
 
 ## `#76` Naming RFC

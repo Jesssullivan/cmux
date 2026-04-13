@@ -19,7 +19,7 @@ Deliver a native Linux `cmux` that is:
 
 ## Support Tiers
 
-### Tier A: Full-Feature Linux
+### Tier A: Broad-Feature Linux
 
 These are the distros where Linux-native `cmux` should aim for the broadest
 feature set, including browser-panel work.
@@ -27,10 +27,19 @@ feature set, including browser-panel work.
 | Distro | Why it matters | Expected capability |
 |---|---|---|
 | Ubuntu 24.04 | mainstream LTS baseline | full feature target |
-| Debian 12 | stable deb-family packaging baseline | full feature target |
 | Fedora 42 | modern GNOME/Wayland baseline | full feature target |
 
-### Tier B: Constrained Linux
+### Tier B: Package / Runtime Baseline
+
+These are important supported distros where package install and runtime behavior
+should be proven explicitly, even if the full browser/WebAuthn story is not yet
+represented in the same automation lanes as Tier A.
+
+| Distro | Why it matters | Expected capability |
+|---|---|---|
+| Debian 12 | stable deb-family packaging baseline | package + runtime baseline; browser status must be recorded explicitly |
+
+### Tier C: Constrained Linux
 
 These are supported, but not necessarily full-parity.
 
@@ -156,17 +165,22 @@ stacks on top of it.
 ### Phase 2: Tier A Validation
 
 1. validate Ubuntu 24.04
-2. validate Debian 12
-3. validate Fedora 42
-4. confirm browser/WebAuthn behavior where available
+2. validate Fedora 42
+3. confirm browser/WebAuthn behavior where available
 
 ### Phase 3: Tier B Validation
+
+1. validate Debian 12 package install path
+2. validate Debian 12 runtime and socket baseline
+3. record Debian 12 browser/WebAuthn status explicitly
+
+### Phase 4: Tier C Validation
 
 1. validate Rocky 10 install/runtime path
 2. validate terminal-first behavior on Rocky
 3. document browser constraints explicitly
 
-### Phase 4: Packaging And Release Confidence
+### Phase 5: Packaging And Release Confidence
 
 1. tighten CI coverage
 2. ensure packages match actual install paths
@@ -177,11 +191,12 @@ stacks on top of it.
 The Linux program should only be called healthy when all of the following are
 true:
 
-1. Tier A distros pass package install and runtime smoke.
-2. Tier A distros have explicit browser/WebAuthn status.
-3. Rocky 10 passes terminal-first validation with limitations documented.
-4. dependency pins are reproducible and documented.
-5. the issue tracker reflects current reality instead of old research states.
+1. Ubuntu 24.04 and Fedora 42 pass package install and runtime smoke.
+2. Ubuntu 24.04 and Fedora 42 have explicit browser/WebAuthn status.
+3. Debian 12 passes package install and runtime baseline validation, and its browser status is recorded explicitly.
+4. Rocky 10 passes terminal-first validation with limitations documented.
+5. dependency pins are reproducible and documented.
+6. the issue tracker reflects current reality instead of old research states.
 
 ## Non-Goals
 

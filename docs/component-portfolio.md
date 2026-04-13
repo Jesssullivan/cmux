@@ -34,7 +34,7 @@ As of 2026-04-13:
 
 These are the real blockers or risk areas right now.
 
-### 1. Tier A distro proof is still behind implementation
+### 1. Broad-feature distro proof is still behind implementation
 
 `cmux-linux` has broad implementation coverage, but the project still needs
 repeatable proof on the target distro matrix.
@@ -56,7 +56,7 @@ of target.
 
 Operational effect:
 - Rocky validation should proceed, but browser parity should not be assumed
-- Rocky should not block Tier A full-feature Linux progress
+- Rocky should not block Ubuntu/Fedora broad-feature Linux progress
 
 Primary references:
 - `cmux-linux/build.zig`
@@ -92,14 +92,14 @@ Primary references:
 | Component | Path | Ownership posture | Linux relevance | Current health | Primary blocker / risk | Next move |
 |---|---|---|---|---|---|---|
 | `cmux` | repo root | primary product repo | critical | `green` | issue tracker and validation docs needed cleanup more than core architecture | keep CI green and use docs to drive Linux proof |
-| `cmux-linux` | `cmux-linux/` | in-tree product subtree | critical | `yellow` | validation and parity proof lag implementation | validate Tier A first, then Rocky terminal-first |
+| `cmux-linux` | `cmux-linux/` | in-tree product subtree | critical | `yellow` | validation and parity proof lag implementation | validate Ubuntu/Fedora broad-feature lanes first, then Debian baseline and Rocky terminal-first |
 | `cmuxd` / `cmuxd-remote` | `cmuxd/`, `daemon/remote/` | in-tree service/runtime | medium | `yellow` | Tailnet-direct transport is not implemented yet | keep as separate remote/fleet lane |
 | `ghostty` | `ghostty/` | active fork with carried patches | critical | `yellow` | highest-churn carried dependency, even though pin ancestry is now repaired | keep fork docs current and keep parent bumps on canonical fork `main` |
 | `vendor/bonsplit` | `vendor/bonsplit/` | mostly tracking upstream | medium | `green` | low merge risk compared with Ghostty | keep sync posture clean and record any remaining fork-only delta |
-| `vendor/ctap2` | `vendor/ctap2/` | fork-owned standalone library | high | `green` | Linux/WebAuthn still needs distro-level proof, not repo hygiene work | validate hardware-backed Tier A ceremony |
-| `vendor/zig-keychain` | `vendor/zig-keychain/` | fork-owned standalone library | high | `green` | distro-specific secret-service behavior still needs validation | validate libsecret path on Tier A distros |
+| `vendor/ctap2` | `vendor/ctap2/` | fork-owned standalone library | high | `green` | Linux/WebAuthn still needs distro-level proof, not repo hygiene work | validate hardware-backed broad-feature distro ceremony |
+| `vendor/zig-keychain` | `vendor/zig-keychain/` | fork-owned standalone library | high | `green` | distro-specific secret-service behavior still needs validation | validate libsecret path on Ubuntu/Fedora, then record Debian status |
 | `vendor/zig-crypto` | `vendor/zig-crypto/` | fork-owned standalone library | medium | `green` | not currently blocking product delivery | keep standalone docs and mainline healthy |
-| `vendor/zig-notify` | `vendor/zig-notify/` | fork-owned standalone library | medium | `green` | notification behavior still needs manual Linux validation | validate notification delivery during Tier A smoke |
+| `vendor/zig-notify` | `vendor/zig-notify/` | fork-owned standalone library | medium | `green` | notification behavior still needs manual Linux validation | validate notification delivery during broad-feature distro smoke |
 | `homebrew-cmux` | `homebrew-cmux/` | packaging repo | low | `yellow` | submodule pin is behind `origin/main` by 2 commits | resync when doing the next release hygiene pass |
 
 ## Health Interpretation
@@ -127,10 +127,11 @@ Primary references:
 When work competes for time, use this order:
 
 1. CI or release breakage in `cmux`
-2. Tier A Linux validation
-3. Rocky 10 terminal-first validation
-4. packaging cleanup
-5. upstream-prep and extraction work
+2. Ubuntu/Fedora broad-feature validation
+3. Debian 12 package/runtime baseline validation
+4. Rocky 10 terminal-first validation
+5. packaging cleanup
+6. upstream-prep and extraction work
 
 That ordering is deliberate. Linux delivery depends more on reproducible carried
 dependencies and real distro proof than on expanding the project graph.
