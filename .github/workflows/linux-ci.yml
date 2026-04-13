@@ -11,6 +11,7 @@ on:
       - 'cmuxd/**'
       - 'cmux-linux/**'
       - 'dist/linux/**'
+      - 'scripts/install-zig-ci.sh'
       - 'ghostty'
       - '.github/workflows/linux-ci.yml'
   pull_request:
