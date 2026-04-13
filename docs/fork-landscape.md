@@ -7,6 +7,7 @@ and CI infrastructure that all need to move coherently.
 This document is the operating map for that work.
 
 Operational inventory:
+- `docs/program-status.md`
 - `docs/component-portfolio.md`
 
 ## Why This Exists

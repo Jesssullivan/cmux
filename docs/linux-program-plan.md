@@ -3,6 +3,9 @@
 This document translates the Linux effort from a research project into an
 execution program.
 
+Short current-state readout:
+- `docs/program-status.md`
+
 The goal is straightforward:
 
 Build, package, validate, and ship native Linux `cmux` on a practical distro
