@@ -21,7 +21,7 @@ on:
         required: false
         default: ""
       distro:
-        description: "Distro to test"
+        description: "Distro to test (rocky9 is the current RPM-path proxy for Rocky 10)"
         required: false
         default: "all"
         type: choice
@@ -66,7 +66,7 @@ jobs:
             echo "WARNING: no QEMU binary found in PATH (Nix provides it at build time)"
           fi
 
-      - name: Rocky 9 package test
+      - name: Rocky 9 package test (RPM proxy)
         if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
         run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 

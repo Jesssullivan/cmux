@@ -11,6 +11,10 @@
 #   nix build .#checks.x86_64-linux.distro-debian12
 #   nix build .#checks.x86_64-linux.distro-ubuntu2404
 #
+# Note: `distro-rocky9` is currently a legacy RPM-install proxy. The actual
+# constrained RHEL-family target is Rocky 10, but nix-vm-test does not yet have
+# working Rocky 10 coverage.
+#
 # Requires KVM for acceptable performance (/dev/kvm).
 # Runs on honey self-hosted runner via test-distro.yml.
 {
@@ -53,7 +57,7 @@
     vm.succeed("ldd /usr/bin/cmux 2>&1 | head -20 || echo 'ldd check done'")
   '';
 
-  # ── Test: Rocky Linux 9 RPM install ──────────────────────────────
+  # ── Test: Rocky Linux 9 RPM install proxy ────────────────────────
   distro-rocky9 =
     (nvt.rocky."9_5" {
       sharedDirs = {

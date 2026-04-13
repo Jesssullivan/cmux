@@ -16,10 +16,23 @@ When we change the fork, update this document and the parent submodule SHA.
 Fork rebased onto upstream `main` at `3509ccf78` (`v1.3.1-457-g3509ccf78`) on March 30, 2026.
 Merged upstream through `0a492fdb3` (build: add pkg-config static linking support) on April 4, 2026.
 Synced again with upstream on April 11, 2026 (through `d289f66f`).
-Current cmux fork head: `d2b6f74b8` (merge commit).
-Current cmux pinned fork head: `3b684a085` (`tip-1717-g3b684a085`).
-Fork `main` keeps this pin reachable via merge commit `5c781d710`
-(`Retain layer-background pin ancestry on main`).
+
+As of April 13, 2026:
+
+- Current cmux pinned fork head: `5dd2aa015`
+- Current pushed fork `main`: `5dd2aa015`
+- Current upstream `main`: `7421b4b13`
+
+Important hygiene note:
+
+- the parent repo now points at a commit reachable from pushed fork `main`
+- the sanitized reconciliation branch `origin/sid-upstream-sync-apr13-clean`
+  was merged into fork `main`
+- the prior detached-only parent pin `5080f910e` has been superseded by the
+  canonical fork-main commit `5dd2aa015`
+
+This resolves the earlier branch-topology problem. Future parent-repo Ghostty
+bumps should continue to point only at commits reachable from `origin/main`.
 
 ### 1) macOS display link restart on display changes
 
