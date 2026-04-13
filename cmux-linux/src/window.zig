@@ -2,7 +2,6 @@
 ///
 /// Sprint 1: single terminal surface per window.
 /// Sprint 2: AdwTabView for multiple tabs + sidebar workspace list.
-
 const std = @import("std");
 const c = @import("c_api.zig");
 const TabManager = @import("tab_manager.zig").TabManager;
@@ -66,7 +65,7 @@ pub fn createWindow(gtk_app: *c.GtkApplication, ghostty_app: c.ghostty_app_t) vo
     tab_manager.setTabView(tab_view, ghostty_app);
 
     // Build sidebar
-    sidebar = Sidebar.create(&tab_manager);
+    sidebar.init(&tab_manager);
 
     // Assemble layout: header + tab view content
     c.gtk.gtk_box_append(@ptrCast(@alignCast(content_box)), @ptrCast(@alignCast(header)));
