@@ -6,6 +6,7 @@ Use it as the top-level readout for current health, blockers, and next actions.
 It complements, rather than replaces:
 
 - `docs/fork-landscape.md`
+- `docs/cache-ownership-policy.md`
 - `docs/component-portfolio.md`
 - `docs/linux-program-plan.md`
 - `docs/linux-parity-matrix.md`
@@ -99,6 +100,8 @@ Current read:
 
 - the branch Linux CI matrix is fully green
 - the remaining CI hygiene issue is Actions runtime drift, not Linux breakage
+- cache policy is explicit: personal forks use Magic Nix Cache by default,
+  while FlakeHub Cache remains an org-owned repo lane
 
 ### Distro package-test VM coverage
 
@@ -157,6 +160,7 @@ repo hygiene:
 - Tailnet-direct transport
 - Homebrew sync hygiene
 - naming decisions
+- moving personal forks into `tinyland-inc` purely to satisfy FlakeHub Cache
 
 ## Next Actions
 

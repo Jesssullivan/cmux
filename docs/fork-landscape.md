@@ -9,6 +9,7 @@ This document is the operating map for that work.
 Operational inventory:
 - `docs/program-status.md`
 - `docs/component-portfolio.md`
+- `docs/cache-ownership-policy.md`
 
 ## Why This Exists
 
@@ -99,6 +100,7 @@ Tracking ledger:
 - the checked-in repo state is authoritative for shipping work
 - fork docs must match the checked-in submodule pins
 - issue trackers should describe current reality, not historical intent
+- cache strategy must follow canonical repository ownership, not override it
 
 ### Submodule Policy
 

@@ -46,6 +46,8 @@
 These docs describe the current multi-repo and Linux program shape:
 
 - `docs/fork-landscape.md` — repository graph, governance lanes, and fork hygiene
+- `docs/cache-ownership-policy.md` — repository ownership boundary for FlakeHub Cache vs Magic Nix Cache
+- `docs/ci-cache-runbook.md` — tactical guide for enabling FlakeHub Cache or falling back to Magic Nix Cache
 - `docs/program-status.md` — short operational readout of current health, blockers, and next actions
 - `docs/component-portfolio.md` — health and ownership view of carried repos and packages
 - `docs/upstream-ingestion-playbook.md` — human process for upstream merges and carried patches
