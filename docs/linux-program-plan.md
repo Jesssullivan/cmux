@@ -152,10 +152,15 @@ full-parity browser target.
 The Linux epic and Rocky tracking issues need to reflect the current codebase
 and the current distro support reality.
 
-### 3. Dependency hygiene
+### 3. Package-install and browser proof
 
-The `ghostty` fork state needs to be made reproducible before more Linux work
-stacks on top of it.
+Container and Nix proof are now useful, but package-install proof and explicit
+browser/WebAuthn proof still lag on the target distro matrix.
+
+### 4. CI runtime upkeep
+
+The branch is green, but workflow runtime hygiene still needs maintenance as
+GitHub-hosted actions deprecate older Node versions.
 
 ## Execution Order
 

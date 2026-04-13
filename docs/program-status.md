@@ -27,6 +27,9 @@ As of 2026-04-13:
   issue bodies still describe an older phase of the project
 - packaging health is medium: Homebrew is slightly behind, and Linux package
   proof is still uneven across the distro matrix
+- CI runtime hygiene is medium: the Linux branch is green, but GitHub Actions
+  runtime upkeep still needs steady attention as hosted actions deprecate older
+  Node versions
 
 ## Current Critical Path
 
@@ -81,6 +84,7 @@ The biggest remaining parity gaps are:
 
 Current branch coverage includes:
 
+- `Ubuntu 24.04`
 - `Fedora 42`
 - `Rocky 10`
 - `Debian 12` baseline, `-Dno-webkit`
@@ -90,6 +94,11 @@ Current branch coverage includes:
 
 This is useful build/static/runtime-baseline evidence, but it is not the same
 as package-install proof.
+
+Current read:
+
+- the branch Linux CI matrix is fully green
+- the remaining CI hygiene issue is Actions runtime drift, not Linux breakage
 
 ### Distro package-test VM coverage
 
@@ -143,6 +152,7 @@ Interpretation:
 These lanes matter, but they should not take priority over distro proof and
 repo hygiene:
 
+- replacing `mlugg/setup-zig@v2` to eliminate the last Node 20 deprecation noise
 - manual upstream-prep and correspondence
 - Tailnet-direct transport
 - Homebrew sync hygiene
@@ -151,11 +161,13 @@ repo hygiene:
 ## Next Actions
 
 1. Use the current Linux CI rerun as the proof base for the Debian 12 baseline
-   lane; the substantive distro jobs are green even if the hosted Nix post-step
-   still needs classification.
+   lane and the Ubuntu/Fedora broad-feature lanes; the current branch matrix is
+   green.
 2. Refresh `#187`, `#55`, and `#76` using `docs/tracker-refresh-drafts.md`.
 3. Keep Ubuntu/Fedora as the broad-feature proof target and Debian as the
    explicit baseline target.
 4. Keep Rocky 10 terminal-first until a real browser/package path exists.
-5. Avoid opening new architectural lanes until the existing parity matrix is
+5. Replace or isolate the remaining `mlugg/setup-zig@v2` call sites as a
+   separate CI hygiene follow-up.
+6. Avoid opening new architectural lanes until the existing parity matrix is
    promoted with real validation.
