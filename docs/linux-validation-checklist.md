@@ -196,6 +196,6 @@ Current note:
 - Rocky 9 is still being used as an RPM-path proxy and should be treated as
   temporary coverage, not as the target distro itself
 - Rocky 10 tracking and repo issue wording need to match current reality
-- Debian 12 still needs explicit classification between packaging baseline and broader feature support
+- Debian 12 baseline automation exists, but broader browser/WebAuthn status still needs explicit proof
 - browser/WebAuthn validation needs a clearly recorded Tier A proof path
 - session restore is not yet ready for promotion
