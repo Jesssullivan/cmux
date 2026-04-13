@@ -45,10 +45,7 @@ jobs:
           echo "Building Linux packages for $TAG (version $VERSION)"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Install build dependencies
         run: |
@@ -233,10 +230,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build vendor libraries
         run: |

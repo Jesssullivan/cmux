@@ -81,10 +81,7 @@ jobs:
         run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Install Linux dependencies
         run: |
@@ -323,10 +320,7 @@ jobs:
           echo "WebKitGTK intentionally omitted in Debian 12 baseline lane"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build zig-ctap2
         run: |
@@ -424,10 +418,7 @@ jobs:
           echo "WebKitGTK version: $WEBKIT_VER"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build zig-ctap2
         run: |
@@ -524,10 +515,7 @@ jobs:
           echo "WebKitGTK version: $WEBKIT_VER"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build zig-ctap2
         run: |
@@ -603,10 +591,7 @@ jobs:
           echo "libadwaita version: $ADWAITA_VER"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build zig-ctap2
         run: |
@@ -688,15 +673,7 @@ jobs:
 
       - name: Install Zig
         run: |
-          # Install Zig manually — mlugg/setup-zig overwrites $PATH in
-          # Rocky 10 containers, breaking sh access for subsequent steps.
-          ZIG_VERSION="0.15.2"
-          ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
-          echo "Downloading: $ZIG_URL"
-          mkdir -p /opt/zig
-          curl -fSL "$ZIG_URL" | tar xJ --strip-components=1 -C /opt/zig
-          ln -s /opt/zig/zig /usr/local/bin/zig
-          zig version
+          bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build zig-ctap2
         run: |
