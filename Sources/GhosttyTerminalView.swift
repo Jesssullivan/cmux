@@ -6398,12 +6398,19 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             let isPerformable = (bindingFlags.rawValue & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue) != 0
 
             // If the binding is consumed and not meant for the menu, allow menu first.
-            if isConsumed && !isAll && !isPerformable && keySequence.isEmpty && keyTables.isEmpty {
+            // Performable bindings (e.g. paste_from_clipboard) also need the menu
+            // path so that Edit > Paste handles Cmd+V instead of keyDown double-
+            // firing the clipboard request through both interpretKeyEvents and
+            // ghostty_surface_key.
+            if isConsumed && !isAll && keySequence.isEmpty && keyTables.isEmpty {
                 if let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
                     return true
                 }
             }
 
+            // For performable bindings where the menu didn't handle the event,
+            // fall through to keyDown so Ghostty can perform the action directly
+            // (e.g. paste when no menu item exists).
             keyDown(with: event)
             return true
         }
@@ -9275,6 +9282,13 @@ final class GhosttySurfaceScrollView: NSView {
     /// Request an immediate terminal redraw after geometry updates so stale IOSurface
     /// contents do not remain stretched during live resize churn.
     func refreshSurfaceNow(reason: String = "portal.refreshSurfaceNow") {
+        // Portal reparent/reveal can settle geometry a tick before AppKit finishes
+        // realizing the terminal subtree's backing layer state. Flush display for the
+        // hosted subtree first so forceRefresh does not race a still-unrealized layer.
+        layoutSubtreeIfNeeded()
+        surfaceView.layoutSubtreeIfNeeded()
+        displayIfNeeded()
+        surfaceView.displayIfNeeded()
         surfaceView.terminalSurface?.forceRefresh(reason: reason)
     }
 
