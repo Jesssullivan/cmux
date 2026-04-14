@@ -1041,13 +1041,25 @@ fn handleSurfaceCurrent(alloc: Allocator, _: json.Value) []const u8 {
 
 fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
-    const ws = if (getParamString(params, "workspace_id")) |id_str|
-        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    const workspace_found = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"invalid workspace_id\"}"
+    else
+        null;
+
+    const ws = if (workspace_found) |found|
+        found.ws
+    else if (getParamString(params, "surface_id")) |id_str|
+        if (findSurfaceGlobal(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid surface_id\"}"
     else
         tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
 
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (workspace_found != null)
+            findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        else if (findSurfaceGlobal(tm, id_str)) |found|
+            found.id
+        else
+            return "{\"error\":\"invalid surface_id\"}"
     else
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
@@ -1084,13 +1096,25 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
 
 fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
-    const ws = if (getParamString(params, "workspace_id")) |id_str|
-        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    const workspace_found = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"invalid workspace_id\"}"
+    else
+        null;
+
+    const ws = if (workspace_found) |found|
+        found.ws
+    else if (getParamString(params, "surface_id")) |id_str|
+        if (findSurfaceGlobal(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid surface_id\"}"
     else
         tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
 
     const target_id = if (getParamString(params, "surface_id")) |id_str|
-        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        if (workspace_found != null)
+            findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        else if (findSurfaceGlobal(tm, id_str)) |found|
+            found.id
+        else
+            return "{\"error\":\"invalid surface_id\"}"
     else
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
