@@ -467,7 +467,7 @@ fn writeJsonString(writer: anytype, text: []const u8) !void {
             '\t' => try writer.writeAll("\\t"),
             0x08 => try writer.writeAll("\\b"),
             0x0c => try writer.writeAll("\\f"),
-            0x00...0x1f => try writer.print("\\u00{x:0>2}", .{ch}),
+            0x00...0x07, 0x0b, 0x0e...0x1f => try writer.print("\\u00{x:0>2}", .{ch}),
             else => try writer.writeByte(ch),
         }
     }
