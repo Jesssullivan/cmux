@@ -1041,7 +1041,10 @@ fn handleSurfaceCurrent(alloc: Allocator, _: json.Value) []const u8 {
 
 fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
-    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
 
     const target_id = if (getParamString(params, "surface_id")) |id_str|
         findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
@@ -1081,7 +1084,10 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
 
 fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
-    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
 
     const target_id = if (getParamString(params, "surface_id")) |id_str|
         findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
