@@ -146,9 +146,13 @@ to be audited carefully instead of hand-waved.
 
 ### 3. Release tests are pinned to a checked-in artifact manifest
 
-`nix/tests-distro.nix` currently references a specific checked-in release tag
-and hashes. That is reproducible, but it is not yet a clean end-to-end release
-pipeline for the newest artifacts.
+`nix/tests-distro.nix` now reads a checked-in release manifest by default, with
+an optional local override manifest path for validating a specific release tag.
+The workflow-generated override intentionally fails if a release exposes more
+than one matching `DEB` or `RPM`, so artifact taxonomy drift shows up as an
+explicit packaging decision instead of being hidden behind `head -1`. That is
+better than inline hardcoding, but it is still not yet a clean end-to-end
+release pipeline for the newest just-built artifacts.
 
 ### 4. Fresh-install proof is not part of release gating yet
 

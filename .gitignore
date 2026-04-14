@@ -43,6 +43,7 @@ node_modules/
 # Test outputs
 tests/visual_output/
 tests/visual_report.html
+nix/release-artifacts.override.nix
 
 # Local scratch (screenshots, etc.)
 tmp/
