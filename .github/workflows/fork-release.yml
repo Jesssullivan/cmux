@@ -19,7 +19,7 @@ jobs:
     name: Build, sign, and package macOS .app
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -27,10 +27,7 @@ jobs:
         run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Download pre-built GhosttyKit
         env:

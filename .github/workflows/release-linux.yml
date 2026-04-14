@@ -24,7 +24,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -45,10 +45,7 @@ jobs:
           echo "Building Linux packages for $TAG (version $VERSION)"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Install build dependencies
         run: |
@@ -98,9 +95,8 @@ jobs:
           Homepage: https://github.com/Jesssullivan/cmux
           Section: x11
           Priority: optional
-          Depends: libgtk-4-1 (>= 4.10), libadwaita-1-0 (>= 1.3)
-          Recommends: libsecret-1-0, libnotify4
-          Description: Terminal multiplexer with split panes, workspaces, and WebAuthn
+          Depends: libgtk-4-1 (>= 4.10), libadwaita-1-0 (>= 1.3), libwebkitgtk-6.0-4
+          Description: Terminal multiplexer with split panes and workspaces
            cmux is a GTK4 terminal multiplexer built on libghostty.
           CTRL
 
@@ -213,7 +209,7 @@ jobs:
             freetype-devel harfbuzz-devel fontconfig-devel \
             libpng-devel oniguruma-devel mesa-libGL-devel
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -233,10 +229,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build vendor libraries
         run: |
@@ -313,10 +306,106 @@ jobs:
           name: cmux-linux-rpm
           path: cmux-*.rpm
 
+  validate-distro-install:
+    name: Validate Linux packages in distro VMs
+    needs: [build-deb, build-rpm]
+    runs-on: [self-hosted, linux, kvm, cmux-distro-test]
+    environment: distro-tests
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Download Linux package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Generate local release artifact override manifest
+        run: |
+          set -euo pipefail
+
+          mapfile -t DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*.deb' | sort)
+          mapfile -t RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.rpm' | sort)
+
+          if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one DEB artifact, found ${#DEB_PATHS[@]}"
+            printf '%s\n' "${DEB_PATHS[@]}"
+            exit 1
+          fi
+
+          if [ "${#RPM_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one RPM artifact, found ${#RPM_PATHS[@]}"
+            printf '%s\n' "${RPM_PATHS[@]}"
+            exit 1
+          fi
+
+          DEB_PATH="$(realpath "${DEB_PATHS[0]}")"
+          RPM_PATH="$(realpath "${RPM_PATHS[0]}")"
+          DEB_NAME="$(basename "$DEB_PATH")"
+          RPM_NAME="$(basename "$RPM_PATH")"
+
+          cat > nix/release-artifacts.override.nix <<EOF
+          {
+            assets = {
+              deb = {
+                name = "${DEB_NAME}";
+                path = ${DEB_PATH};
+              };
+              rpm = {
+                name = "${RPM_NAME}";
+                path = ${RPM_PATH};
+              };
+            };
+          }
+          EOF
+
+          echo "Generated local release-artifacts override:"
+          cat nix/release-artifacts.override.nix
+
+      - name: Verify KVM access
+        run: |
+          echo "=== KVM device ==="
+          ls -la /dev/kvm
+          test -c /dev/kvm || { echo "ERROR: /dev/kvm not found"; exit 1; }
+          test -r /dev/kvm || { echo "ERROR: /dev/kvm not readable"; exit 1; }
+          echo "=== QEMU version ==="
+          if command -v qemu-system-x86_64 &>/dev/null; then
+            qemu-system-x86_64 --version | head -1
+          elif [ -x /usr/libexec/qemu-kvm ]; then
+            /usr/libexec/qemu-kvm --version | head -1
+          else
+            echo "WARNING: no QEMU binary found in PATH (Nix provides it at build time)"
+          fi
+
+      - name: Rocky 9 package test (RPM proxy)
+        run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
+
+      - name: Debian 12 package test
+        run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+
+      - name: Ubuntu 24.04 package test
+        run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+
+      - name: Upload distro validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-distro-test-logs-${{ github.run_id }}
+          path: |
+            result/
+            /tmp/distro-tests-*
+          retention-days: 7
+          if-no-files-found: ignore
+
   # ── Upload to GitHub release ─────────────────────────────────────
   release:
     name: Upload Linux packages to release
-    needs: [build-deb, build-rpm]
+    needs: [build-deb, build-rpm, validate-distro-install]
     runs-on: ubuntu-latest
     permissions:
       contents: write

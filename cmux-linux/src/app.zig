@@ -2,7 +2,6 @@
 ///
 /// These functions are called by libghostty when it needs the host
 /// application to perform actions (clipboard, new tabs, close, etc.).
-
 const std = @import("std");
 const c = @import("c_api.zig");
 const window = @import("window.zig");
@@ -22,7 +21,7 @@ pub fn onAction(
 /// Returns false when clipboard data is not available.
 pub fn onReadClipboard(
     _: ?*anyopaque,
-    _: c_uint,
+    _: c.ghostty.ghostty_clipboard_e,
     _: ?*anyopaque,
 ) callconv(.c) bool {
     return false;
@@ -33,7 +32,7 @@ pub fn onConfirmReadClipboard(
     _: ?*anyopaque,
     _: [*c]const u8,
     _: ?*anyopaque,
-    _: c_uint,
+    _: c.ghostty.ghostty_clipboard_request_e,
 ) callconv(.c) void {}
 
 /// Write clipboard callback: libghostty wants to set clipboard contents.

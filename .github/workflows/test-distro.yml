@@ -21,7 +21,7 @@ on:
         required: false
         default: ""
       distro:
-        description: "Distro to test"
+        description: "Distro to test (rocky9 is the current RPM-path proxy for Rocky 10)"
         required: false
         default: "all"
         type: choice
@@ -30,6 +30,10 @@ on:
           - rocky9
           - debian12
           - ubuntu2404
+      release_tag:
+        description: "Optional GitHub release tag to validate instead of the checked-in manifest (e.g. lab-v0.75.0)"
+        required: false
+        default: ""
 
 concurrency:
   group: test-distro-${{ github.ref }}
@@ -37,18 +41,76 @@ concurrency:
 
 jobs:
   distro-tests:
-    name: Distro package tests (neo)
+    name: Distro package tests (self-hosted KVM)
     runs-on: [self-hosted, linux, kvm, cmux-distro-test]
     environment: distro-tests
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
 
       - name: Strip non-version tags from ghostty
         run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Generate release artifact override manifest
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          TMPDIR="$(mktemp -d)"
+          trap 'rm -rf "$TMPDIR"' EXIT
+
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'cmux_*.deb' \
+            --pattern 'cmux-*.rpm' \
+            --dir "$TMPDIR"
+
+          mapfile -t DEB_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux_*.deb' | sort)
+          mapfile -t RPM_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux-*.rpm' | sort)
+
+          if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one DEB asset for $TAG, found ${#DEB_PATHS[@]}"
+            printf '%s\n' "${DEB_PATHS[@]}"
+            exit 1
+          fi
+
+          if [ "${#RPM_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one RPM asset for $TAG, found ${#RPM_PATHS[@]}"
+            printf '%s\n' "${RPM_PATHS[@]}"
+            exit 1
+          fi
+
+          DEB_PATH="${DEB_PATHS[0]}"
+          RPM_PATH="${RPM_PATHS[0]}"
+
+          DEB_NAME="$(basename "$DEB_PATH")"
+          RPM_NAME="$(basename "$RPM_PATH")"
+          DEB_HASH="$(nix hash file --type sha256 --sri "$DEB_PATH")"
+          RPM_HASH="$(nix hash file --type sha256 --sri "$RPM_PATH")"
+
+          cat > nix/release-artifacts.override.nix <<EOF
+          {
+            releaseTag = "${TAG}";
+            assets = {
+              deb = {
+                name = "${DEB_NAME}";
+                hash = "${DEB_HASH}";
+              };
+              rpm = {
+                name = "${RPM_NAME}";
+                hash = "${RPM_HASH}";
+              };
+            };
+          }
+          EOF
+
+          echo "Generated nix/release-artifacts.override.nix for ${TAG}"
+          cat nix/release-artifacts.override.nix
 
       - name: Verify KVM access
         run: |
@@ -66,7 +128,7 @@ jobs:
             echo "WARNING: no QEMU binary found in PATH (Nix provides it at build time)"
           fi
 
-      - name: Rocky 9 package test
+      - name: Rocky 9 package test (RPM proxy)
         if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
         run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 
@@ -75,7 +137,7 @@ jobs:
         if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
         run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
 
-      - name: Ubuntu 24.04 package test (Mint proxy)
+      - name: Ubuntu 24.04 package test
         if: inputs.distro == 'all' || inputs.distro == 'ubuntu2404' || inputs.distro == ''
         run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
 

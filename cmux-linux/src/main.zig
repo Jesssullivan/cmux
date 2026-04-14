@@ -2,7 +2,6 @@
 ///
 /// Entry point: creates a GtkApplication with libadwaita, initializes
 /// libghostty, and runs the main event loop.
-
 const std = @import("std");
 const posix = std.posix;
 const c = @import("c_api.zig");
@@ -99,12 +98,12 @@ pub fn main() !void {
     const runtime_config = c.ghostty.ghostty_runtime_config_s{
         .userdata = null,
         .supports_selection_clipboard = false,
-        .wakeup_cb = &onWakeup,
-        .action_cb = &app_mod.onAction,
-        .read_clipboard_cb = &app_mod.onReadClipboard,
-        .confirm_read_clipboard_cb = &app_mod.onConfirmReadClipboard,
-        .write_clipboard_cb = &app_mod.onWriteClipboard,
-        .close_surface_cb = &app_mod.onCloseSurface,
+        .wakeup_cb = @as(c.ghostty.ghostty_runtime_wakeup_cb, &onWakeup),
+        .action_cb = @as(c.ghostty.ghostty_runtime_action_cb, &app_mod.onAction),
+        .read_clipboard_cb = @as(c.ghostty.ghostty_runtime_read_clipboard_cb, &app_mod.onReadClipboard),
+        .confirm_read_clipboard_cb = @as(c.ghostty.ghostty_runtime_confirm_read_clipboard_cb, &app_mod.onConfirmReadClipboard),
+        .write_clipboard_cb = @as(c.ghostty.ghostty_runtime_write_clipboard_cb, &app_mod.onWriteClipboard),
+        .close_surface_cb = @as(c.ghostty.ghostty_runtime_close_surface_cb, &app_mod.onCloseSurface),
     };
 
     ghostty_app = c.ghostty.ghostty_app_new(&runtime_config, config);

@@ -39,6 +39,25 @@
 | `./scripts/reloadp.sh` | Build and launch Release app |
 | `./scripts/reload2.sh` | Reload both Debug and Release |
 | `./scripts/rebuild.sh` | Clean rebuild |
+| `./scripts/report-fork-health.sh` | Report parent/submodule hygiene and pin ancestry |
+
+## Project Maps
+
+These docs describe the current multi-repo and Linux program shape:
+
+- `docs/fork-landscape.md` — repository graph, governance lanes, and fork hygiene
+- `docs/cache-ownership-policy.md` — repository ownership boundary for FlakeHub Cache vs Magic Nix Cache
+- `docs/ci-cache-runbook.md` — tactical guide for enabling FlakeHub Cache or falling back to Magic Nix Cache
+- `docs/program-status.md` — short operational readout of current health, blockers, and next actions
+- `docs/component-portfolio.md` — health and ownership view of carried repos and packages
+- `docs/upstream-ingestion-playbook.md` — human process for upstream merges and carried patches
+- `docs/upstream-candidate-ledger.md` — local ledger for upstream-prep work; manual submission only
+- `docs/ghostty-fork.md` — carried Ghostty patches and current submodule notes
+- `docs/linux-program-plan.md` — execution plan for Linux-native `cmux`
+- `docs/linux-parity-matrix.md` — conservative Linux capability matrix
+- `docs/linux-validation-checklist.md` — concrete distro validation checklist
+- `docs/tracker-refresh-notes.md` — local prep notes for issue and roadmap grooming
+- `docs/linux-mvp-architecture.md` — architecture decision record for the Linux port
 
 ## Rebuilding GhosttyKit
 
@@ -75,17 +94,17 @@ git checkout -b my-feature
 # make changes
 git add .
 git commit -m "Description of changes"
-git push manaflow my-feature
+git push origin my-feature
 ```
 
 ### Keeping the fork updated
 
 ```bash
 cd ghostty
-git fetch origin
+git fetch upstream
 git checkout main
-git merge origin/main
-git push manaflow main
+git merge upstream/main
+git push origin main
 ```
 
 Then update the parent repo:
@@ -96,7 +115,8 @@ git add ghostty
 git commit -m "Update ghostty submodule"
 ```
 
-See `docs/ghostty-fork.md` for details on fork changes and conflict notes.
+See `docs/ghostty-fork.md` for details on fork changes, current carried patches,
+and conflict notes.
 
 ## License
 

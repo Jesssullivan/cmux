@@ -1,47 +1,27 @@
-/// Sidebar: workspace list in an AdwNavigationSplitView.
+/// Sidebar: workspace list in a GTK container compatible with older libadwaita.
 ///
 /// Shows all workspaces with color dots, titles, and directory info.
 /// Click to select, right-click for context menu.
 /// Maps to macOS ContentView.swift sidebar.
-
 const std = @import("std");
 const c = @import("c_api.zig");
 const TabManager = @import("tab_manager.zig").TabManager;
 const Workspace = @import("workspace.zig").Workspace;
 
 pub const Sidebar = struct {
-    split_view: ?*c.gtk.AdwNavigationSplitView = null,
+    root_widget: ?*c.GtkWidget = null,
     list_box: ?*c.gtk.GtkListBox = null,
     tab_manager: ?*TabManager = null,
 
-    /// Create the sidebar + content split layout.
-    /// Returns the root widget to embed in the window.
-    pub fn create(tab_manager: *TabManager) Sidebar {
-        var self = Sidebar{ .tab_manager = tab_manager };
+    /// Initialize the sidebar in place so signal userdata points at stable storage.
+    pub fn init(self: *Sidebar, tab_manager: *TabManager) void {
+        self.* = .{
+            .root_widget = null,
+            .list_box = null,
+            .tab_manager = tab_manager,
+        };
 
-        // Create the split view (sidebar + content)
-        self.split_view = @ptrCast(c.gtk.adw_navigation_split_view_new());
-
-        // Sidebar panel
-        const sidebar_page = c.gtk.adw_navigation_page_new(
-            createSidebarContent(&self),
-            "Workspaces",
-        );
-        c.gtk.adw_navigation_split_view_set_sidebar(self.split_view.?, sidebar_page);
-
-        // Content panel (placeholder — updated when workspace is selected)
-        const content_box = c.gtk.gtk_box_new(c.gtk.GTK_ORIENTATION_VERTICAL, 0);
-        const content_page = c.gtk.adw_navigation_page_new(
-            @ptrCast(@alignCast(content_box)),
-            "Terminal",
-        );
-        c.gtk.adw_navigation_split_view_set_content(self.split_view.?, content_page);
-
-        // Sidebar width
-        c.gtk.adw_navigation_split_view_set_min_sidebar_width(self.split_view.?, 180);
-        c.gtk.adw_navigation_split_view_set_max_sidebar_width(self.split_view.?, 400);
-
-        return self;
+        self.root_widget = createSidebarContent(self);
     }
 
     fn createSidebarContent(self: *Sidebar) *c.GtkWidget {
@@ -148,7 +128,7 @@ pub const Sidebar = struct {
 
     /// Get the root widget for embedding in the window.
     pub fn widget(self: *const Sidebar) ?*c.GtkWidget {
-        return @ptrCast(@alignCast(self.split_view));
+        return self.root_widget;
     }
 
     fn onRowSelected(

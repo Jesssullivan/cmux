@@ -20,7 +20,7 @@ jobs:
     name: Sync from manaflow-ai/cmux
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
@@ -266,10 +266,7 @@ jobs:
 
       - name: Install Zig
         if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Download pre-built GhosttyKit
         if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'true' && steps.verify.outputs.files_ok == 'true'

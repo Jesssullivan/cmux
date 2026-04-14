@@ -15,7 +15,7 @@ jobs:
     name: Build macOS (LAB)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -23,10 +23,7 @@ jobs:
         run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-          use-cache: false
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
 
       - name: Build GhosttyKit.xcframework
         run: |
@@ -78,7 +75,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -88,7 +85,14 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3
         with:
           extra-conf: "sandbox = relaxed"
-      - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: Enable FlakeHub Cache
+        if: vars.FLAKEHUB_CACHE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork != true)
+        uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: Enable Magic Nix Cache
+        if: vars.FLAKEHUB_CACHE_ENABLED != 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true)
+        uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Verify dev shell
         run: nix develop --command bash -c 'echo "zig $(zig version) — dev shell OK"'
