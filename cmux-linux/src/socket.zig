@@ -4,13 +4,15 @@
 /// Protocol: newline-delimited JSON-RPC over Unix stream socket.
 /// Response format: {"id": N, "ok": true, "result": {...}} or {"id": N, "ok": false, "error": {...}}
 /// Maps to macOS SocketControlSettings.swift + TerminalController.
-
 const std = @import("std");
 const posix = std.posix;
 const c = @import("c_api.zig");
 const window = @import("window.zig");
-const Workspace = @import("workspace.zig").Workspace;
+const workspace_mod = @import("workspace.zig");
+const Workspace = workspace_mod.Workspace;
+const Panel = workspace_mod.Panel;
 const split_tree = @import("split_tree.zig");
+const surface_mod = @import("surface.zig");
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.socket);
@@ -398,6 +400,62 @@ fn isNoSurface() bool {
     return std.posix.getenv("CMUX_NO_SURFACE") != null;
 }
 
+fn getTerminalGhosttySurface(panel: *Panel) ?c.ghostty.ghostty_surface_t {
+    if (panel.widget) |widget| {
+        if (surface_mod.fromWidget(widget)) |surface| {
+            return surface.ghostty_surface;
+        }
+    }
+    return panel.surface;
+}
+
+fn trimToLastLines(text: []const u8, line_limit: usize) []const u8 {
+    if (line_limit == 0) return text;
+    if (text.len == 0) return text;
+
+    var newlines_seen: usize = 0;
+    var idx: usize = text.len;
+    while (idx > 0) {
+        idx -= 1;
+        if (text[idx] == '\n') {
+            newlines_seen += 1;
+            if (newlines_seen >= line_limit) {
+                if (idx + 1 < text.len) return text[idx + 1 ..];
+                return "";
+            }
+        }
+    }
+    return text;
+}
+
+fn normalizeSocketText(alloc: Allocator, text: []const u8) ![]u8 {
+    if (std.mem.indexOfScalar(u8, text, '\n') == null) {
+        return alloc.dupe(u8, text);
+    }
+
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        const ch = text[i];
+        if (ch == '\r') {
+            try buf.append(alloc, '\r');
+            if (i + 1 < text.len and text[i + 1] == '\n') {
+                i += 1;
+            }
+            continue;
+        }
+        if (ch == '\n') {
+            try buf.append(alloc, '\r');
+            continue;
+        }
+        try buf.append(alloc, ch);
+    }
+
+    return buf.toOwnedSlice(alloc);
+}
+
 fn getParamString(params: json.Value, key: []const u8) ?[]const u8 {
     if (params != .object) return null;
     const val = params.object.get(key) orelse return null;
@@ -442,17 +500,20 @@ fn handleIdentify(alloc: Allocator, _: json.Value) []const u8 {
     if (ws.focused_panel_id) |pid| {
         const panel_hex = formatId(pid);
         if (has_win) {
-            return std.fmt.allocPrint(alloc,
+            return std.fmt.allocPrint(
+                alloc,
                 "{{\"focused\":{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\",\"window_id\":\"{s}\"}}}}",
                 .{ ws_id, panel_hex, @as([]const u8, &win_hex) },
             ) catch "{\"focused\":{}}";
         }
-        return std.fmt.allocPrint(alloc,
+        return std.fmt.allocPrint(
+            alloc,
             "{{\"focused\":{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}}}",
             .{ ws_id, panel_hex },
         ) catch "{\"focused\":{}}";
     }
-    return std.fmt.allocPrint(alloc,
+    return std.fmt.allocPrint(
+        alloc,
         "{{\"focused\":{{\"workspace_id\":\"{s}\"}}}}",
         .{ws_id},
     ) catch "{\"focused\":{}}";
@@ -539,8 +600,7 @@ fn handleWorkspaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     ensureDefaultWindow();
     const target_win = if (getParamString(params, "window_id")) |wid_str|
         findWindowByRef(wid_str)
-    else
-        if (window_count > 0) &window_store[0] else null;
+    else if (window_count > 0) &window_store[0] else null;
     if (target_win) |w| w.addWorkspace(ws.id);
 
     const ws_id = formatId(ws.id);
@@ -954,7 +1014,7 @@ fn handleSurfaceCurrent(alloc: Allocator, _: json.Value) []const u8 {
     return std.fmt.allocPrint(alloc, "{{\"surface_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
 }
 
-fn handleSurfaceSendText(_: Allocator, params: json.Value) []const u8 {
+fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
 
@@ -964,20 +1024,102 @@ fn handleSurfaceSendText(_: Allocator, params: json.Value) []const u8 {
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
     const text = getParamString(params, "text") orelse return "{\"error\":\"missing text\"}";
-    _ = text;
 
-    if (ws.panels.get(target_id)) |panel| {
-        if (panel.surface) |_| {
-            // TODO: ghostty_surface_key_event or write via PTY
-            // For now, acknowledge the command
-        }
+    const panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
+    if (panel.panel_type != .terminal) return "{\"error\":\"surface is not a terminal\"}";
+
+    const surface = getTerminalGhosttySurface(panel) orelse {
+        if (isNoSurface()) return "{\"error\":\"surface.send_text unavailable in CMUX_NO_SURFACE mode\"}";
+        return "{\"error\":\"terminal surface not ready\"}";
+    };
+
+    const normalized_text = normalizeSocketText(alloc, text) catch {
+        return "{\"error\":\"failed to prepare text\"}";
+    };
+    defer alloc.free(normalized_text);
+
+    if (normalized_text.len > 0) {
+        c.ghostty.ghostty_surface_text(surface, normalized_text.ptr, normalized_text.len);
     }
-    return "{}";
+    if (panel.widget) |widget| {
+        c.gtk.gtk_widget_queue_draw(widget);
+    }
+
+    const panel_hex = formatId(panel.id);
+    const ws_hex = formatId(ws.id);
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}",
+        .{ @as([]const u8, &ws_hex), @as([]const u8, &panel_hex) },
+    ) catch "{}";
 }
 
-fn handleSurfaceReadText(_: Allocator, _: json.Value) []const u8 {
-    // TODO: read terminal scrollback via ghostty_surface_read_text
-    return "{\"text\":\"\"}";
+fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    var include_scrollback = getParamBool(params, "scrollback") orelse false;
+    const line_limit_raw = getParamInt(params, "lines");
+    const line_limit: ?usize = if (line_limit_raw) |raw| blk: {
+        if (raw <= 0) return "{\"error\":\"lines must be greater than 0\"}";
+        include_scrollback = true;
+        break :blk @intCast(raw);
+    } else null;
+
+    const panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
+    if (panel.panel_type != .terminal) return "{\"error\":\"surface is not a terminal\"}";
+
+    const surface = getTerminalGhosttySurface(panel) orelse {
+        if (isNoSurface()) return "{\"error\":\"surface.read_text unavailable in CMUX_NO_SURFACE mode\"}";
+        return "{\"error\":\"terminal surface not ready\"}";
+    };
+
+    const point_tag = if (include_scrollback)
+        c.ghostty.GHOSTTY_POINT_SURFACE
+    else
+        c.ghostty.GHOSTTY_POINT_VIEWPORT;
+
+    const top_left = c.ghostty.ghostty_point_s{
+        .tag = point_tag,
+        .coord = c.ghostty.GHOSTTY_POINT_COORD_TOP_LEFT,
+        .x = 0,
+        .y = 0,
+    };
+    const bottom_right = c.ghostty.ghostty_point_s{
+        .tag = point_tag,
+        .coord = c.ghostty.GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+        .x = 0,
+        .y = 0,
+    };
+    const selection = c.ghostty.ghostty_selection_s{
+        .top_left = top_left,
+        .bottom_right = bottom_right,
+        .rectangle = false,
+    };
+
+    var ghostty_text: c.ghostty.ghostty_text_s = undefined;
+    if (!c.ghostty.ghostty_surface_read_text(surface, selection, &ghostty_text)) {
+        return "{\"error\":\"failed to read terminal text\"}";
+    }
+    defer c.ghostty.ghostty_surface_free_text(surface, &ghostty_text);
+
+    const raw_text: []const u8 = if (ghostty_text.text != null and ghostty_text.text_len > 0)
+        ghostty_text.text[0..ghostty_text.text_len]
+    else
+        "";
+    const trimmed_text = if (line_limit) |limit| trimToLastLines(raw_text, limit) else raw_text;
+
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"text\":") catch return "{\"error\":\"encode failed\"}";
+    std.json.stringify(trimmed_text, .{}, writer) catch return "{\"error\":\"encode failed\"}";
+    writer.writeAll("}") catch return "{\"error\":\"encode failed\"}";
+    return buf.toOwnedSlice(alloc) catch "{\"error\":\"encode failed\"}";
 }
 
 fn handleSurfaceRefresh(_: Allocator, _: json.Value) []const u8 {
@@ -1065,7 +1207,8 @@ fn handlePaneSurfaces(alloc: Allocator, params: json.Value) []const u8 {
         const panel_hex = formatId(panel.id);
         const title = panel.custom_title orelse panel.title orelse "Terminal";
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
-        return std.fmt.allocPrint(alloc,
+        return std.fmt.allocPrint(
+            alloc,
             "{{\"surfaces\":[{{\"index\":0,\"id\":\"{s}\",\"title\":\"{s}\",\"selected\":{s}}}]}}",
             .{
                 @as([]const u8, &panel_hex),

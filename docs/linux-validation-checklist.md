@@ -219,7 +219,8 @@ Current note:
 - Rocky 10 tracking and repo issue wording need to match current reality
 - Debian 12 baseline automation exists, but broader browser/WebAuthn status still needs explicit proof
 - Linux WebAuthn bridge install exists, but the message-handling path is still stubbed
-- several Linux socket/control-plane verbs remain stubs, including `surface.send_text`, `surface.read_text`, `pane.break`, `pane.join`, `surface.move`, and `surface.reorder`
+- Linux `surface.send_text` and `surface.read_text` now have a native implementation path, but still need direct runtime/socket validation on real Linux hosts
+- several Linux socket/control-plane verbs remain stubs, including `pane.break`, `pane.join`, `surface.move`, and `surface.reorder`
 - Linux action and clipboard callbacks are still mostly no-op in the current host layer
 - browser/WebAuthn validation needs a clearly recorded Tier A proof path
 - session restore is not yet ready for promotion
