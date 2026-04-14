@@ -1,8 +1,8 @@
 Name:           cmux
-Version:        0.72.0
+Version:        0.75.0
 Release:        1%{?dist}
-Summary:        Terminal multiplexer with GTK4 UI and FIDO2 support
-License:        MIT
+Summary:        Terminal multiplexer with GTK4 split panes and workspaces
+License:        GPL-3.0-or-later
 URL:            https://github.com/Jesssullivan/cmux
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 
@@ -29,8 +29,8 @@ Recommends:     libnotify
 
 %description
 cmux is a GTK4 terminal multiplexer built on libghostty, providing
-tabbed workspaces, split pane management, a sidebar for workspace
-navigation, and session persistence.
+tabbed workspaces, split pane management, and a sidebar for workspace
+navigation.
 
 Features:
 - Tabbed terminal interface using AdwTabView
@@ -38,8 +38,7 @@ Features:
 - Workspace model with sidebar navigation
 - JSON configuration with hot-reload
 - Unix socket JSON-RPC control interface
-- Session snapshot and restore
-- FIDO2/WebAuthn hardware key support via zig-ctap2
+- Browser panel support on WebKitGTK-capable distros
 
 %prep
 %autosetup
@@ -86,8 +85,6 @@ install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
 %{_udevrulesdir}/70-u2f.rules
 
 %changelog
-* Sat Mar 29 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.72.0-1
-- Initial Fedora packaging
-- GTK4 + libghostty terminal multiplexer
-- Tabbed workspaces, split panes, sidebar, config parser
-- Unix socket JSON-RPC, session persistence
+* Sun Apr 06 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.75.0-1
+- Refresh Linux package metadata for current release series
+- Expand distro package testing coverage and release packaging

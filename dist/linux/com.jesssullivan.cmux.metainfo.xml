@@ -3,21 +3,21 @@
   <id>com.jesssullivan.cmux</id>
 
   <name>cmux</name>
-  <summary>Terminal multiplexer with split panes, workspaces, and WebAuthn</summary>
+  <summary>Terminal multiplexer with split panes and workspaces</summary>
 
   <metadata_license>MIT</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
 
   <description>
     <p>
       cmux is a GTK4 terminal multiplexer built on libghostty, providing
-      tabbed workspaces, split pane management, a sidebar for workspace
-      navigation, and session persistence.
+      tabbed workspaces, split pane management, and a sidebar for workspace
+      navigation.
     </p>
     <p>
       Features include a JSON-RPC socket control interface, hot-reloadable
-      configuration, and integrated FIDO2/WebAuthn support via zig-ctap2
-      for hardware security key authentication directly in the terminal.
+      configuration, and browser-panel support on WebKitGTK-capable Linux
+      distributions.
     </p>
   </description>
 
@@ -64,9 +64,9 @@
   </requires>
 
   <releases>
-    <release version="0.72.0" date="2026-03-28">
+    <release version="0.75.0" date="2026-04-06">
       <description>
-        <p>Initial Linux MVP with GTK4 + libghostty integration.</p>
+        <p>Expanded Linux CI coverage, package-install VM validation, and release packaging.</p>
       </description>
     </release>
   </releases>

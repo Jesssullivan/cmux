@@ -97,7 +97,7 @@ jobs:
           Priority: optional
           Depends: libgtk-4-1 (>= 4.10), libadwaita-1-0 (>= 1.3)
           Recommends: libsecret-1-0, libnotify4
-          Description: Terminal multiplexer with split panes, workspaces, and WebAuthn
+          Description: Terminal multiplexer with split panes and workspaces
            cmux is a GTK4 terminal multiplexer built on libghostty.
           CTRL
 

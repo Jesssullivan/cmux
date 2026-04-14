@@ -53,8 +53,12 @@
     # Verify binary runs
     vm.succeed("cmux --version 2>&1 || cmux --help 2>&1 || echo 'binary runs'")
 
-    # Verify library deps resolve (libghostty linked at runtime via LD_LIBRARY_PATH or rpath)
-    vm.succeed("ldd /usr/bin/cmux 2>&1 | head -20 || echo 'ldd check done'")
+    # Verify runtime library deps resolve cleanly after package install
+    vm.succeed('''
+      ldd_out="$(ldd /usr/bin/cmux 2>&1)"
+      echo "$ldd_out" | head -20
+      ! echo "$ldd_out" | grep -q "not found"
+    ''')
   '';
 
   # ── Test: Rocky Linux 9 RPM install proxy ────────────────────────

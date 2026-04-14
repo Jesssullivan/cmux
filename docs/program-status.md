@@ -9,6 +9,7 @@ It complements, rather than replaces:
 - `docs/cache-ownership-policy.md`
 - `docs/component-portfolio.md`
 - `docs/linux-program-plan.md`
+- `docs/linux-packaging-cd-plan.md`
 - `docs/linux-parity-matrix.md`
 - `docs/linux-validation-checklist.md`
 - `docs/tracker-refresh-notes.md`

@@ -1,0 +1,258 @@
+# Linux Packaging And Release Plan
+
+This document tracks Linux artifact parity, distro-install validation, and
+package/release CI/CD for `cmux`.
+
+Use it with:
+
+- `docs/linux-program-plan.md`
+- `docs/linux-validation-checklist.md`
+- `docs/linux-parity-matrix.md`
+- `docs/program-status.md`
+
+## Current State
+
+As of 2026-04-13:
+
+- hosted Linux CI is green across `Ubuntu 24.04`, `Fedora 42`, `Rocky 10`,
+  `Debian 12` baseline, `Arch`, and the vendor-library lane
+- self-hosted distro package-install tests exist, but only for `Ubuntu 24.04`,
+  `Debian 12`, and `Rocky 9` as an RPM-path proxy
+- Linux release automation builds:
+  - `DEB`
+  - `RPM`
+  - generic Linux tarball
+- Flatpak is built in CI, but is not yet part of the release-upload path
+- `Jesssullivan/cmux` intentionally uses Magic Nix Cache rather than FlakeHub
+  Cache
+- `tinyland-inc/lab` remains the active FlakeHub-heavy org lane and the main
+  self-hosted Linux builder experiment surface
+
+## Current Artifact Surface
+
+### 1. Hosted CI build matrix
+
+Primary workflow:
+- `.github/workflows/linux-ci.yml`
+
+What it proves today:
+- source checkout and Zig toolchain bootstrapping
+- Linux dependency installation
+- `libghostty` build
+- `cmux-linux` build
+- Linux vendor-library build/test
+- desktop/metainfo validation
+- container/headless static smoke
+
+What it does not prove:
+- fresh package install from the exact release artifacts
+- distro-native dependency resolution in a clean VM
+- release-asset upload correctness
+
+### 2. KVM distro-install tests
+
+Primary surfaces:
+- `.github/workflows/test-distro.yml`
+- `nix/tests-distro.nix`
+
+What it proves today:
+- actual `.deb`/`.rpm` artifacts can be installed in QEMU guests
+- package manager dependency resolution runs in a real distro image
+- runtime linker checks can be performed after install
+
+Current limits:
+- runs on trusted push/manual only, not on pull requests
+- still pinned to a checked-in release artifact manifest
+- `Fedora 42` and `Rocky 10` are not yet covered here
+- `Rocky 9` is still a temporary RPM-path proxy
+
+### 3. Linux release workflows
+
+Primary surfaces:
+- `.github/workflows/release-linux.yml`
+- `.github/workflows/fork-release.yml`
+
+What they do today:
+- build Linux release packages on tag push
+- upload Linux assets to the matching GitHub Release
+- upload macOS assets separately through the fork release workflow
+
+Current limit:
+- Linux asset upload is not yet gated on fresh-install proof of those exact
+  just-built artifacts
+
+### 4. Flatpak
+
+Primary surfaces:
+- `.github/workflows/flatpak-ci.yml`
+- `flatpak/com.jesssullivan.cmux.yml`
+
+What it proves today:
+- manifest resolves and builds in CI
+
+What it does not do yet:
+- publish a user-facing Flatpak artifact
+- serve as the release-grade browser-capable cross-distro channel
+
+## Artifact Classes
+
+The release story should be explicit about which artifact is intended for which
+distro class.
+
+### Broad-feature artifacts
+
+These are the artifacts that can legitimately target browser-capable Linux
+desktops:
+
+- Ubuntu-family `DEB`
+- Fedora-family `RPM`
+- Flatpak
+
+### Baseline artifact
+
+This is the artifact lane that proves package/runtime viability without implying
+full browser parity:
+
+- Debian 12 `DEB` install validation
+
+### Constrained artifact
+
+This is the artifact lane for terminal-first Linux support:
+
+- Rocky 10 runtime/package path
+
+Current interpretation:
+- Rocky should not inherit broad-feature claims by accident
+- Flatpak may ultimately be the cleanest full-feature answer for Rocky-class
+  systems if browser support matters there
+
+## Current Problems
+
+### 1. Artifact metadata still overstates Linux parity
+
+Current Linux package metadata has claimed:
+
+- WebAuthn support
+- session persistence/restore
+
+Those claims need to follow the real Linux implementation state, not the
+broader program intent.
+
+### 2. Runtime dependency declarations need a distro-specific audit
+
+The release workflows build browser-capable binaries on broad-feature distros.
+That means runtime dependencies, especially for WebKitGTK-capable builds, need
+to be audited carefully instead of hand-waved.
+
+### 3. Release tests are pinned to a checked-in artifact manifest
+
+`nix/tests-distro.nix` currently references a specific checked-in release tag
+and hashes. That is reproducible, but it is not yet a clean end-to-end release
+pipeline for the newest artifacts.
+
+### 4. Fresh-install proof is not part of release gating yet
+
+The current shape is:
+
+1. build release artifacts
+2. upload release artifacts
+3. separately run or maintain distro-install proof
+
+The desired shape is:
+
+1. build release artifacts
+2. install those exact artifacts in fresh VMs
+3. upload only after install proof passes
+
+## Builder And Cache Posture
+
+### `Jesssullivan/cmux`
+
+Current posture:
+
+- hosted GitHub Actions for most Linux CI
+- self-hosted `neo` KVM lane for fresh distro-install tests
+- Magic Nix Cache, not FlakeHub Cache
+
+Rationale:
+
+- this repo is a personal fork and should remain healthy without forcing
+  ownership changes for cache tooling
+
+### `tinyland-inc/lab`
+
+Current posture:
+
+- active FlakeHub Cache lane
+- `honey`-backed self-hosted Linux runner experiments and throughput work
+
+Interpretation:
+
+- `lab` is the place to refine org-owned Linux builder strategy
+- `cmux` should consume those lessons where useful, but not inherit its
+  ownership/cache policy
+
+## Recommended Delivery Pipeline
+
+### Phase 1: Truthful artifacts
+
+Before expanding release reach:
+
+1. align Linux package/license metadata with the actual project license
+2. remove Linux artifact claims that are not yet true end-to-end
+3. audit runtime dependencies for each package class
+
+### Phase 2: Exact-artifact install validation
+
+For tagged Linux releases:
+
+1. build `DEB`, `RPM`, and tarball artifacts
+2. generate an artifact manifest for that release candidate
+3. install those exact artifacts in fresh VMs
+4. fail the release if install/runtime validation fails
+
+### Phase 3: Distro-matrix completion
+
+Expand fresh-install proof to:
+
+1. `Ubuntu 24.04` DEB
+2. `Debian 12` DEB
+3. `Fedora 42` RPM
+4. `Rocky 10` runtime/package path once the harness is ready
+
+### Phase 4: Flatpak decision
+
+Decide whether Flatpak is:
+
+- build-only validation
+- or a first-class published Linux artifact
+
+If it becomes first-class, it should be reflected in:
+
+- release notes
+- artifact taxonomy
+- distro support policy
+
+## Near-Term Priority Order
+
+1. merge `#205`
+2. fix Linux artifact truth:
+   - license fields
+   - package descriptions
+   - parity claims
+3. tighten distro-install tests so missing runtime libs fail explicitly
+4. replace the hardcoded release test manifest with a release-candidate
+   manifest/input path
+5. decide how Linux release upload should wait on fresh-install proof
+6. expand fresh-install coverage to Fedora 42 and Rocky 10 when the harness
+   allows it
+
+## Success Criteria
+
+This lane is healthy when all of the following are true:
+
+1. Linux artifacts describe what Linux actually supports today
+2. fresh-install validation uses the exact artifacts being released
+3. distro support tiers map cleanly to artifact types
+4. release upload does not outrun package-install proof
+5. builder/cache posture is explicit and does not distort repository ownership

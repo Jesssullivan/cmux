@@ -5,6 +5,7 @@ execution program.
 
 Short current-state readout:
 - `docs/program-status.md`
+- `docs/linux-packaging-cd-plan.md`
 
 The goal is straightforward:
 
