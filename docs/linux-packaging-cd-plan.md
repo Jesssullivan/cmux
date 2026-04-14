@@ -148,6 +148,17 @@ The release workflows build browser-capable binaries on broad-feature distros.
 That means runtime dependencies, especially for WebKitGTK-capable builds, need
 to be audited carefully instead of hand-waved.
 
+Current read:
+
+- the shipped Linux binary links `libwebkitgtk-6.0.so.4`, so the broad-feature
+  `DEB`/`RPM` lanes should declare WebKitGTK explicitly
+- the shipped Linux binary does not currently link `libsecret` or `libnotify`,
+  so those should not be declared as package requirements just because helper
+  libraries exist elsewhere in the tree
+- this creates a real Debian 12 tension: a truthful broad-feature `DEB` may no
+  longer fit the current Debian baseline install lane without either backports
+  or a separate no-WebKit artifact
+
 ### 3. Release tests are pinned to a checked-in artifact manifest
 
 `nix/tests-distro.nix` now reads a checked-in release manifest by default, with

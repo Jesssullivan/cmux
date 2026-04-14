@@ -23,9 +23,7 @@ BuildRequires:  mesa-libGL-devel
 
 Requires:       gtk4 >= 4.10
 Requires:       libadwaita >= 1.3
-
-Recommends:     libsecret
-Recommends:     libnotify
+Requires:       webkitgtk6.0
 
 %description
 cmux is a GTK4 terminal multiplexer built on libghostty, providing
