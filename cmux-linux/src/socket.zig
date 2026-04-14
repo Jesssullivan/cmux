@@ -456,6 +456,24 @@ fn normalizeSocketText(alloc: Allocator, text: []const u8) ![]u8 {
     return buf.toOwnedSlice(alloc);
 }
 
+fn writeJsonString(writer: anytype, text: []const u8) !void {
+    try writer.writeByte('"');
+    for (text) |ch| {
+        switch (ch) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            0x08 => try writer.writeAll("\\b"),
+            0x0c => try writer.writeAll("\\f"),
+            0x00...0x1f => try writer.print("\\u00{x:0>2}", .{ch}),
+            else => try writer.writeByte(ch),
+        }
+    }
+    try writer.writeByte('"');
+}
+
 fn getParamString(params: json.Value, key: []const u8) ?[]const u8 {
     if (params != .object) return null;
     const val = params.object.get(key) orelse return null;
@@ -1124,7 +1142,7 @@ fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
     var buf: std.ArrayList(u8) = .empty;
     const writer = buf.writer(alloc);
     writer.writeAll("{\"text\":") catch return "{\"error\":\"encode failed\"}";
-    std.json.stringify(trimmed_text, .{}, writer) catch return "{\"error\":\"encode failed\"}";
+    writeJsonString(writer, trimmed_text) catch return "{\"error\":\"encode failed\"}";
     writer.writeAll("}") catch return "{\"error\":\"encode failed\"}";
     return buf.toOwnedSlice(alloc) catch "{\"error\":\"encode failed\"}";
 }
