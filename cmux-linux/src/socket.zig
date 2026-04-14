@@ -1086,10 +1086,10 @@ fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
         return "{\"error\":\"terminal surface not ready\"}";
     };
 
-    const point_tag = if (include_scrollback)
+    const point_tag: c_uint = @intCast(if (include_scrollback)
         c.ghostty.GHOSTTY_POINT_SURFACE
     else
-        c.ghostty.GHOSTTY_POINT_VIEWPORT;
+        c.ghostty.GHOSTTY_POINT_VIEWPORT);
 
     const top_left = c.ghostty.ghostty_point_s{
         .tag = point_tag,
