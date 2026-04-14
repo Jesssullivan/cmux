@@ -1064,12 +1064,25 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
     const text = getParamString(params, "text") orelse return "{\"error\":\"missing text\"}";
+    _ = text;
 
     const panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
     if (panel.panel_type != .terminal) return "{\"error\":\"surface is not a terminal\"}";
 
+    const panel_hex = formatId(panel.id);
+    const ws_hex = formatId(ws.id);
+
+    if (isNoSurface()) {
+        // Test-only mode has mock panels with no live terminal surface.
+        // Treat send_text as a no-op success once the target is validated.
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}",
+            .{ @as([]const u8, &ws_hex), @as([]const u8, &panel_hex) },
+        ) catch "{}";
+    }
+
     const surface = getTerminalGhosttySurface(panel) orelse {
-        if (isNoSurface()) return "{\"error\":\"surface.send_text unavailable in CMUX_NO_SURFACE mode\"}";
         return "{\"error\":\"terminal surface not ready\"}";
     };
 
@@ -1085,8 +1098,6 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
         c.gtk.gtk_widget_queue_draw(widget);
     }
 
-    const panel_hex = formatId(panel.id);
-    const ws_hex = formatId(ws.id);
     return std.fmt.allocPrint(
         alloc,
         "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}",
