@@ -470,6 +470,13 @@ fn getParamInt(params: json.Value, key: []const u8) ?i64 {
     return val.integer;
 }
 
+fn getParamBool(params: json.Value, key: []const u8) ?bool {
+    if (params != .object) return null;
+    const val = params.object.get(key) orelse return null;
+    if (val != .bool) return null;
+    return val.bool;
+}
+
 // ── System Handlers ─────────────────────────────────────────────────────
 
 fn handlePing(_: Allocator, _: json.Value) []const u8 {
