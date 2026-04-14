@@ -1064,7 +1064,6 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
 
     const text = getParamString(params, "text") orelse return "{\"error\":\"missing text\"}";
-    _ = text;
 
     const panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
     if (panel.panel_type != .terminal) return "{\"error\":\"surface is not a terminal\"}";
