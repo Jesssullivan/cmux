@@ -1682,9 +1682,11 @@ fn handleNotificationCreate(alloc: Allocator, params: json.Value) []const u8 {
     @memcpy(notif.title[0..tlen], title[0..tlen]);
     notif.title_len = tlen;
 
-    // Send desktop notification via GNotification
-    const main = @import("main.zig");
-    main.sendNotification("cmux-notification", title, body);
+    if (!isNoSurface()) {
+        // Send desktop notification via GNotification only in real GTK runs.
+        const main = @import("main.zig");
+        main.sendNotification("cmux-notification", title, body);
+    }
 
     return "{}";
 }
@@ -1772,9 +1774,11 @@ fn handleNotificationList(alloc: Allocator, _: json.Value) []const u8 {
 
 fn handleNotificationClear(_: Allocator, _: json.Value) []const u8 {
     notification_count = 0;
-    // Withdraw desktop notification
-    const main = @import("main.zig");
-    main.withdrawNotification("cmux-notification");
+    if (!isNoSurface()) {
+        // Withdraw desktop notification only in real GTK runs.
+        const main = @import("main.zig");
+        main.withdrawNotification("cmux-notification");
+    }
     return "{}";
 }
 
