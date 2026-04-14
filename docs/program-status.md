@@ -131,7 +131,8 @@ Current `test-distro` coverage includes:
 Current gap:
 
 - `Fedora 42` and `Rocky 10` VM package-install proof still lag because
-  `nix-vm-test` coverage is not there yet
+  upstream `nix-vm-test` currently exposes `Fedora 39-41` and `Rocky 8.6-9.6`,
+  not `Fedora 42` or `Rocky 10`
 
 ## Dependency And Package Health
 

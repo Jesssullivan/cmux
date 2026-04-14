@@ -209,9 +209,11 @@ Current note:
 ## Current Gaps
 
 - Fedora 42 is covered in container build validation, but not yet in
-  `nix/tests-distro.nix` package-install VM coverage
+  `nix/tests-distro.nix` package-install VM coverage; upstream `nix-vm-test`
+  currently tops out at Fedora 41
 - Rocky 10 is covered in container build validation, but package-install VM
-  coverage still lags because `nix-vm-test` image support is not there yet
+  coverage still lags because upstream `nix-vm-test` currently tops out at
+  Rocky 9.6
 - Rocky 9 is still being used as an RPM-path proxy and should be treated as
   temporary coverage, not as the target distro itself
 - Rocky 10 tracking and repo issue wording need to match current reality

@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   distro-tests:
-    name: Distro package tests (neo)
+    name: Distro package tests (self-hosted KVM)
     runs-on: [self-hosted, linux, kvm, cmux-distro-test]
     environment: distro-tests
     timeout-minutes: 45

@@ -154,8 +154,8 @@
     }).driver;
 
   # NOTE: Fedora and Rocky 10 tests blocked:
-  # - nix-vm-test Fedora 39/40/41 images return 404 (stale mirror URLs)
-  # - nix-vm-test hasn't added Rocky 10 yet (GA since June 2025)
+  # - upstream nix-vm-test main currently ships Fedora 39/40/41 images, not Fedora 42
+  # - upstream nix-vm-test main currently ships Rocky 8.6-9.6 images, not Rocky 10
   # Track: https://github.com/Jesssullivan/cmux/issues/187
   # Rocky 9 RPM test covers the dnf/RPM install path in the meantime.
 in {

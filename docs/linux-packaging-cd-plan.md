@@ -65,7 +65,8 @@ What it proves today:
 Current limits:
 - runs on trusted push/manual only, not on pull requests
 - still pinned to a checked-in release artifact manifest
-- `Fedora 42` and `Rocky 10` are not yet covered here
+- `Fedora 42` and `Rocky 10` are not yet covered here; upstream
+  `nix-vm-test` currently exposes `Fedora 39-41` and `Rocky 8.6-9.6`
 - `Rocky 9` is still a temporary RPM-path proxy
 
 ### 3. Linux release workflows
@@ -190,7 +191,7 @@ The desired shape is:
 Current posture:
 
 - hosted GitHub Actions for most Linux CI
-- self-hosted `neo` KVM lane for fresh distro-install tests
+- self-hosted KVM lane for fresh distro-install tests
 - Magic Nix Cache, not FlakeHub Cache
 
 Rationale:
