@@ -40,18 +40,30 @@
     (if builtins.pathExists ./release-artifacts.override.nix
     then ./release-artifacts.override.nix
     else ./release-artifacts.nix);
-  releaseTag = releaseArtifacts.releaseTag;
-  releaseBase = "https://github.com/Jesssullivan/cmux/releases/download/${releaseTag}";
+  releaseTag = releaseArtifacts.releaseTag or null;
+  releaseBase =
+    if releaseTag == null
+    then null
+    else "https://github.com/Jesssullivan/cmux/releases/download/${releaseTag}";
 
-  cmuxDeb = pkgs.fetchurl {
-    url = "${releaseBase}/${releaseArtifacts.assets.deb.name}";
-    hash = releaseArtifacts.assets.deb.hash;
-  };
+  materializeReleaseAsset = asset:
+    if asset ? path
+    then
+      builtins.path (
+        {
+          path = asset.path;
+        }
+        // lib.optionalAttrs (asset ? name) {name = asset.name;}
+      )
+    else
+      pkgs.fetchurl {
+        url = "${releaseBase}/${asset.name}";
+        hash = asset.hash;
+      };
 
-  cmuxRpm = pkgs.fetchurl {
-    url = "${releaseBase}/${releaseArtifacts.assets.rpm.name}";
-    hash = releaseArtifacts.assets.rpm.hash;
-  };
+  cmuxDeb = materializeReleaseAsset releaseArtifacts.assets.deb;
+
+  cmuxRpm = materializeReleaseAsset releaseArtifacts.assets.rpm;
 
   # ── Shared socket ping test snippet ──────────────────────────────
   # Used by all distro tests after package install.

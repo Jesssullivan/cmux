@@ -22,6 +22,8 @@ As of 2026-04-13:
   - `DEB`
   - `RPM`
   - generic Linux tarball
+- tagged Linux releases now validate the just-built `DEB`/`RPM` artifacts on
+  the self-hosted KVM lane before uploading Linux assets to GitHub Releases
 - Flatpak is built in CI, but is not yet part of the release-upload path
 - `Jesssullivan/cmux` intentionally uses Magic Nix Cache rather than FlakeHub
   Cache
@@ -74,12 +76,14 @@ Primary surfaces:
 
 What they do today:
 - build Linux release packages on tag push
+- validate the just-built `DEB`/`RPM` artifacts in fresh distro VMs before Linux
+  upload
 - upload Linux assets to the matching GitHub Release
 - upload macOS assets separately through the fork release workflow
 
 Current limit:
-- Linux asset upload is not yet gated on fresh-install proof of those exact
-  just-built artifacts
+- Linux release gating still covers only the currently implemented distro VM
+  matrix: `Ubuntu 24.04`, `Debian 12`, and `Rocky 9` as an RPM-path proxy
 
 ### 4. Flatpak
 
@@ -154,18 +158,18 @@ explicit packaging decision instead of being hidden behind `head -1`. That is
 better than inline hardcoding, but it is still not yet a clean end-to-end
 release pipeline for the newest just-built artifacts.
 
-### 4. Fresh-install proof is not part of release gating yet
+### 4. Fresh-install release gating is still incomplete
 
 The current shape is:
 
 1. build release artifacts
-2. upload release artifacts
-3. separately run or maintain distro-install proof
+2. install the just-built `DEB`/`RPM` artifacts in the current KVM distro matrix
+3. upload Linux assets only after that proof passes
 
 The desired shape is:
 
 1. build release artifacts
-2. install those exact artifacts in fresh VMs
+2. install those exact artifacts in fresh VMs across the intended distro matrix
 3. upload only after install proof passes
 
 ## Builder And Cache Posture
@@ -211,9 +215,9 @@ Before expanding release reach:
 For tagged Linux releases:
 
 1. build `DEB`, `RPM`, and tarball artifacts
-2. generate an artifact manifest for that release candidate
+2. generate a local artifact manifest for that release candidate
 3. install those exact artifacts in fresh VMs
-4. fail the release if install/runtime validation fails
+4. fail the Linux upload if install/runtime validation fails
 
 ### Phase 3: Distro-matrix completion
 
@@ -244,12 +248,10 @@ If it becomes first-class, it should be reflected in:
    - license fields
    - package descriptions
    - parity claims
-3. tighten distro-install tests so missing runtime libs fail explicitly
-4. replace the hardcoded release test manifest with a release-candidate
-   manifest/input path
-5. decide how Linux release upload should wait on fresh-install proof
-6. expand fresh-install coverage to Fedora 42 and Rocky 10 when the harness
-   allows it
+3. expand release-gated fresh-install coverage to Fedora 42 and Rocky 10 when
+   the harness allows it
+4. audit runtime dependency declarations for the broad-feature package lanes
+5. decide whether Flatpak becomes a first-class published artifact
 
 ## Success Criteria
 
