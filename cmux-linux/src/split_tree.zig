@@ -172,6 +172,48 @@ pub fn findLeaf(node: *Node, panel_id: u128) ?*Leaf {
     };
 }
 
+/// Check whether a subtree contains a given panel.
+pub fn containsPanel(node: *const Node, panel_id: u128) bool {
+    return switch (node.*) {
+        .leaf => |leaf| leaf.panel_id == panel_id,
+        .split => |split| containsPanel(split.first, panel_id) or containsPanel(split.second, panel_id),
+    };
+}
+
+/// Find the innermost split ancestor of `panel_id` whose orientation
+/// matches `target_orientation` and where the panel is in the first
+/// child (if `in_first` is true) or the second child (if false).
+///
+/// Returns a mutable pointer to the matching Split, or null if none
+/// found. The caller can then adjust `split.ratio` to resize.
+pub fn findResizeSplit(
+    node: *Node,
+    panel_id: u128,
+    target_orientation: Orientation,
+    in_first: bool,
+) ?*Split {
+    switch (node.*) {
+        .leaf => return null,
+        .split => |*split| {
+            const in_first_child = containsPanel(split.first, panel_id);
+            if (!in_first_child and !containsPanel(split.second, panel_id))
+                return null;
+
+            // Recurse into the child that contains the panel first
+            // so innermost matches win.
+            const child = if (in_first_child) split.first else split.second;
+            if (findResizeSplit(child, panel_id, target_orientation, in_first)) |inner|
+                return inner;
+
+            // If this split matches, return it.
+            if (split.orientation == target_orientation and in_first_child == in_first)
+                return split;
+
+            return null;
+        },
+    }
+}
+
 /// Recursively destroy all nodes.
 pub fn destroy(alloc: Allocator, node: *Node) void {
     switch (node.*) {
