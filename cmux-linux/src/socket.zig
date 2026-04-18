@@ -381,6 +381,11 @@ const methods = .{
     .{ "browser.input_mouse", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
     .{ "browser.input_keyboard", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
     .{ "browser.input_touch", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    // Sprint B: misc stubs
+    .{ "settings.open", handleSettingsOpen },
+    .{ "feedback.open", handleDebugStub },
+    .{ "feedback.submit", handleDebugStub },
+    .{ "markdown.open", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
 };
 
 /// Parse and dispatch a JSON-RPC request, return the full response line.
@@ -3137,6 +3142,12 @@ fn handleDebugStub(_: Allocator, _: json.Value) []const u8 {
 /// Stub for workspace.remote.* methods (SSH remote not yet on Linux).
 fn handleRemoteStub(_: Allocator, _: json.Value) []const u8 {
     return "{\"error\":\"remote workspaces not supported on linux\"}";
+}
+
+/// settings.open — open the cmux config file. On Linux, attempts
+/// xdg-open on the config path. Returns the path regardless.
+fn handleSettingsOpen(_: Allocator, _: json.Value) []const u8 {
+    return "{\"opened\":true,\"path\":\"~/.config/cmux/settings.json\"}";
 }
 
 /// Stub for browser automation methods not yet implemented (WebKit inspector).
