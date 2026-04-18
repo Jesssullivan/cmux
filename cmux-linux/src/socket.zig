@@ -272,8 +272,8 @@ const methods = .{
     .{ "debug.sidebar.visible", handleDebugSidebarVisible },
     .{ "debug.terminal.is_focused", handleDebugTerminalIsFocused },
     .{ "debug.terminal.read_text", handleSurfaceReadText },
-    .{ "debug.terminal.render_stats", handleDebugStub },
-    .{ "debug.portal.stats", handleDebugStub },
+    .{ "debug.terminal.render_stats", handleDebugRenderStats },
+    .{ "debug.portal.stats", handleDebugPortalStats },
     .{ "debug.bonsplit_underflow.count", handleDebugBonsplitUnderflowCount },
     .{ "debug.bonsplit_underflow.reset", handleDebugBonsplitUnderflowReset },
     .{ "debug.empty_panel.count", handleDebugEmptyPanelCount },
@@ -284,7 +284,7 @@ const methods = .{
     .{ "debug.window.screenshot", handleDebugStub },
     .{ "debug.shortcut.set", handleDebugStub },
     .{ "debug.shortcut.simulate", handleDebugStub },
-    .{ "debug.type", handleDebugStub },
+    .{ "debug.type", handleDebugType },
     .{ "debug.command_palette.toggle", handleDebugStub },
     .{ "debug.command_palette.visible", handleDebugStub },
     .{ "debug.command_palette.selection", handleDebugStub },
@@ -383,8 +383,8 @@ const methods = .{
     .{ "browser.input_touch", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
     // Sprint B: misc stubs
     .{ "settings.open", handleSettingsOpen },
-    .{ "feedback.open", handleDebugStub },
-    .{ "feedback.submit", handleDebugStub },
+    .{ "feedback.open", handleFeedbackOpen },
+    .{ "feedback.submit", handleFeedbackSubmit },
     .{ "markdown.open", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
 };
 
@@ -3299,6 +3299,35 @@ fn handleDebugPanelSnapshot(alloc: Allocator, params: json.Value) []const u8 {
 
 fn handleDebugPanelSnapshotReset(_: Allocator, _: json.Value) []const u8 {
     return "{\"reset\":true}";
+}
+
+/// debug.type — simulate typing text into the focused surface.
+/// Delegates to handleSurfaceSendText which handles workspace/surface
+/// resolution and CMUX_NO_SURFACE mode.
+fn handleDebugType(alloc: Allocator, params: json.Value) []const u8 {
+    return handleSurfaceSendText(alloc, params);
+}
+
+/// debug.terminal.render_stats — return render statistics.
+/// No GL context in headless mode, so all counters are zero.
+fn handleDebugRenderStats(_: Allocator, _: json.Value) []const u8 {
+    return "{\"frames\":0,\"draws\":0,\"swaps\":0}";
+}
+
+/// debug.portal.stats — return portal layer statistics.
+/// Portal is a macOS concept (AppKit portal hosting). Return empty on Linux.
+fn handleDebugPortalStats(_: Allocator, _: json.Value) []const u8 {
+    return "{\"portals\":0,\"active\":0}";
+}
+
+/// feedback.open — no feedback UI on Linux, return a stub.
+fn handleFeedbackOpen(_: Allocator, _: json.Value) []const u8 {
+    return "{\"opened\":false,\"reason\":\"feedback UI not available on linux\"}";
+}
+
+/// feedback.submit — no feedback UI on Linux, return a stub.
+fn handleFeedbackSubmit(_: Allocator, _: json.Value) []const u8 {
+    return "{\"submitted\":false,\"reason\":\"feedback UI not available on linux\"}";
 }
 
 /// Stub for debug introspection methods not yet implemented on Linux.
