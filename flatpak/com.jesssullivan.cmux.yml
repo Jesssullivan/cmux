@@ -41,6 +41,10 @@ modules:
     build-commands:
       # Build libghostty (--system vendors pre-fetched Zig packages for offline build)
       - cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast -Dcpu=baseline -Dflatpak=true -Demit-docs=false --search-prefix /app --system $PWD/vendor/p
+      # Compat shim: upstream rename libghostty.{so,a} -> ghostty-internal.{so,a}
+      # (see scripts/ghostty-compat-symlinks.sh). Re-create the conventional name
+      # so the cmux-linux build and the install step below keep working.
+      - bash scripts/ghostty-compat-symlinks.sh
       # Build cmux-linux
       - cd cmux-linux && zig build -Doptimize=ReleaseFast -Dcpu=baseline
       # Install binary
