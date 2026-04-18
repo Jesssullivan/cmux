@@ -214,6 +214,75 @@ pub fn findResizeSplit(
     }
 }
 
+/// Collect all leaf nodes in left-to-right / top-to-bottom order.
+pub fn collectLeaves(node: *Node, alloc: Allocator, out: *std.ArrayList(*Leaf)) void {
+    switch (node.*) {
+        .leaf => |*leaf| out.append(alloc, leaf) catch {},
+        .split => |split| {
+            collectLeaves(split.first, alloc, out);
+            collectLeaves(split.second, alloc, out);
+        },
+    }
+}
+
+/// Find the next or previous leaf relative to the one with `panel_id`.
+/// `direction`: .next or .previous (wraps around).
+pub fn adjacentLeaf(
+    root: *Node,
+    panel_id: u128,
+    direction: enum { next, previous },
+    alloc: Allocator,
+) ?*Leaf {
+    var leaves: std.ArrayList(*Leaf) = .empty;
+    defer leaves.deinit(alloc);
+    collectLeaves(root, alloc, &leaves);
+    if (leaves.items.len <= 1) return null;
+
+    for (leaves.items, 0..) |leaf, i| {
+        if (leaf.panel_id == panel_id) {
+            return switch (direction) {
+                .next => leaves.items[(i + 1) % leaves.items.len],
+                .previous => leaves.items[if (i == 0) leaves.items.len - 1 else i - 1],
+            };
+        }
+    }
+    return null;
+}
+
+/// Set all split ratios to 0.5 (equalize).
+pub fn equalize(node: *Node) void {
+    switch (node.*) {
+        .leaf => {},
+        .split => |*split| {
+            split.ratio = 0.5;
+            equalize(split.first);
+            equalize(split.second);
+        },
+    }
+}
+
+/// Apply split ratios to GtkPaned widgets (call after widget allocation).
+pub fn applyRatios(node: *Node) void {
+    switch (node.*) {
+        .leaf => {},
+        .split => |*split| {
+            if (split.paned) |paned| {
+                // Get the allocated size along the split axis
+                const size: c_int = switch (split.orientation) {
+                    .horizontal => c.gtk.gtk_widget_get_width(paned),
+                    .vertical => c.gtk.gtk_widget_get_height(paned),
+                };
+                if (size > 0) {
+                    const pos: c_int = @intFromFloat(@as(f64, @floatFromInt(size)) * split.ratio);
+                    c.gtk.gtk_paned_set_position(@ptrCast(@alignCast(paned)), pos);
+                }
+            }
+            applyRatios(split.first);
+            applyRatios(split.second);
+        },
+    }
+}
+
 /// Recursively destroy all nodes.
 pub fn destroy(alloc: Allocator, node: *Node) void {
     switch (node.*) {
