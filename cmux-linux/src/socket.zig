@@ -219,6 +219,8 @@ const methods = .{
     .{ "surface.health", handleSurfaceHealth },
     .{ "surface.trigger_flash", handleSurfaceTriggerFlash },
     .{ "surface.clear_history", handleSurfaceClearHistory },
+    .{ "surface.action", handleSurfaceAction },
+    .{ "tab.action", handleSurfaceAction },
     .{ "pane.list", handlePaneList },
     .{ "pane.focus", handlePaneFocus },
     .{ "pane.create", handlePaneCreate },
@@ -1236,6 +1238,126 @@ fn handleSurfaceTriggerFlash(_: Allocator, params: json.Value) []const u8 {
 
 fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
     return "{}"; // Terminal scrollback clear stub
+}
+
+/// surface.action / tab.action — apply a tab-level action to a surface.
+///
+/// Mirrors macOS `v2TabAction` (Sources/TerminalController.swift). Linux
+/// implements the trivial property-mutation actions (rename, clear_name,
+/// pin, unpin, mark_read, mark_unread). Tab-relative close/new actions
+/// (close_left, close_right, close_others, new_terminal_right,
+/// new_browser_right, reload, duplicate) are not yet wired and will return
+/// an `unsupported` error so callers can detect parity gaps.
+fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    // Resolve workspace (param or current)
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"workspace not found\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const action = getParamString(params, "action") orelse return "{\"error\":\"missing action\"}";
+
+    // Resolve target surface (surface_id, tab_id, or focused)
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else if (getParamString(params, "tab_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid tab_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    const panel = ws.panels.get(target_id) orelse return "{\"error\":\"surface not found\"}";
+    const panel_hex = formatId(target_id);
+    const panel_id_slice: []const u8 = &panel_hex;
+
+    if (std.mem.eql(u8, action, "rename")) {
+        const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+        if (panel.custom_title) |old| ws.alloc.free(old);
+        panel.custom_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"rename\",\"surface_id\":\"{s}\",\"title\":\"{s}\"}}",
+            .{ panel_id_slice, title },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_name")) {
+        if (panel.custom_title) |old| {
+            ws.alloc.free(old);
+            panel.custom_title = null;
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_name\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "pin")) {
+        panel.is_pinned = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"pin\",\"surface_id\":\"{s}\",\"pinned\":true}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "unpin")) {
+        panel.is_pinned = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"unpin\",\"surface_id\":\"{s}\",\"pinned\":false}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "mark_read")) {
+        panel.is_manually_unread = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"mark_read\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "mark_unread")) {
+        panel.is_manually_unread = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"mark_unread\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    // Recognized but not yet implemented on Linux. Returning a structured
+    // error lets callers distinguish "wrong call" from "platform gap".
+    if (std.mem.eql(u8, action, "close_left") or
+        std.mem.eql(u8, action, "close_right") or
+        std.mem.eql(u8, action, "close_others") or
+        std.mem.eql(u8, action, "new_terminal_right") or
+        std.mem.eql(u8, action, "new_browser_right") or
+        std.mem.eql(u8, action, "reload") or
+        std.mem.eql(u8, action, "duplicate"))
+    {
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"error\":\"action not implemented on linux\",\"action\":\"{s}\"}}",
+            .{action},
+        ) catch "{\"error\":\"action not implemented on linux\"}";
+    }
+
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"error\":\"unsupported action\",\"action\":\"{s}\",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\"]}}",
+        .{action},
+    ) catch "{\"error\":\"unsupported action\"}";
 }
 
 // ── Batch 3: Additional Pane Operations ─────────────────────────────────
