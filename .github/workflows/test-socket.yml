@@ -53,6 +53,11 @@ jobs:
         continue-on-error: true
         env:
           TEST_FILTER: ${{ inputs.test_filter || '' }}
+          # Phase 1 candidate gate: run extra Linux candidate tests as
+          # non-fatal observations. After consistent green runs, promote
+          # candidates into BASELINE in the runner script. See cmux #216
+          # / TIN-183 for the expansion plan.
+          CMUX_TEST_PHASE1: '1'
         run: nix develop --command bash scripts/run-socket-tests.sh
 
       - name: Upload test results

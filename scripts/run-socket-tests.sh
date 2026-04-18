@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
 # Socket test runner for cmux-linux. Run inside: nix develop --command bash scripts/run-socket-tests.sh
+#
+# Test selection model: explicit baseline allowlist + opt-in candidate set.
+#
+#   BASELINE             Tests that pass green on every CI run. A failure here
+#                        fails the job. Keep this list small and stable.
+#
+#   CANDIDATES_PHASE1    Tests we believe should pass on Linux but have not
+#                        verified yet. Run only when CMUX_TEST_PHASE1=1.
+#                        Failures are reported but do NOT fail the job — the
+#                        gate exists so we can observe behavior on real CI
+#                        without regressing the green baseline. After several
+#                        consecutive green runs, promote into BASELINE.
+#
+# Adding a new test:
+#   1. Land the test in tests_v2/test_*.py.
+#   2. If you believe it'll pass on Linux, add the basename to
+#      CANDIDATES_PHASE1 and set CMUX_TEST_PHASE1=1 in CI for at least
+#      one merged PR run to observe.
+#   3. If green, move from CANDIDATES_PHASE1 to BASELINE and drop the gate.
+#
+# Tracking issue: #216 (TIN-183 — expand tests_v2 Linux coverage).
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,68 +77,121 @@ if [ ! -S "$CMUX_SOCKET" ]; then
 fi
 echo "Socket ready"
 
-# Discover tests
+# ── Baseline allowlist ──────────────────────────────────────────────
+# The 15 tests known to pass on cmux-linux today. A failure in any of
+# these fails the job.
+BASELINE=(
+  test_close_surface_selection
+  test_close_workspace_selection
+  test_focus_notification_dismiss
+  test_nested_split_no_detach_during_update
+  test_notification_socket_api
+  test_pane_break_swap_preserve_focus
+  test_pane_operations
+  test_signals_auto
+  test_surface_split_tree
+  test_system_api
+  test_trigger_flash
+  test_windows_api
+  test_workspace_lifecycle
+  test_workspace_navigation
+  test_workspace_reorder
+)
+
+# ── Phase 1 candidate allowlist (gated) ─────────────────────────────
+# Tests we believe should pass on Linux but have not verified. Run only
+# when CMUX_TEST_PHASE1=1. Candidate failures are reported but do not
+# fail the job — see header comment for promotion workflow.
+CANDIDATES_PHASE1=(
+  test_browser_open_split_reuse_policy
+  test_workspace_create_background_starts_terminal
+  test_workspace_create_initial_env
+)
+
+# Build the test list. Apply TEST_FILTER if set (case-style glob).
 TESTS=()
-for f in "$TESTS_DIR"/test_*.py; do
-  [ -f "$f" ] || continue
-  name=$(basename "$f")
-  [ -n "$FILTER" ] && case "$name" in $FILTER) ;; *) continue ;; esac
-  case "$name" in
-    # Require macOS app / GUI interaction
-    test_browser_*|test_cli_*|test_ctrl_interactive*|test_ssh_*) continue ;;
-    test_visual_*|test_lint_*|test_command_palette_*|test_tmux_*) continue ;;
-    # Require macOS shortcuts, panel_snapshot, simulate_type, bonsplit_underflow
-    test_nested_split_does_not_disappear*|test_nested_split_no_arranged_subview*) continue ;;
-    test_nested_split_panel_routing*) continue ;;
-    test_split_cmd_*|test_split_flash_*) continue ;;
-    test_shortcut_window_scope*|test_tab_dragging*) continue ;;
-    test_ctrl_enter_keybind*) continue ;;
-    test_new_tab_interactive*|test_new_tab_render*) continue ;;
-    test_initial_terminal_interactive*) continue ;;
-    test_terminal_focus_routing*|test_terminal_input_render*) continue ;;
-    test_v1_panel_creation*|test_update_timing*) continue ;;
-    # Require real terminal PTY / I/O
-    test_pane_resize_*|test_read_screen_capture*) continue ;;
-    test_surface_list_custom_titles*) continue ;;
-    test_workspace_create_background*|test_workspace_create_initial_env*) continue ;;
-    test_ctrl_socket*) continue ;;
-    # Require macOS CLI binary
-    test_rename_tab_cli*|test_rename_window_workspace*) continue ;;
-    test_tab_workspace_action_naming*|test_workspace_relative*) continue ;;
-    # Require layout_debug (macOS debug-only)
-    test_nested_split_preserves_existing*) continue ;;
-    # Require macOS process patterns (pgrep .app/Contents/MacOS)
-    test_cpu_usage*|test_cpu_notifications*) continue ;;
-    # Require terminal send + OSC sequences for notification tests
-    test_notifications*) continue ;;
-    # Require real surface.move/reorder implementation
-    test_surface_move_reorder_api*) continue ;;
-  esac
+CANDIDATE_NAMES=()
+
+filter_match() {
+  local name="$1"
+  [ -z "$FILTER" ] && return 0
+  case "$name" in $FILTER) return 0 ;; *) return 1 ;; esac
+}
+
+resolve_test() {
+  local name="$1"
+  local f="$TESTS_DIR/${name}.py"
+  if [ ! -f "$f" ]; then
+    echo "WARN: allowlisted test missing on disk: $name" >&2
+    return 1
+  fi
+  filter_match "$name" || return 1
   TESTS+=("$f")
+  return 0
+}
+
+for name in "${BASELINE[@]}"; do
+  resolve_test "$name" || true
 done
 
+if [ "${CMUX_TEST_PHASE1:-0}" = "1" ]; then
+  echo "=== Phase 1 candidate gate enabled (CMUX_TEST_PHASE1=1) ==="
+  for name in "${CANDIDATES_PHASE1[@]}"; do
+    if resolve_test "$name"; then
+      CANDIDATE_NAMES+=("$name")
+    fi
+  done
+fi
+
+is_candidate() {
+  local needle="$1"
+  for c in "${CANDIDATE_NAMES[@]}"; do
+    [ "$c" = "$needle" ] && return 0
+  done
+  return 1
+}
+
 TOTAL=${#TESTS[@]}
-echo "=== Running $TOTAL tests ==="
+echo "=== Running $TOTAL tests (${#BASELINE[@]} baseline, ${#CANDIDATE_NAMES[@]} phase1 candidates) ==="
 echo "TAP version 13" > "$TAP_FILE"
 echo "1..$TOTAL" >> "$TAP_FILE"
 
-PASS=0 FAIL=0 NUM=0
+PASS=0 FAIL=0 NUM=0 CAND_PASS=0 CAND_FAIL=0
 for test_file in "${TESTS[@]}"; do
   NUM=$((NUM + 1))
   name=$(basename "$test_file" .py)
   if timeout 5 python3 "$test_file" > "/tmp/socket-tests-${name}.log" 2>&1; then
-    PASS=$((PASS + 1))
-    echo "ok $NUM $name" >> "$TAP_FILE"
-    echo "PASS: $name"
+    if is_candidate "$name"; then
+      CAND_PASS=$((CAND_PASS + 1))
+      echo "ok $NUM $name # candidate" >> "$TAP_FILE"
+      echo "PASS: $name (candidate)"
+    else
+      PASS=$((PASS + 1))
+      echo "ok $NUM $name" >> "$TAP_FILE"
+      echo "PASS: $name"
+    fi
   else
-    FAIL=$((FAIL + 1))
-    echo "not ok $NUM $name" >> "$TAP_FILE"
-    echo "FAIL: $name"
+    if is_candidate "$name"; then
+      CAND_FAIL=$((CAND_FAIL + 1))
+      # TAP-style "todo" — visible as a failure but conventionally non-fatal
+      echo "not ok $NUM $name # TODO candidate (non-fatal)" >> "$TAP_FILE"
+      echo "FAIL: $name (candidate, non-fatal)"
+    else
+      FAIL=$((FAIL + 1))
+      echo "not ok $NUM $name" >> "$TAP_FILE"
+      echo "FAIL: $name"
+    fi
   fi
 done
 
 echo ""
-echo "=== Results: $PASS/$TOTAL passed, $FAIL failed ==="
+echo "=== Baseline: $PASS/${#BASELINE[@]} passed, $FAIL failed ==="
+if [ "${#CANDIDATE_NAMES[@]}" -gt 0 ]; then
+  echo "=== Phase 1 candidates: $CAND_PASS/${#CANDIDATE_NAMES[@]} passed, $CAND_FAIL failed (non-fatal) ==="
+fi
 echo "=== Daemon stderr ==="
 head -5 "$STDERR_LOG" 2>/dev/null
+
+# Only baseline failures fail the job. Phase 1 candidate failures are
+# observational — promote into BASELINE once consistently green.
 [ $FAIL -gt 0 ] && exit 1 || exit 0
