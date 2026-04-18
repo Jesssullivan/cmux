@@ -274,13 +274,13 @@ const methods = .{
     .{ "debug.terminal.read_text", handleSurfaceReadText },
     .{ "debug.terminal.render_stats", handleDebugStub },
     .{ "debug.portal.stats", handleDebugStub },
-    .{ "debug.bonsplit_underflow.count", handleDebugStub },
-    .{ "debug.bonsplit_underflow.reset", handleDebugStub },
-    .{ "debug.empty_panel.count", handleDebugStub },
-    .{ "debug.empty_panel.reset", handleDebugStub },
+    .{ "debug.bonsplit_underflow.count", handleDebugBonsplitUnderflowCount },
+    .{ "debug.bonsplit_underflow.reset", handleDebugBonsplitUnderflowReset },
+    .{ "debug.empty_panel.count", handleDebugEmptyPanelCount },
+    .{ "debug.empty_panel.reset", handleDebugEmptyPanelReset },
     .{ "debug.notification.focus", handleDebugStub },
-    .{ "debug.panel_snapshot", handleDebugStub },
-    .{ "debug.panel_snapshot.reset", handleDebugStub },
+    .{ "debug.panel_snapshot", handleDebugPanelSnapshot },
+    .{ "debug.panel_snapshot.reset", handleDebugPanelSnapshotReset },
     .{ "debug.window.screenshot", handleDebugStub },
     .{ "debug.shortcut.set", handleDebugStub },
     .{ "debug.shortcut.simulate", handleDebugStub },
@@ -1431,21 +1431,53 @@ fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
         return buf.toOwnedSlice(alloc) catch "{}";
     }
 
-    // Recognized macOS actions not yet wired on Linux. `action` is user
-    // input — escape it so a malformed value cannot break the envelope.
-    if (std.mem.eql(u8, action, "set_description") or
-        std.mem.eql(u8, action, "clear_description") or
-        std.mem.eql(u8, action, "mark_read") or
-        std.mem.eql(u8, action, "mark_unread"))
-    {
+    if (std.mem.eql(u8, action, "set_description")) {
+        const desc = getParamString(params, "description") orelse return "{\"error\":\"missing description\"}";
+        const new_desc = ws.alloc.dupe(u8, desc) catch return "{\"error\":\"alloc failed\"}";
+        if (ws.description) |old| ws.alloc.free(old);
+        ws.description = new_desc;
+        if (window.getSidebar()) |sb| sb.refresh();
         var buf: std.ArrayList(u8) = .empty;
         const w = buf.writer(alloc);
-        w.writeAll("{\"error\":\"action not implemented on linux\",\"action\":") catch
-            return "{\"error\":\"action not implemented on linux\"}";
-        writeJsonString(w, action) catch
-            return "{\"error\":\"action not implemented on linux\"}";
-        w.writeByte('}') catch return "{\"error\":\"action not implemented on linux\"}";
-        return buf.toOwnedSlice(alloc) catch "{\"error\":\"action not implemented on linux\"}";
+        w.writeAll("{\"action\":\"set_description\",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.writeAll("\",\"description\":") catch return "{}";
+        writeJsonString(w, desc) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_description")) {
+        if (ws.description) |old| {
+            ws.alloc.free(old);
+            ws.description = null;
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_description\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "mark_read")) {
+        ws.is_manually_unread = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"mark_read\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "mark_unread")) {
+        ws.is_manually_unread = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"mark_unread\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
     }
 
     // Unsupported action — same escape treatment.
@@ -1454,7 +1486,7 @@ fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
     w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
         return "{\"error\":\"unsupported action\"}";
     writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
-    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"set_color\",\"clear_color\",\"move_up\",\"move_down\",\"move_top\",\"close_others\",\"close_above\",\"close_below\"]}") catch
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"set_color\",\"clear_color\",\"set_description\",\"clear_description\",\"mark_read\",\"mark_unread\",\"move_up\",\"move_down\",\"move_top\",\"close_others\",\"close_above\",\"close_below\"]}") catch
         return "{\"error\":\"unsupported action\"}";
     return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
@@ -3193,6 +3225,80 @@ fn writeLayoutNode(w: anytype, node: *const split_tree.Node) !void {
             try w.writeByte('}');
         },
     }
+}
+
+// ── Debug counter handlers ──────────────────────────────────────────
+// Linux uses split_tree.zig directly (no bonsplit), so underflow
+// counts are always zero. We still track them for API parity.
+var debug_bonsplit_underflow_count: u32 = 0;
+var debug_empty_panel_count: u32 = 0;
+
+fn handleDebugBonsplitUnderflowCount(_: Allocator, _: json.Value) []const u8 {
+    return "{\"count\":0}";
+}
+
+fn handleDebugBonsplitUnderflowReset(_: Allocator, _: json.Value) []const u8 {
+    debug_bonsplit_underflow_count = 0;
+    return "{\"reset\":true}";
+}
+
+fn handleDebugEmptyPanelCount(alloc: Allocator, _: json.Value) []const u8 {
+    // Scan the current workspace for panels missing a widget/surface.
+    const tm = getTabManager() orelse return "{\"count\":0}";
+    const ws = tm.selectedWorkspace() orelse return "{\"count\":0}";
+    var count: u32 = 0;
+    var it = ws.panels.valueIterator();
+    while (it.next()) |panel_ptr| {
+        const panel = panel_ptr.*;
+        if (panel.widget == null and panel.surface == null) count += 1;
+    }
+    count += debug_empty_panel_count;
+    if (count == 0) return "{\"count\":0}";
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.print("{{\"count\":{d}}}", .{count}) catch return "{\"count\":0}";
+    return buf.toOwnedSlice(alloc) catch "{\"count\":0}";
+}
+
+fn handleDebugEmptyPanelReset(_: Allocator, _: json.Value) []const u8 {
+    debug_empty_panel_count = 0;
+    return "{\"reset\":true}";
+}
+
+/// debug.panel_snapshot — return panel metadata (no pixel capture in headless).
+fn handleDebugPanelSnapshot(alloc: Allocator, params: json.Value) []const u8 {
+    const surface_id_str = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
+    const panel_id = parseUuid(surface_id_str) orelse return "{\"error\":\"invalid surface_id\"}";
+
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    // Search all workspaces for the panel.
+    for (tm.workspaces.items) |ws| {
+        if (ws.panels.get(panel_id)) |panel| {
+            var buf: std.ArrayList(u8) = .empty;
+            const w = buf.writer(alloc);
+            const hex = formatId(panel.id);
+            w.writeAll("{\"surface_id\":\"") catch return "{}";
+            w.writeAll(&hex) catch return "{}";
+            w.writeAll("\",\"panel_type\":\"") catch return "{}";
+            w.writeAll(switch (panel.panel_type) {
+                .terminal => "terminal",
+                .browser => "browser",
+                .markdown => "markdown",
+            }) catch return "{}";
+            w.writeAll("\",\"has_widget\":") catch return "{}";
+            w.writeAll(if (panel.widget != null) "true" else "false") catch return "{}";
+            w.writeAll(",\"has_surface\":") catch return "{}";
+            w.writeAll(if (panel.surface != null) "true" else "false") catch return "{}";
+            w.writeByte('}') catch return "{}";
+            return buf.toOwnedSlice(alloc) catch "{}";
+        }
+    }
+    return "{\"error\":\"panel not found\"}";
+}
+
+fn handleDebugPanelSnapshotReset(_: Allocator, _: json.Value) []const u8 {
+    return "{\"reset\":true}";
 }
 
 /// Stub for debug introspection methods not yet implemented on Linux.

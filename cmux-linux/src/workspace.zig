@@ -65,7 +65,9 @@ pub const Workspace = struct {
     custom_title: ?[]const u8 = null,
     custom_color: ?[]const u8 = null,
     current_directory: ?[]const u8 = null,
+    description: ?[]const u8 = null,
     is_pinned: bool = false,
+    is_manually_unread: bool = false,
 
     /// Status.
     git_branch: ?GitBranch = null,
@@ -96,6 +98,7 @@ pub const Workspace = struct {
         self.ordered_panels.deinit(self.alloc);
         self.status_entries.deinit(self.alloc);
 
+        if (self.description) |d| self.alloc.free(d);
         if (self.root_node) |node| split_tree.destroy(self.alloc, node);
     }
 
