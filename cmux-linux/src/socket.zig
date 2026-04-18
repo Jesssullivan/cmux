@@ -193,6 +193,7 @@ const methods = .{
     .{ "system.identify", handleIdentify },
     .{ "system.capabilities", handleCapabilities },
     .{ "auth.login", handleAuthLogin },
+    .{ "system.tree", handleSystemTree },
     .{ "window.list", handleWindowList },
     .{ "window.current", handleWindowCurrent },
     .{ "workspace.list", handleWorkspaceList },
@@ -570,6 +571,161 @@ fn handleAuthLogin(_: Allocator, _: json.Value) []const u8 {
     // password handshake gracefully, and required=false so they know the
     // gate is not enforced on this platform.
     return "{\"authenticated\":true,\"required\":false}";
+}
+
+/// Compose a window→workspace→pane→surface tree mirroring the macOS shape.
+///
+/// Linux currently uses a 1:1 panel:pane mapping (no pane grouping yet), so
+/// each pane node always contains exactly one surface and `pane_id` /
+/// `surface_id` resolve to the same underlying panel UUID. Any client that
+/// joins/breaks panes on Linux later will get richer pane/surface arrays
+/// without changing this shape.
+///
+/// Optional params recognised today:
+///   - none (workspace_id / all_windows / caller filters from macOS are not
+///     yet implemented; the tree always covers every known window).
+fn handleSystemTree(alloc: Allocator, params: json.Value) []const u8 {
+    _ = params;
+    const empty = "{\"active\":{},\"windows\":[]}";
+    const tm = getTabManager() orelse return empty;
+    ensureDefaultWindow();
+
+    const selected_ws = tm.selectedWorkspace();
+
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+
+    // ── active focus pointer (matches handleIdentify shape) ──
+    w.writeAll("{\"active\":") catch return empty;
+    if (selected_ws) |ws| {
+        const ws_hex = formatId(ws.id);
+        w.writeAll("{\"workspace_id\":\"") catch return empty;
+        w.writeAll(&ws_hex) catch return empty;
+        w.writeAll("\"") catch return empty;
+        if (ws.focused_panel_id) |pid| {
+            const pid_hex = formatId(pid);
+            w.writeAll(",\"surface_id\":\"") catch return empty;
+            w.writeAll(&pid_hex) catch return empty;
+            w.writeAll("\"") catch return empty;
+        }
+        for (window_store[0..window_count]) |win_entry| {
+            if (win_entry.hasWorkspace(ws.id)) {
+                const win_hex = formatId(win_entry.id);
+                w.writeAll(",\"window_id\":\"") catch return empty;
+                w.writeAll(&win_hex) catch return empty;
+                w.writeAll("\"") catch return empty;
+                break;
+            }
+        }
+        w.writeAll("}") catch return empty;
+    } else {
+        w.writeAll("{}") catch return empty;
+    }
+
+    // ── windows[] ──
+    w.writeAll(",\"windows\":[") catch return empty;
+    for (window_store[0..window_count], 0..) |win_entry, win_idx| {
+        if (win_idx > 0) w.writeAll(",") catch {};
+        const win_hex = formatId(win_entry.id);
+
+        // Count workspaces in this window and find the selected one (if any).
+        var ws_in_window: usize = 0;
+        var sel_ws_in_window: ?u128 = null;
+        for (tm.workspaces.items) |ws| {
+            if (!win_entry.hasWorkspace(ws.id)) continue;
+            ws_in_window += 1;
+            if (selected_ws) |sws| {
+                if (sws.id == ws.id) sel_ws_in_window = ws.id;
+            }
+        }
+
+        w.writeAll("{\"id\":\"") catch return empty;
+        w.writeAll(&win_hex) catch return empty;
+        w.print(
+            "\",\"ref\":\"window:{d}\",\"index\":{d},\"workspace_count\":{d},\"selected_workspace_id\":",
+            .{ win_idx, win_idx, ws_in_window },
+        ) catch return empty;
+        if (sel_ws_in_window) |sid| {
+            const sid_hex = formatId(sid);
+            w.writeAll("\"") catch return empty;
+            w.writeAll(&sid_hex) catch return empty;
+            w.writeAll("\"") catch return empty;
+        } else {
+            w.writeAll("null") catch return empty;
+        }
+        w.writeAll(",\"workspaces\":[") catch return empty;
+
+        // ── workspaces[] (filtered to this window) ──
+        var ws_out_idx: usize = 0;
+        for (tm.workspaces.items) |ws| {
+            if (!win_entry.hasWorkspace(ws.id)) continue;
+            if (ws_out_idx > 0) w.writeAll(",") catch {};
+            const ws_hex = formatId(ws.id);
+            const is_ws_selected = if (selected_ws) |sws| sws.id == ws.id else false;
+
+            w.writeAll("{\"id\":\"") catch return empty;
+            w.writeAll(&ws_hex) catch return empty;
+            w.print(
+                "\",\"ref\":\"workspace:{d}\",\"index\":{d},\"title\":",
+                .{ ws_out_idx, ws_out_idx },
+            ) catch return empty;
+            writeJsonString(w, ws.displayTitle()) catch return empty;
+            w.print(
+                ",\"selected\":{s},\"pinned\":{s},\"panes\":[",
+                .{
+                    if (is_ws_selected) "true" else "false",
+                    if (ws.is_pinned) "true" else "false",
+                },
+            ) catch return empty;
+
+            // ── panes[] (Linux: one pane per panel) ──
+            for (ws.ordered_panels.items, 0..) |panel_id, p_idx| {
+                const panel = ws.panels.get(panel_id) orelse continue;
+                if (p_idx > 0) w.writeAll(",") catch {};
+                const panel_hex = formatId(panel.id);
+                const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
+                const focused_str: []const u8 = if (is_focused) "true" else "false";
+                const title_str = panel.custom_title orelse panel.title orelse "Terminal";
+                const type_str = @tagName(panel.panel_type);
+
+                // Pane node — surface_count is always 1 on Linux today.
+                w.writeAll("{\"id\":\"") catch return empty;
+                w.writeAll(&panel_hex) catch return empty;
+                w.print(
+                    "\",\"ref\":\"pane:{d}\",\"index\":{d},\"focused\":{s},\"surface_count\":1,\"selected_surface_id\":\"",
+                    .{ p_idx, p_idx, focused_str },
+                ) catch return empty;
+                w.writeAll(&panel_hex) catch return empty;
+                w.print(
+                    "\",\"selected_surface_ref\":\"surface:{d}\",\"surfaces\":[",
+                    .{p_idx},
+                ) catch return empty;
+
+                // Single surface entry per pane.
+                w.writeAll("{\"id\":\"") catch return empty;
+                w.writeAll(&panel_hex) catch return empty;
+                w.print(
+                    "\",\"ref\":\"surface:{d}\",\"index\":{d},\"index_in_pane\":0,\"type\":\"{s}\",\"focused\":{s},\"selected\":true,\"selected_in_pane\":true,\"pane_id\":\"",
+                    .{ p_idx, p_idx, type_str, focused_str },
+                ) catch return empty;
+                w.writeAll(&panel_hex) catch return empty;
+                w.print(
+                    "\",\"pane_ref\":\"pane:{d}\",\"title\":",
+                    .{p_idx},
+                ) catch return empty;
+                writeJsonString(w, title_str) catch return empty;
+                w.writeAll("}]}") catch return empty; // close surface + surfaces[] + pane
+            }
+
+            w.writeAll("]}") catch return empty; // close panes[] + workspace
+            ws_out_idx += 1;
+        }
+
+        w.writeAll("]}") catch return empty; // close workspaces[] + window
+    }
+    w.writeAll("]}") catch return empty; // close windows[] + root
+
+    return buf.toOwnedSlice(alloc) catch empty;
 }
 
 // ── Window Handlers ─────────────────────────────────────────────────────
