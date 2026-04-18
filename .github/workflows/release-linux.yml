@@ -17,10 +17,19 @@ concurrency:
 jobs:
   # ── Build + package on Ubuntu (DEB + tarball) ─────────────────────
   build-deb:
-    name: Build DEB package (Ubuntu)
-    runs-on: ubuntu-latest
+    name: Build DEB package (Ubuntu, ${{ matrix.arch.deb }})
+    runs-on: ${{ matrix.arch.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - { deb: amd64, tar: amd64, runner: ubuntu-latest }
+          - { deb: arm64, tar: arm64, runner: ubuntu-24.04-arm }
     outputs:
+      # Both matrix legs compute the same value, so this is safe — GHA
+      # picks an arbitrary leg's value, and downstream jobs only care that
+      # tag/version match the triggering ref.
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
@@ -84,15 +93,17 @@ jobs:
           fi
 
       - name: Assemble DEB package
+        env:
+          DEB_ARCH: ${{ matrix.arch.deb }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          PKG="cmux_${VERSION}_amd64"
+          PKG="cmux_${VERSION}_${DEB_ARCH}"
           mkdir -p "${PKG}/DEBIAN"
 
           cat > "${PKG}/DEBIAN/control" <<CTRL
           Package: cmux
           Version: ${VERSION}
-          Architecture: amd64
+          Architecture: ${DEB_ARCH}
           Maintainer: Jess Sullivan <jess@jesssullivan.dev>
           Homepage: https://github.com/Jesssullivan/cmux
           Section: x11
@@ -141,9 +152,11 @@ jobs:
           echo "Built: ${PKG}.deb ($(du -h "${PKG}.deb" | cut -f1))"
 
       - name: Assemble generic tarball
+        env:
+          TAR_ARCH: ${{ matrix.arch.tar }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          STAGING="cmux-${VERSION}-linux-amd64"
+          STAGING="cmux-${VERSION}-linux-${TAR_ARCH}"
           mkdir -p "${STAGING}"/{bin,lib,share/{applications,metainfo,icons/hicolor/{16x16,128x128,256x256,512x512}/apps},lib/udev/rules.d}
 
           cp cmux-linux/zig-out/bin/cmux "${STAGING}/bin/"
@@ -177,27 +190,33 @@ jobs:
           INSTALL
           chmod +x "${STAGING}/install.sh"
 
-          tar czf "cmux-${VERSION}-linux-amd64.tar.gz" "${STAGING}"
-          echo "Built: cmux-${VERSION}-linux-amd64.tar.gz ($(du -h "cmux-${VERSION}-linux-amd64.tar.gz" | cut -f1))"
+          tar czf "cmux-${VERSION}-linux-${TAR_ARCH}.tar.gz" "${STAGING}"
+          echo "Built: cmux-${VERSION}-linux-${TAR_ARCH}.tar.gz ($(du -h "cmux-${VERSION}-linux-${TAR_ARCH}.tar.gz" | cut -f1))"
 
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cmux-linux-deb
-          path: cmux_*.deb
+          name: cmux-linux-deb-${{ matrix.arch.deb }}
+          path: cmux_*_${{ matrix.arch.deb }}.deb
 
       - name: Upload tarball artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cmux-linux-tarball
-          path: cmux-*-linux-amd64.tar.gz
+          name: cmux-linux-tarball-${{ matrix.arch.tar }}
+          path: cmux-*-linux-${{ matrix.arch.tar }}.tar.gz
 
   # ── Build + package on Fedora (RPM) ──────────────────────────────
   build-rpm:
-    name: Build RPM package (Fedora 42)
-    runs-on: ubuntu-latest
+    name: Build RPM package (Fedora 42, ${{ matrix.arch.rpm }})
+    runs-on: ${{ matrix.arch.runner }}
     container: fedora:42
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - { rpm: x86_64, runner: ubuntu-latest }
+          - { rpm: aarch64, runner: ubuntu-24.04-arm }
     steps:
       - name: Install build dependencies
         run: |
@@ -259,13 +278,15 @@ jobs:
           fi
 
       - name: Assemble RPM package
+        env:
+          RPM_ARCH: ${{ matrix.arch.rpm }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           # RPM Version field cannot contain hyphens; use tilde for pre-release
           RPM_VERSION=$(echo "$VERSION" | tr '-' '~')
           TOPDIR="$PWD/rpmbuild"
           mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
-          BUILDROOT="$TOPDIR/BUILDROOT/cmux-${RPM_VERSION}-1.x86_64"
+          BUILDROOT="$TOPDIR/BUILDROOT/cmux-${RPM_VERSION}-1.${RPM_ARCH}"
 
           # Resolve RPM macros for this distro
           UDEVRULESDIR=$(rpm --eval '%{_udevrulesdir}')
@@ -307,8 +328,8 @@ jobs:
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cmux-linux-rpm
-          path: cmux-*.rpm
+          name: cmux-linux-rpm-${{ matrix.arch.rpm }}
+          path: cmux-*.${{ matrix.arch.rpm }}.rpm
 
   validate-distro-install:
     name: Validate Linux packages in distro VMs
@@ -333,17 +354,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -t DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*.deb' | sort)
-          mapfile -t RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.rpm' | sort)
+          # The honey KVM runner is x86_64 — filter the multi-arch artifact
+          # set down to the amd64/x86_64 packages for distro validation.
+          # aarch64 distro tests are tracked separately (TIN-176 follow-up:
+          # need an arm64 KVM runner before aarch64 distro tests can run).
+          mapfile -t DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*_amd64.deb' | sort)
+          mapfile -t RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.x86_64.rpm' | sort)
 
           if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
-            echo "ERROR: expected exactly one DEB artifact, found ${#DEB_PATHS[@]}"
+            echo "ERROR: expected exactly one amd64 DEB artifact, found ${#DEB_PATHS[@]}"
             printf '%s\n' "${DEB_PATHS[@]}"
             exit 1
           fi
 
           if [ "${#RPM_PATHS[@]}" -ne 1 ]; then
-            echo "ERROR: expected exactly one RPM artifact, found ${#RPM_PATHS[@]}"
+            echo "ERROR: expected exactly one x86_64 RPM artifact, found ${#RPM_PATHS[@]}"
             printf '%s\n' "${RPM_PATHS[@]}"
             exit 1
           fi
@@ -424,7 +449,9 @@ jobs:
           TAG="${{ needs.build-deb.outputs.tag }}"
 
           ASSETS=()
-          for f in cmux-linux-deb/*.deb cmux-linux-rpm/*.rpm cmux-linux-tarball/*.tar.gz; do
+          # Each matrix leg uploads to its own arch-suffixed artifact dir
+          # (e.g. cmux-linux-deb-amd64/, cmux-linux-rpm-aarch64/).
+          for f in cmux-linux-deb-*/*.deb cmux-linux-rpm-*/*.rpm cmux-linux-tarball-*/*.tar.gz; do
             [ -f "$f" ] && ASSETS+=("$f")
           done
 
