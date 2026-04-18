@@ -2383,33 +2383,76 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
 
     // Identify pane to break (pane_id or surface_id or focused)
-    const target_id = if (getParamString(params, "pane_id")) |id_str|
-        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid pane_id\"}"
+    const found = if (getParamString(params, "pane_id")) |id_str|
+        findSurfaceGlobal(tm, id_str)
     else if (getParamString(params, "surface_id")) |id_str|
-        if (findSurfaceGlobal(tm, id_str)) |f| f.id else return "{\"error\":\"invalid surface_id\"}"
+        findSurfaceGlobal(tm, id_str)
     else blk: {
-        const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
-        break :blk ws.focused_panel_id orelse return "{\"error\":\"no focused pane\"}";
+        const ws = tm.selectedWorkspace() orelse break :blk null;
+        const fid = ws.focused_panel_id orelse break :blk null;
+        break :blk .{ .id = fid, .ws = ws };
     };
+    const target = found orelse return "{\"error\":\"pane not found\"}";
+
+    // Detach the panel from the source workspace
+    const panel = target.ws.detachPanel(target.id) orelse
+        return "{\"error\":\"detach failed\"}";
 
     // Create a new workspace for the broken pane, preserving current selection
     const prev_selected = tm.selected_index;
     const new_ws = tm.createWorkspace() catch return "{\"error\":\"create workspace failed\"}";
     tm.selected_index = prev_selected;
-    if (window.getSidebar()) |sb| sb.refresh();
 
-    // TODO: actually transfer the panel from old workspace to new
-    // For now, new workspace gets its own fresh terminal panel
-    _ = target_id;
+    // Attach the panel to the new workspace
+    new_ws.attachPanel(panel) catch return "{\"error\":\"attach failed\"}";
+
+    if (window.getSidebar()) |sb| sb.refresh();
 
     const ws_id = formatId(new_ws.id);
     return std.fmt.allocPrint(alloc, "{{\"workspace_id\":\"{s}\"}}", .{@as([]const u8, &ws_id)}) catch "{}";
 }
 
-fn handlePaneJoin(_: Allocator, params: json.Value) []const u8 {
-    // Validate params exist
-    _ = getParamString(params, "target_pane_id") orelse return "{\"error\":\"missing target_pane_id\"}";
-    return "{}"; // Stub — inverse of break, no tests call this
+fn handlePaneJoin(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    // The pane to move (defaults to focused pane in selected workspace)
+    const source = if (getParamString(params, "pane_id")) |id_str|
+        findSurfaceGlobal(tm, id_str)
+    else if (getParamString(params, "surface_id")) |id_str|
+        findSurfaceGlobal(tm, id_str)
+    else blk: {
+        const ws = tm.selectedWorkspace() orelse break :blk null;
+        const fid = ws.focused_panel_id orelse break :blk null;
+        break :blk .{ .id = fid, .ws = ws };
+    };
+    const src = source orelse return "{\"error\":\"source pane not found\"}";
+
+    // The target workspace to join into
+    const target_str = getParamString(params, "target_pane_id") orelse
+        getParamString(params, "target_workspace_id") orelse
+        return "{\"error\":\"missing target_pane_id or target_workspace_id\"}";
+    const target_ws_result = findWorkspaceById(tm, target_str);
+
+    // Try as workspace ID first, then as surface ID (find its workspace)
+    const dst_ws = if (target_ws_result) |r| r.ws else blk: {
+        const dst = findSurfaceGlobal(tm, target_str) orelse
+            return "{\"error\":\"invalid target\"}";
+        break :blk dst.ws;
+    };
+
+    if (src.ws == dst_ws) return "{\"error\":\"source and target are same workspace\"}";
+
+    // Detach panel from source workspace
+    const panel = src.ws.detachPanel(src.id) orelse
+        return "{\"error\":\"detach failed\"}";
+
+    // Attach to target workspace
+    dst_ws.attachPanel(panel) catch return "{\"error\":\"attach failed\"}";
+
+    if (window.getSidebar()) |sb| sb.refresh();
+
+    _ = alloc;
+    return "{}";
 }
 
 fn handleWorkspaceMoveToWindow(_: Allocator, params: json.Value) []const u8 {
@@ -2431,15 +2474,67 @@ fn handleWorkspaceMoveToWindow(_: Allocator, params: json.Value) []const u8 {
 }
 
 fn handleSurfaceMove(_: Allocator, params: json.Value) []const u8 {
-    _ = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
-    // Accepts optional: pane_id, workspace_id, window_id, before_surface_id, after_surface_id, index
-    return "{}"; // Stub — validates params, returns success
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const surface_str = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
+    const src = findSurfaceGlobal(tm, surface_str) orelse return "{\"error\":\"invalid surface_id\"}";
+
+    // Determine destination workspace (pane_id, workspace_id, or window context)
+    const dst_ws = if (getParamString(params, "workspace_id")) |ws_str|
+        if (findWorkspaceById(tm, ws_str)) |r| r.ws else return "{\"error\":\"invalid workspace_id\"}"
+    else if (getParamString(params, "pane_id")) |pane_str|
+        if (findSurfaceGlobal(tm, pane_str)) |r| r.ws else return "{\"error\":\"invalid pane_id\"}"
+    else
+        return "{}"; // No destination specified — no-op
+
+    if (src.ws == dst_ws) return "{}"; // Already in target workspace
+
+    const panel = src.ws.detachPanel(src.id) orelse return "{\"error\":\"detach failed\"}";
+    dst_ws.attachPanel(panel) catch return "{\"error\":\"attach failed\"}";
+    if (window.getSidebar()) |sb| sb.refresh();
+    return "{}";
 }
 
 fn handleSurfaceReorder(_: Allocator, params: json.Value) []const u8 {
-    _ = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
-    // Accepts one of: index, before_surface_id, after_surface_id
-    return "{}"; // Stub — returns success without reordering
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const surface_str = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
+    const found = findSurfaceGlobal(tm, surface_str) orelse return "{\"error\":\"invalid surface_id\"}";
+    const ws = found.ws;
+    const panel_id = found.id;
+
+    // Find current position
+    var cur_idx: ?usize = null;
+    for (ws.ordered_panels.items, 0..) |id, i| {
+        if (id == panel_id) {
+            cur_idx = i;
+            break;
+        }
+    }
+    const src = cur_idx orelse return "{\"error\":\"panel not in ordered list\"}";
+
+    // Determine target index from params
+    const dst: usize = if (getParamInt(params, "index")) |idx|
+        @min(@as(usize, @intCast(@max(0, idx))), ws.ordered_panels.items.len - 1)
+    else if (getParamString(params, "before_surface_id")) |ref_str| blk: {
+        const ref_id = if (findSurfaceGlobal(tm, ref_str)) |r| r.id else return "{\"error\":\"invalid before_surface_id\"}";
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == ref_id) break :blk i;
+        }
+        return "{\"error\":\"before_surface not in workspace\"}";
+    } else if (getParamString(params, "after_surface_id")) |ref_str| blk: {
+        const ref_id = if (findSurfaceGlobal(tm, ref_str)) |r| r.id else return "{\"error\":\"invalid after_surface_id\"}";
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == ref_id) break :blk @min(i + 1, ws.ordered_panels.items.len - 1);
+        }
+        return "{\"error\":\"after_surface not in workspace\"}";
+    } else return "{}"; // No position specified — no-op
+
+    if (src == dst) return "{}";
+
+    // Remove from current position and insert at target
+    _ = ws.ordered_panels.orderedRemove(src);
+    ws.ordered_panels.insert(ws.alloc, dst, panel_id) catch return "{\"error\":\"reorder insert failed\"}";
+
+    return "{}";
 }
 
 fn handleSurfaceDragToSplit(alloc: Allocator, params: json.Value) []const u8 {
