@@ -14,7 +14,7 @@ const logind = @import("logind.zig");
 const log = std.log.scoped(.main);
 
 /// Global libghostty app instance (set after ghostty_app_new).
-var ghostty_app: c.ghostty_app_t = null;
+pub var ghostty_app: c.ghostty_app_t = null;
 
 /// Global socket server (started before window creation).
 var socket_server: SocketServer = SocketServer.init(std.heap.c_allocator);
