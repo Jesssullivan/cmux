@@ -18,6 +18,9 @@ const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.socket);
 const json = std.json;
 
+/// A resolved surface reference: panel ID + owning workspace.
+const SurfaceRef = struct { id: u128, ws: *Workspace };
+
 /// Format a u128 as a zero-padded 32-char hex string.
 fn formatId(id: u128) [32]u8 {
     const digits = "0123456789abcdef";
@@ -508,7 +511,7 @@ fn findSurfaceInWorkspace(ws: *Workspace, id_str: []const u8) ?u128 {
 }
 
 /// Resolve a surface by UUID hex or "surface:N" ref, searching all workspaces.
-fn findSurfaceGlobal(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?struct { id: u128, ws: *Workspace } {
+fn findSurfaceGlobal(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?SurfaceRef {
     if (parseRef(id_str)) |ref| {
         if (ref.kind != .surface) return null;
         // Short refs are relative to the selected workspace
@@ -2383,7 +2386,7 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
 
     // Identify pane to break (pane_id or surface_id or focused)
-    const found = if (getParamString(params, "pane_id")) |id_str|
+    const found: ?SurfaceRef = if (getParamString(params, "pane_id")) |id_str|
         findSurfaceGlobal(tm, id_str)
     else if (getParamString(params, "surface_id")) |id_str|
         findSurfaceGlobal(tm, id_str)
@@ -2416,7 +2419,7 @@ fn handlePaneJoin(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
 
     // The pane to move (defaults to focused pane in selected workspace)
-    const source = if (getParamString(params, "pane_id")) |id_str|
+    const source: ?SurfaceRef = if (getParamString(params, "pane_id")) |id_str|
         findSurfaceGlobal(tm, id_str)
     else if (getParamString(params, "surface_id")) |id_str|
         findSurfaceGlobal(tm, id_str)
