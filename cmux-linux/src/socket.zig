@@ -204,6 +204,7 @@ const methods = .{
     .{ "workspace.previous", handleWorkspacePrevious },
     .{ "workspace.last", handleWorkspaceLast },
     .{ "workspace.reorder", handleWorkspaceReorder },
+    .{ "workspace.action", handleWorkspaceAction },
     .{ "window.create", handleWindowCreate },
     .{ "window.close", handleWindowClose },
     .{ "window.focus", handleWindowFocus },
@@ -339,8 +340,17 @@ fn parseRef(s: []const u8) ?struct { kind: RefKind, ordinal: usize } {
     return .{ .kind = kind, .ordinal = ordinal };
 }
 
+/// Result of resolving a workspace handle (UUID hex or short ref).
+///
+/// Named explicitly so call sites that need to construct one (e.g. when
+/// falling back to the currently-selected workspace) produce the same type
+/// as the function return — Zig treats `?struct { ... }` written at two
+/// different sites as two distinct anonymous types and refuses to peer-type
+/// them in `if/else` expressions.
+const WorkspaceLookup = struct { ws: *Workspace, index: usize };
+
 /// Resolve a workspace by UUID hex string or "workspace:N" short ref.
-fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?struct { ws: *Workspace, index: usize } {
+fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?WorkspaceLookup {
     // Try short ref first (workspace:N)
     if (parseRef(id_str)) |ref| {
         if (ref.kind == .workspace and ref.ordinal < tm.workspaces.items.len) {
@@ -920,6 +930,239 @@ fn handleWorkspaceReorder(_: Allocator, params: json.Value) []const u8 {
     }
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
+}
+
+/// workspace.action — apply a workspace-level action.
+///
+/// Mirrors macOS `v2WorkspaceAction` (Sources/TerminalController.swift).
+/// Linux supports the property-mutation actions and the reorder/close
+/// variants that map directly onto existing primitives. Unsupported
+/// actions return a structured error so callers can detect parity gaps.
+fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    const action = getParamString(params, "action") orelse return "{\"error\":\"missing action\"}";
+
+    // Resolve workspace (workspace_id param or current selection).
+    //
+    // The explicit `WorkspaceLookup` annotation is required: without it Zig
+    // cannot peer-type the two if/else arms — `findWorkspaceById` returns
+    // a named struct, and the `else` block constructs an anonymous struct
+    // literal at this site, which Zig considers a distinct type.
+    const found: WorkspaceLookup = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"workspace not found\"}"
+    else blk: {
+        const idx = tm.selected_index orelse return "{\"error\":\"no workspace\"}";
+        break :blk WorkspaceLookup{ .ws = tm.workspaces.items[idx], .index = idx };
+    };
+    const ws = found.ws;
+    const ws_index = found.index;
+    const ws_hex = formatId(ws.id);
+    const ws_id_slice: []const u8 = &ws_hex;
+
+    if (std.mem.eql(u8, action, "rename")) {
+        const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+        // Allocate FIRST, then free — otherwise an alloc failure leaves
+        // ws.custom_title pointing at freed memory (use-after-free).
+        const new_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+        if (ws.custom_title) |old| ws.alloc.free(old);
+        ws.custom_title = new_title;
+        tm.updateTabTitle(ws);
+        if (window.getSidebar()) |sb| sb.refresh();
+        // Escape `title` so quotes / control chars cannot break the envelope.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":\"rename\",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.writeAll("\",\"title\":") catch return "{}";
+        writeJsonString(w, title) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_name")) {
+        if (ws.custom_title) |old| {
+            ws.alloc.free(old);
+            ws.custom_title = null;
+        }
+        tm.updateTabTitle(ws);
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_name\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "pin")) {
+        ws.is_pinned = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"pin\",\"workspace_id\":\"{s}\",\"pinned\":true}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "unpin")) {
+        ws.is_pinned = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"unpin\",\"workspace_id\":\"{s}\",\"pinned\":false}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "set_color")) {
+        const color = getParamString(params, "color") orelse return "{\"error\":\"missing color\"}";
+        // Allocate FIRST, then free — same use-after-free guard as rename.
+        const new_color = ws.alloc.dupe(u8, color) catch return "{\"error\":\"alloc failed\"}";
+        if (ws.custom_color) |old| ws.alloc.free(old);
+        ws.custom_color = new_color;
+        if (window.getSidebar()) |sb| sb.refresh();
+        // Escape `color` to keep the JSON envelope intact regardless of value.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":\"set_color\",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.writeAll("\",\"color\":") catch return "{}";
+        writeJsonString(w, color) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_color")) {
+        if (ws.custom_color) |old| {
+            ws.alloc.free(old);
+            ws.custom_color = null;
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_color\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "move_up")) {
+        if (ws_index > 0) {
+            const src = tm.workspaces.orderedRemove(ws_index);
+            tm.workspaces.insertAssumeCapacity(ws_index - 1, src);
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        const new_idx_opt = blk: {
+            for (tm.workspaces.items, 0..) |w, i| if (w.id == ws.id) break :blk i;
+            break :blk @as(usize, ws_index);
+        };
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"move_up\",\"workspace_id\":\"{s}\",\"index\":{d}}}",
+            .{ ws_id_slice, new_idx_opt },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "move_down")) {
+        if (ws_index + 1 < tm.workspaces.items.len) {
+            const src = tm.workspaces.orderedRemove(ws_index);
+            tm.workspaces.insertAssumeCapacity(ws_index + 1, src);
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        const new_idx_opt = blk: {
+            for (tm.workspaces.items, 0..) |w, i| if (w.id == ws.id) break :blk i;
+            break :blk @as(usize, ws_index);
+        };
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"move_down\",\"workspace_id\":\"{s}\",\"index\":{d}}}",
+            .{ ws_id_slice, new_idx_opt },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "move_top")) {
+        if (ws_index > 0) {
+            const src = tm.workspaces.orderedRemove(ws_index);
+            tm.workspaces.insertAssumeCapacity(0, src);
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"move_top\",\"workspace_id\":\"{s}\",\"index\":0}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "close_others") or
+        std.mem.eql(u8, action, "close_above") or
+        std.mem.eql(u8, action, "close_below"))
+    {
+        // Compute the set of workspace IDs to close before mutating, since
+        // closeWorkspace shifts indices.
+        var to_close = std.ArrayList(u128).empty;
+        defer to_close.deinit(alloc);
+
+        for (tm.workspaces.items, 0..) |candidate, i| {
+            if (candidate.id == ws.id) continue;
+            if (candidate.is_pinned) continue;
+            const include = if (std.mem.eql(u8, action, "close_others"))
+                true
+            else if (std.mem.eql(u8, action, "close_above"))
+                i < ws_index
+            else // close_below
+                i > ws_index;
+            if (include) to_close.append(alloc, candidate.id) catch break;
+        }
+
+        var closed: usize = 0;
+        for (to_close.items) |target_id| {
+            // Re-find each target since indices shift after each close.
+            for (tm.workspaces.items, 0..) |w, i| {
+                if (w.id == target_id) {
+                    tm.closeWorkspace(i);
+                    closed += 1;
+                    break;
+                }
+            }
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        // `action` is gated to one of three known-safe values above, but
+        // escape it via writeJsonString for consistency with the other echoes.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":") catch return "{}";
+        writeJsonString(w, action) catch return "{}";
+        w.writeAll(",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.print("\",\"closed\":{d}}}", .{closed}) catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
+    }
+
+    // Recognized macOS actions not yet wired on Linux. `action` is user
+    // input — escape it so a malformed value cannot break the envelope.
+    if (std.mem.eql(u8, action, "set_description") or
+        std.mem.eql(u8, action, "clear_description") or
+        std.mem.eql(u8, action, "mark_read") or
+        std.mem.eql(u8, action, "mark_unread"))
+    {
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"error\":\"action not implemented on linux\",\"action\":") catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        writeJsonString(w, action) catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        w.writeByte('}') catch return "{\"error\":\"action not implemented on linux\"}";
+        return buf.toOwnedSlice(alloc) catch "{\"error\":\"action not implemented on linux\"}";
+    }
+
+    // Unsupported action — same escape treatment.
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
+        return "{\"error\":\"unsupported action\"}";
+    writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"set_color\",\"clear_color\",\"move_up\",\"move_down\",\"move_top\",\"close_others\",\"close_above\",\"close_below\"]}") catch
+        return "{\"error\":\"unsupported action\"}";
+    return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
 
 // ── In-Memory Window Model ────────────────────────────────────────────
