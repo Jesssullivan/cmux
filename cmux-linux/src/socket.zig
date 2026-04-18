@@ -271,7 +271,7 @@ const methods = .{
     .{ "debug.layout", handleDebugLayout },
     .{ "debug.sidebar.visible", handleDebugSidebarVisible },
     .{ "debug.terminal.is_focused", handleDebugTerminalIsFocused },
-    .{ "debug.terminal.read_text", handleDebugStub },
+    .{ "debug.terminal.read_text", handleSurfaceReadText },
     .{ "debug.terminal.render_stats", handleDebugStub },
     .{ "debug.portal.stats", handleDebugStub },
     .{ "debug.bonsplit_underflow.count", handleDebugStub },
