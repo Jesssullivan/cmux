@@ -97,6 +97,10 @@ pub const Surface = struct {
         } };
         surface_config.scale_factor = scale;
 
+        // Pass the GtkWidget pointer as surface userdata so the
+        // close_surface_cb can identify which panel to remove.
+        surface_config.userdata = @ptrCast(@alignCast(gl_area));
+
         surface.ghostty_surface = c.ghostty.ghostty_surface_new(
             surface.ghostty_app,
             &surface_config,
