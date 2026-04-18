@@ -338,8 +338,17 @@ fn parseRef(s: []const u8) ?struct { kind: RefKind, ordinal: usize } {
     return .{ .kind = kind, .ordinal = ordinal };
 }
 
+/// Result of resolving a workspace handle (UUID hex or short ref).
+///
+/// Named explicitly so call sites that need to construct one (e.g. when
+/// falling back to the currently-selected workspace) produce the same type
+/// as the function return — Zig treats `?struct { ... }` written at two
+/// different sites as two distinct anonymous types and refuses to peer-type
+/// them in `if/else` expressions.
+const WorkspaceLookup = struct { ws: *Workspace, index: usize };
+
 /// Resolve a workspace by UUID hex string or "workspace:N" short ref.
-fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?struct { ws: *Workspace, index: usize } {
+fn findWorkspaceById(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?WorkspaceLookup {
     // Try short ref first (workspace:N)
     if (parseRef(id_str)) |ref| {
         if (ref.kind == .workspace and ref.ordinal < tm.workspaces.items.len) {
@@ -932,12 +941,17 @@ fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
     const action = getParamString(params, "action") orelse return "{\"error\":\"missing action\"}";
 
-    // Resolve workspace (workspace_id param or current selection)
-    const found = if (getParamString(params, "workspace_id")) |id_str|
+    // Resolve workspace (workspace_id param or current selection).
+    //
+    // The explicit `WorkspaceLookup` annotation is required: without it Zig
+    // cannot peer-type the two if/else arms — `findWorkspaceById` returns
+    // a named struct, and the `else` block constructs an anonymous struct
+    // literal at this site, which Zig considers a distinct type.
+    const found: WorkspaceLookup = if (getParamString(params, "workspace_id")) |id_str|
         findWorkspaceById(tm, id_str) orelse return "{\"error\":\"workspace not found\"}"
     else blk: {
         const idx = tm.selected_index orelse return "{\"error\":\"no workspace\"}";
-        break :blk .{ .ws = tm.workspaces.items[idx], .index = idx };
+        break :blk WorkspaceLookup{ .ws = tm.workspaces.items[idx], .index = idx };
     };
     const ws = found.ws;
     const ws_index = found.index;
