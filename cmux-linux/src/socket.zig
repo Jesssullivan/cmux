@@ -250,6 +250,7 @@ const methods = .{
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
     .{ "app.focus_override.set", handleAppFocusOverrideSet },
+    .{ "app.simulate_active", handleAppSimulateActive },
     .{ "debug.app.activate", handleDebugAppActivate },
     .{ "debug.flash.count", handleDebugFlashCount },
     .{ "debug.flash.reset", handleDebugFlashReset },
@@ -1808,6 +1809,15 @@ fn handleAppFocusOverrideSet(_: Allocator, params: json.Value) []const u8 {
 
 fn handleDebugAppActivate(_: Allocator, _: json.Value) []const u8 {
     // No-op on Linux (macOS activates NSApp)
+    return "{}";
+}
+
+fn handleAppSimulateActive(_: Allocator, _: json.Value) []const u8 {
+    // No-op on Linux. The macOS handler triggers
+    // applicationDidBecomeActive on NSApp so test harnesses can drive
+    // focus-restoration code paths. The Linux build has no equivalent
+    // app-active lifecycle, so we accept the call and return success
+    // to keep cross-platform tests happy.
     return "{}";
 }
 
