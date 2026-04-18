@@ -1273,14 +1273,22 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
     if (std.mem.eql(u8, action, "rename")) {
         const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+        // Allocate the new value FIRST, then free the old. Otherwise an alloc
+        // failure leaves panel.custom_title pointing at freed memory.
+        const new_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
         if (panel.custom_title) |old| ws.alloc.free(old);
-        panel.custom_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+        panel.custom_title = new_title;
         if (window.getSidebar()) |sb| sb.refresh();
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"action\":\"rename\",\"surface_id\":\"{s}\",\"title\":\"{s}\"}}",
-            .{ panel_id_slice, title },
-        ) catch "{}";
+        // Escape `title` via writeJsonString so quotes / backslashes / control
+        // chars in the user-supplied value cannot break the JSON envelope.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":\"rename\",\"surface_id\":\"") catch return "{}";
+        w.writeAll(panel_id_slice) catch return "{}";
+        w.writeAll("\",\"title\":") catch return "{}";
+        writeJsonString(w, title) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
     }
 
     if (std.mem.eql(u8, action, "clear_name")) {
@@ -1338,6 +1346,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
     // Recognized but not yet implemented on Linux. Returning a structured
     // error lets callers distinguish "wrong call" from "platform gap".
+    // `action` is user input — escape it via writeJsonString.
     if (std.mem.eql(u8, action, "close_left") or
         std.mem.eql(u8, action, "close_right") or
         std.mem.eql(u8, action, "close_others") or
@@ -1346,18 +1355,25 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         std.mem.eql(u8, action, "reload") or
         std.mem.eql(u8, action, "duplicate"))
     {
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"error\":\"action not implemented on linux\",\"action\":\"{s}\"}}",
-            .{action},
-        ) catch "{\"error\":\"action not implemented on linux\"}";
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"error\":\"action not implemented on linux\",\"action\":") catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        writeJsonString(w, action) catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        w.writeByte('}') catch return "{\"error\":\"action not implemented on linux\"}";
+        return buf.toOwnedSlice(alloc) catch "{\"error\":\"action not implemented on linux\"}";
     }
 
-    return std.fmt.allocPrint(
-        alloc,
-        "{{\"error\":\"unsupported action\",\"action\":\"{s}\",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\"]}}",
-        .{action},
-    ) catch "{\"error\":\"unsupported action\"}";
+    // Unsupported action — same escape treatment for `action` echo.
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
+        return "{\"error\":\"unsupported action\"}";
+    writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\"]}") catch
+        return "{\"error\":\"unsupported action\"}";
+    return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
 
 // ── Batch 3: Additional Pane Operations ─────────────────────────────────
