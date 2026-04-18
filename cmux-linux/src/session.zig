@@ -219,9 +219,9 @@ pub const SessionManager = struct {
             try writer.writeAll(t);
             try writer.writeByte('"');
         }
-        if (snap.custom_color) |c| {
+        if (snap.custom_color) |color| {
             try writer.writeAll(",\"custom_color\":\"");
-            try writer.writeAll(c);
+            try writer.writeAll(color);
             try writer.writeByte('"');
         }
         if (snap.description) |desc| {
