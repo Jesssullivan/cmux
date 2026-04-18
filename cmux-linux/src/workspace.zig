@@ -179,6 +179,36 @@ pub const Workspace = struct {
         }
     }
 
+    /// Detach a panel without destroying it — for transferring between workspaces.
+    /// Returns the panel pointer if found, null otherwise.
+    pub fn detachPanel(self: *Workspace, panel_id: u128) ?*Panel {
+        const panel = self.panels.get(panel_id) orelse return null;
+        _ = self.panels.remove(panel_id);
+        for (self.ordered_panels.items, 0..) |id, i| {
+            if (id == panel_id) {
+                _ = self.ordered_panels.orderedRemove(i);
+                break;
+            }
+        }
+        if (self.focused_panel_id) |fid| {
+            if (fid == panel_id) {
+                // Focus the next available panel
+                self.focused_panel_id = if (self.ordered_panels.items.len > 0)
+                    self.ordered_panels.items[0]
+                else
+                    null;
+            }
+        }
+        return panel;
+    }
+
+    /// Attach an existing panel to this workspace (for transfers from another workspace).
+    pub fn attachPanel(self: *Workspace, panel: *Panel) !void {
+        try self.panels.put(self.alloc, panel.id, panel);
+        try self.ordered_panels.append(self.alloc, panel.id);
+        self.focused_panel_id = panel.id;
+    }
+
     /// Get the number of panels.
     pub fn panelCount(self: *const Workspace) usize {
         return self.panels.count();
