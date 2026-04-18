@@ -3089,13 +3089,13 @@ fn handleDebugTerminals(alloc: Allocator, _: json.Value) []const u8 {
             w.writeAll("{\"workspace_id\":\"") catch continue;
             w.writeAll(&ws_hex) catch continue;
             w.writeAll("\",\"workspace_index\":") catch continue;
-            std.fmt.formatInt(ws_idx, 10, .lower, .{}, w) catch continue;
+            w.print("{d}", .{ws_idx}) catch continue;
             w.writeAll(",\"workspace_selected\":") catch continue;
             w.writeAll(if (ws_selected) "true" else "false") catch continue;
             w.writeAll(",\"surface_id\":\"") catch continue;
             w.writeAll(&panel_hex) catch continue;
             w.writeAll("\",\"surface_index\":") catch continue;
-            std.fmt.formatInt(panel_idx, 10, .lower, .{}, w) catch continue;
+            w.print("{d}", .{panel_idx}) catch continue;
             w.writeAll(",\"focused\":") catch continue;
             w.writeAll(if (is_focused) "true" else "false") catch continue;
 
