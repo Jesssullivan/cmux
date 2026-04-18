@@ -204,6 +204,7 @@ const methods = .{
     .{ "workspace.previous", handleWorkspacePrevious },
     .{ "workspace.last", handleWorkspaceLast },
     .{ "workspace.reorder", handleWorkspaceReorder },
+    .{ "workspace.action", handleWorkspaceAction },
     .{ "window.create", handleWindowCreate },
     .{ "window.close", handleWindowClose },
     .{ "window.focus", handleWindowFocus },
@@ -918,6 +919,208 @@ fn handleWorkspaceReorder(_: Allocator, params: json.Value) []const u8 {
     }
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
+}
+
+/// workspace.action — apply a workspace-level action.
+///
+/// Mirrors macOS `v2WorkspaceAction` (Sources/TerminalController.swift).
+/// Linux supports the property-mutation actions and the reorder/close
+/// variants that map directly onto existing primitives. Unsupported
+/// actions return a structured error so callers can detect parity gaps.
+fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    const action = getParamString(params, "action") orelse return "{\"error\":\"missing action\"}";
+
+    // Resolve workspace (workspace_id param or current selection)
+    const found = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"workspace not found\"}"
+    else blk: {
+        const idx = tm.selected_index orelse return "{\"error\":\"no workspace\"}";
+        break :blk .{ .ws = tm.workspaces.items[idx], .index = idx };
+    };
+    const ws = found.ws;
+    const ws_index = found.index;
+    const ws_hex = formatId(ws.id);
+    const ws_id_slice: []const u8 = &ws_hex;
+
+    if (std.mem.eql(u8, action, "rename")) {
+        const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+        if (ws.custom_title) |old| ws.alloc.free(old);
+        ws.custom_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+        tm.updateTabTitle(ws);
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"rename\",\"workspace_id\":\"{s}\",\"title\":\"{s}\"}}",
+            .{ ws_id_slice, title },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_name")) {
+        if (ws.custom_title) |old| {
+            ws.alloc.free(old);
+            ws.custom_title = null;
+        }
+        tm.updateTabTitle(ws);
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_name\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "pin")) {
+        ws.is_pinned = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"pin\",\"workspace_id\":\"{s}\",\"pinned\":true}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "unpin")) {
+        ws.is_pinned = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"unpin\",\"workspace_id\":\"{s}\",\"pinned\":false}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "set_color")) {
+        const color = getParamString(params, "color") orelse return "{\"error\":\"missing color\"}";
+        if (ws.custom_color) |old| ws.alloc.free(old);
+        ws.custom_color = ws.alloc.dupe(u8, color) catch return "{\"error\":\"alloc failed\"}";
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"set_color\",\"workspace_id\":\"{s}\",\"color\":\"{s}\"}}",
+            .{ ws_id_slice, color },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_color")) {
+        if (ws.custom_color) |old| {
+            ws.alloc.free(old);
+            ws.custom_color = null;
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_color\",\"workspace_id\":\"{s}\"}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "move_up")) {
+        if (ws_index > 0) {
+            const src = tm.workspaces.orderedRemove(ws_index);
+            tm.workspaces.insertAssumeCapacity(ws_index - 1, src);
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        const new_idx_opt = blk: {
+            for (tm.workspaces.items, 0..) |w, i| if (w.id == ws.id) break :blk i;
+            break :blk @as(usize, ws_index);
+        };
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"move_up\",\"workspace_id\":\"{s}\",\"index\":{d}}}",
+            .{ ws_id_slice, new_idx_opt },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "move_down")) {
+        if (ws_index + 1 < tm.workspaces.items.len) {
+            const src = tm.workspaces.orderedRemove(ws_index);
+            tm.workspaces.insertAssumeCapacity(ws_index + 1, src);
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        const new_idx_opt = blk: {
+            for (tm.workspaces.items, 0..) |w, i| if (w.id == ws.id) break :blk i;
+            break :blk @as(usize, ws_index);
+        };
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"move_down\",\"workspace_id\":\"{s}\",\"index\":{d}}}",
+            .{ ws_id_slice, new_idx_opt },
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "move_top")) {
+        if (ws_index > 0) {
+            const src = tm.workspaces.orderedRemove(ws_index);
+            tm.workspaces.insertAssumeCapacity(0, src);
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"move_top\",\"workspace_id\":\"{s}\",\"index\":0}}",
+            .{ws_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "close_others") or
+        std.mem.eql(u8, action, "close_above") or
+        std.mem.eql(u8, action, "close_below"))
+    {
+        // Compute the set of workspace IDs to close before mutating, since
+        // closeWorkspace shifts indices.
+        var to_close = std.ArrayList(u128).empty;
+        defer to_close.deinit(alloc);
+
+        for (tm.workspaces.items, 0..) |candidate, i| {
+            if (candidate.id == ws.id) continue;
+            if (candidate.is_pinned) continue;
+            const include = if (std.mem.eql(u8, action, "close_others"))
+                true
+            else if (std.mem.eql(u8, action, "close_above"))
+                i < ws_index
+            else // close_below
+                i > ws_index;
+            if (include) to_close.append(alloc, candidate.id) catch break;
+        }
+
+        var closed: usize = 0;
+        for (to_close.items) |target_id| {
+            // Re-find each target since indices shift after each close.
+            for (tm.workspaces.items, 0..) |w, i| {
+                if (w.id == target_id) {
+                    tm.closeWorkspace(i);
+                    closed += 1;
+                    break;
+                }
+            }
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"{s}\",\"workspace_id\":\"{s}\",\"closed\":{d}}}",
+            .{ action, ws_id_slice, closed },
+        ) catch "{}";
+    }
+
+    // Recognized macOS actions not yet wired on Linux.
+    if (std.mem.eql(u8, action, "set_description") or
+        std.mem.eql(u8, action, "clear_description") or
+        std.mem.eql(u8, action, "mark_read") or
+        std.mem.eql(u8, action, "mark_unread"))
+    {
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"error\":\"action not implemented on linux\",\"action\":\"{s}\"}}",
+            .{action},
+        ) catch "{\"error\":\"action not implemented on linux\"}";
+    }
+
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"error\":\"unsupported action\",\"action\":\"{s}\",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"set_color\",\"clear_color\",\"move_up\",\"move_down\",\"move_top\",\"close_others\",\"close_above\",\"close_below\"]}}",
+        .{action},
+    ) catch "{\"error\":\"unsupported action\"}";
 }
 
 // ── In-Memory Window Model ────────────────────────────────────────────
