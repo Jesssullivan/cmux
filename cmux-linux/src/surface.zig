@@ -221,7 +221,7 @@ pub const Surface = struct {
         );
 
         const key_event = c.ghostty.ghostty_input_key_s{
-            .action = action,
+            .action = @intCast(action),
             .mods = mods,
             .consumed_mods = c.ghostty.GHOSTTY_MODS_NONE,
             .keycode = keycode,
@@ -247,7 +247,7 @@ pub const Surface = struct {
 
         // Grab focus on click
         if (surface.gl_area) |gl| {
-            c.gtk.gtk_widget_grab_focus(@ptrCast(@alignCast(gl)));
+            _ = c.gtk.gtk_widget_grab_focus(@ptrCast(@alignCast(gl)));
         }
 
         const button = gtkButtonToGhostty(c.gtk.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
@@ -333,7 +333,7 @@ fn gtkModsToGhostty(state: c_uint) c.ghostty.ghostty_input_mods_e {
     if (state & c.gtk.GDK_ALT_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_ALT;
     if (state & c.gtk.GDK_SUPER_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_SUPER;
     if (state & c.gtk.GDK_LOCK_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_CAPS;
-    return mods;
+    return @intCast(mods);
 }
 
 /// Translate GDK button number (1=left, 2=middle, 3=right) to ghostty button.
