@@ -193,17 +193,30 @@ jobs:
           tar czf "cmux-${VERSION}-linux-${TAR_ARCH}.tar.gz" "${STAGING}"
           echo "Built: cmux-${VERSION}-linux-${TAR_ARCH}.tar.gz ($(du -h "cmux-${VERSION}-linux-${TAR_ARCH}.tar.gz" | cut -f1))"
 
+      - name: Sign DEB and tarball with GPG
+        env:
+          LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+        run: bash scripts/sign-linux-packages.sh
+
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
           name: cmux-linux-deb-${{ matrix.arch.deb }}
-          path: cmux_*_${{ matrix.arch.deb }}.deb
+          path: |
+            cmux_*_${{ matrix.arch.deb }}.deb
+            cmux_*_${{ matrix.arch.deb }}.deb.asc
+          if-no-files-found: error
 
       - name: Upload tarball artifact
         uses: actions/upload-artifact@v4
         with:
           name: cmux-linux-tarball-${{ matrix.arch.tar }}
-          path: cmux-*-linux-${{ matrix.arch.tar }}.tar.gz
+          path: |
+            cmux-*-linux-${{ matrix.arch.tar }}.tar.gz
+            cmux-*-linux-${{ matrix.arch.tar }}.tar.gz.asc
+          if-no-files-found: error
 
   # ── Build + package on Fedora (RPM) ──────────────────────────────
   build-rpm:
@@ -221,7 +234,7 @@ jobs:
       - name: Install build dependencies
         run: |
           dnf install -y \
-            git rpm-build systemd-rpm-macros \
+            git rpm-build rpm-sign gnupg2 systemd-rpm-macros \
             gcc gcc-c++ pkg-config \
             gtk4-devel libadwaita-devel \
             webkitgtk6.0-devel \
@@ -325,11 +338,21 @@ jobs:
           RPM_NAME=$(basename "$RPM")
           echo "Built: $RPM_NAME ($(du -h "$RPM_NAME" | cut -f1))"
 
+      - name: Sign RPM with GPG
+        env:
+          LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+        run: bash scripts/sign-linux-packages.sh
+
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
           name: cmux-linux-rpm-${{ matrix.arch.rpm }}
-          path: cmux-*.${{ matrix.arch.rpm }}.rpm
+          path: |
+            cmux-*.${{ matrix.arch.rpm }}.rpm
+            cmux-*.${{ matrix.arch.rpm }}.rpm.asc
+          if-no-files-found: error
 
   validate-distro-install:
     name: Validate Linux packages in distro VMs
@@ -451,7 +474,11 @@ jobs:
           ASSETS=()
           # Each matrix leg uploads to its own arch-suffixed artifact dir
           # (e.g. cmux-linux-deb-amd64/, cmux-linux-rpm-aarch64/).
-          for f in cmux-linux-deb-*/*.deb cmux-linux-rpm-*/*.rpm cmux-linux-tarball-*/*.tar.gz; do
+          # Detached GPG signatures (.asc) are uploaded alongside their package.
+          for f in \
+            cmux-linux-deb-*/*.deb cmux-linux-deb-*/*.deb.asc \
+            cmux-linux-rpm-*/*.rpm cmux-linux-rpm-*/*.rpm.asc \
+            cmux-linux-tarball-*/*.tar.gz cmux-linux-tarball-*/*.tar.gz.asc; do
             [ -f "$f" ] && ASSETS+=("$f")
           done
 
