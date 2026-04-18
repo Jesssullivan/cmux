@@ -268,9 +268,9 @@ const methods = .{
     .{ "workspace.equalize_splits", handleWorkspaceEqualizeSplits },
     .{ "debug.terminals", handleDebugTerminals },
     // Sprint B: debug introspection stubs
-    .{ "debug.layout", handleDebugStub },
-    .{ "debug.sidebar.visible", handleDebugStub },
-    .{ "debug.terminal.is_focused", handleDebugStub },
+    .{ "debug.layout", handleDebugLayout },
+    .{ "debug.sidebar.visible", handleDebugSidebarVisible },
+    .{ "debug.terminal.is_focused", handleDebugTerminalIsFocused },
     .{ "debug.terminal.read_text", handleDebugStub },
     .{ "debug.terminal.render_stats", handleDebugStub },
     .{ "debug.portal.stats", handleDebugStub },
@@ -3132,6 +3132,67 @@ fn handleDebugTerminals(alloc: Allocator, _: json.Value) []const u8 {
 
     w.writeAll("]}") catch return "{}";
     return buf.toOwnedSlice(alloc) catch "{}";
+}
+
+/// debug.terminal.is_focused — check if the focused panel is a terminal.
+fn handleDebugTerminalIsFocused(_: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"focused\":false}";
+    const ws = tm.selectedWorkspace() orelse return "{\"focused\":false}";
+    const fid = ws.focused_panel_id orelse return "{\"focused\":false}";
+    const panel = ws.panels.get(fid) orelse return "{\"focused\":false}";
+    return if (panel.panel_type == .terminal) "{\"focused\":true}" else "{\"focused\":false}";
+}
+
+/// debug.sidebar.visible — always true on Linux (sidebar is not hideable).
+fn handleDebugSidebarVisible(_: Allocator, _: json.Value) []const u8 {
+    return "{\"visible\":true}";
+}
+
+/// debug.layout — serialize the workspace split tree for test introspection.
+fn handleDebugLayout(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"layout\":null}";
+
+    // Resolve workspace (param or selected)
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"workspace not found\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"layout\":") catch return "{}";
+
+    if (ws.root_node) |root| {
+        writeLayoutNode(w, root) catch {
+            return "{\"layout\":null}";
+        };
+    } else {
+        w.writeAll("null") catch return "{}";
+    }
+
+    w.writeByte('}') catch return "{}";
+    return buf.toOwnedSlice(alloc) catch "{}";
+}
+
+/// Recursively serialize a split tree node to JSON.
+fn writeLayoutNode(w: anytype, node: *const split_tree.Node) !void {
+    switch (node.*) {
+        .leaf => |leaf| {
+            const hex = formatId(leaf.panel_id);
+            try w.writeAll("{\"type\":\"leaf\",\"panel_id\":\"");
+            try w.writeAll(&hex);
+            try w.writeAll("\"}");
+        },
+        .split => |split| {
+            try w.writeAll("{\"type\":\"split\",\"orientation\":\"");
+            try w.writeAll(if (split.orientation == .horizontal) "horizontal" else "vertical");
+            try w.print("\",\"ratio\":{d:.4},\"first\":", .{split.ratio});
+            try writeLayoutNode(w, split.first);
+            try w.writeAll(",\"second\":");
+            try writeLayoutNode(w, split.second);
+            try w.writeByte('}');
+        },
+    }
 }
 
 /// Stub for debug introspection methods not yet implemented on Linux.
