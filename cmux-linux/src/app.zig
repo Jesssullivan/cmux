@@ -30,6 +30,16 @@ pub fn onAction(
         c.ghostty.GHOSTTY_ACTION_RENDER => handleRender(target),
         c.ghostty.GHOSTTY_ACTION_MOUSE_SHAPE => handleMouseShape(target, action.action.mouse_shape),
         c.ghostty.GHOSTTY_ACTION_MOUSE_VISIBILITY => handleMouseVisibility(target, action.action.mouse_visibility),
+        c.ghostty.GHOSTTY_ACTION_CLOSE_WINDOW => handleCloseWindow(),
+        c.ghostty.GHOSTTY_ACTION_CLOSE_ALL_WINDOWS => handleCloseAllWindows(),
+        c.ghostty.GHOSTTY_ACTION_QUIT => handleQuit(),
+        c.ghostty.GHOSTTY_ACTION_TOGGLE_MAXIMIZE => handleToggleMaximize(),
+        c.ghostty.GHOSTTY_ACTION_SET_TAB_TITLE => handleSetTitle(target, action.action.set_tab_title),
+        c.ghostty.GHOSTTY_ACTION_SHOW_CHILD_EXITED => handleChildExited(target, action.action.child_exited),
+        c.ghostty.GHOSTTY_ACTION_RENDERER_HEALTH => handleRendererHealth(action.action.renderer_health),
+        c.ghostty.GHOSTTY_ACTION_COLOR_CHANGE => handleColorChange(action.action.color_change),
+        c.ghostty.GHOSTTY_ACTION_RELOAD_CONFIG => handleReloadConfig(action.action.reload_config),
+        c.ghostty.GHOSTTY_ACTION_CONFIG_CHANGE => handleConfigChange(action.action.config_change),
         else => false,
     };
 }
@@ -272,6 +282,83 @@ fn handleMouseVisibility(target: c.ghostty.ghostty_target_s, vis: c.ghostty.ghos
         // Restore default cursor
         c.gtk.gtk_widget_set_cursor(widget, null);
     }
+    return true;
+}
+
+/// Close the active window.
+fn handleCloseWindow() bool {
+    const gtk_app = c.gtk.g_application_get_default() orelse return false;
+    const win = c.gtk.gtk_application_get_active_window(@ptrCast(@alignCast(gtk_app))) orelse return false;
+    c.gtk.gtk_window_close(win);
+    return true;
+}
+
+/// Close all windows and quit.
+fn handleCloseAllWindows() bool {
+    const gtk_app = c.gtk.g_application_get_default() orelse return false;
+    c.gtk.g_application_quit(gtk_app);
+    return true;
+}
+
+/// Quit the application.
+fn handleQuit() bool {
+    const gtk_app = c.gtk.g_application_get_default() orelse return false;
+    c.gtk.g_application_quit(gtk_app);
+    return true;
+}
+
+/// Toggle maximize on the active window.
+fn handleToggleMaximize() bool {
+    const gtk_app = c.gtk.g_application_get_default() orelse return false;
+    const win = c.gtk.gtk_application_get_active_window(@ptrCast(@alignCast(gtk_app))) orelse return false;
+    if (c.gtk.gtk_window_is_maximized(win) != 0) {
+        c.gtk.gtk_window_unmaximize(win);
+    } else {
+        c.gtk.gtk_window_maximize(win);
+    }
+    return true;
+}
+
+/// Handle terminal child process exit.
+fn handleChildExited(target: c.ghostty.ghostty_target_s, exited: c.ghostty.ghostty_surface_message_childexited_s) bool {
+    _ = exited; // exit_code and runtime available but not used yet
+    // Treat child exit the same as close_surface: remove the panel.
+    const surface_ud = getSurfaceUserdata(target) orelse return false;
+    onCloseSurface(surface_ud, true);
+    return true;
+}
+
+/// Log renderer health changes.
+fn handleRendererHealth(health: c.ghostty.ghostty_action_renderer_health_e) bool {
+    if (health == c.ghostty.GHOSTTY_RENDERER_HEALTH_UNHEALTHY) {
+        log.warn("Renderer reported unhealthy state", .{});
+    }
+    return true;
+}
+
+/// Handle terminal color changes (OSC 4/10/11).
+fn handleColorChange(change: c.ghostty.ghostty_action_color_change_s) bool {
+    _ = change; // Color kind + RGB values — will wire to theme engine later
+    return true;
+}
+
+/// Reload the ghostty configuration.
+fn handleReloadConfig(reload: c.ghostty.ghostty_action_reload_config_s) bool {
+    _ = reload; // .soft field available for future partial reload support
+    // Re-read config from disk and apply
+    if (main_mod.ghostty_app) |app| {
+        const new_config = c.ghostty.ghostty_config_new();
+        c.ghostty.ghostty_config_load_default_files(new_config);
+        c.ghostty.ghostty_config_finalize(new_config);
+        c.ghostty.ghostty_app_update_config(app, new_config);
+        log.info("Configuration reloaded", .{});
+    }
+    return true;
+}
+
+/// Handle config changes pushed from libghostty.
+fn handleConfigChange(change: c.ghostty.ghostty_action_config_change_s) bool {
+    _ = change; // Config key/value — will wire to settings UI later
     return true;
 }
 
