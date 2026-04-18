@@ -3268,7 +3268,7 @@ fn handleDebugEmptyPanelReset(_: Allocator, _: json.Value) []const u8 {
 /// debug.panel_snapshot — return panel metadata (no pixel capture in headless).
 fn handleDebugPanelSnapshot(alloc: Allocator, params: json.Value) []const u8 {
     const surface_id_str = getParamString(params, "surface_id") orelse return "{\"error\":\"missing surface_id\"}";
-    const panel_id = parseUuid(surface_id_str) orelse return "{\"error\":\"invalid surface_id\"}";
+    const panel_id = parseId(surface_id_str) orelse return "{\"error\":\"invalid surface_id\"}";
 
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
 
