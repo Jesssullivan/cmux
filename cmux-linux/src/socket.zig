@@ -946,15 +946,22 @@ fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
     if (std.mem.eql(u8, action, "rename")) {
         const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+        // Allocate FIRST, then free — otherwise an alloc failure leaves
+        // ws.custom_title pointing at freed memory (use-after-free).
+        const new_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
         if (ws.custom_title) |old| ws.alloc.free(old);
-        ws.custom_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+        ws.custom_title = new_title;
         tm.updateTabTitle(ws);
         if (window.getSidebar()) |sb| sb.refresh();
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"action\":\"rename\",\"workspace_id\":\"{s}\",\"title\":\"{s}\"}}",
-            .{ ws_id_slice, title },
-        ) catch "{}";
+        // Escape `title` so quotes / control chars cannot break the envelope.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":\"rename\",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.writeAll("\",\"title\":") catch return "{}";
+        writeJsonString(w, title) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
     }
 
     if (std.mem.eql(u8, action, "clear_name")) {
@@ -993,14 +1000,20 @@ fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
     if (std.mem.eql(u8, action, "set_color")) {
         const color = getParamString(params, "color") orelse return "{\"error\":\"missing color\"}";
+        // Allocate FIRST, then free — same use-after-free guard as rename.
+        const new_color = ws.alloc.dupe(u8, color) catch return "{\"error\":\"alloc failed\"}";
         if (ws.custom_color) |old| ws.alloc.free(old);
-        ws.custom_color = ws.alloc.dupe(u8, color) catch return "{\"error\":\"alloc failed\"}";
+        ws.custom_color = new_color;
         if (window.getSidebar()) |sb| sb.refresh();
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"action\":\"set_color\",\"workspace_id\":\"{s}\",\"color\":\"{s}\"}}",
-            .{ ws_id_slice, color },
-        ) catch "{}";
+        // Escape `color` to keep the JSON envelope intact regardless of value.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":\"set_color\",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.writeAll("\",\"color\":") catch return "{}";
+        writeJsonString(w, color) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
     }
 
     if (std.mem.eql(u8, action, "clear_color")) {
@@ -1096,31 +1109,44 @@ fn handleWorkspaceAction(alloc: Allocator, params: json.Value) []const u8 {
             }
         }
         if (window.getSidebar()) |sb| sb.refresh();
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"action\":\"{s}\",\"workspace_id\":\"{s}\",\"closed\":{d}}}",
-            .{ action, ws_id_slice, closed },
-        ) catch "{}";
+        // `action` is gated to one of three known-safe values above, but
+        // escape it via writeJsonString for consistency with the other echoes.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":") catch return "{}";
+        writeJsonString(w, action) catch return "{}";
+        w.writeAll(",\"workspace_id\":\"") catch return "{}";
+        w.writeAll(ws_id_slice) catch return "{}";
+        w.print("\",\"closed\":{d}}}", .{closed}) catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
     }
 
-    // Recognized macOS actions not yet wired on Linux.
+    // Recognized macOS actions not yet wired on Linux. `action` is user
+    // input — escape it so a malformed value cannot break the envelope.
     if (std.mem.eql(u8, action, "set_description") or
         std.mem.eql(u8, action, "clear_description") or
         std.mem.eql(u8, action, "mark_read") or
         std.mem.eql(u8, action, "mark_unread"))
     {
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"error\":\"action not implemented on linux\",\"action\":\"{s}\"}}",
-            .{action},
-        ) catch "{\"error\":\"action not implemented on linux\"}";
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"error\":\"action not implemented on linux\",\"action\":") catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        writeJsonString(w, action) catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        w.writeByte('}') catch return "{\"error\":\"action not implemented on linux\"}";
+        return buf.toOwnedSlice(alloc) catch "{\"error\":\"action not implemented on linux\"}";
     }
 
-    return std.fmt.allocPrint(
-        alloc,
-        "{{\"error\":\"unsupported action\",\"action\":\"{s}\",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"set_color\",\"clear_color\",\"move_up\",\"move_down\",\"move_top\",\"close_others\",\"close_above\",\"close_below\"]}}",
-        .{action},
-    ) catch "{\"error\":\"unsupported action\"}";
+    // Unsupported action — same escape treatment.
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
+        return "{\"error\":\"unsupported action\"}";
+    writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"set_color\",\"clear_color\",\"move_up\",\"move_down\",\"move_top\",\"close_others\",\"close_above\",\"close_below\"]}") catch
+        return "{\"error\":\"unsupported action\"}";
+    return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
 
 // ── In-Memory Window Model ────────────────────────────────────────────
