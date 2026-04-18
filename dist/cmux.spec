@@ -47,6 +47,10 @@ cd ghostty
 zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
 cd ..
 
+# Compat shim for upstream rename libghostty.{so,a} -> ghostty-internal.{so,a}
+# (see scripts/ghostty-compat-symlinks.sh).
+bash scripts/ghostty-compat-symlinks.sh
+
 # Build cmux-linux
 cd cmux-linux
 zig build -Doptimize=ReleaseFast

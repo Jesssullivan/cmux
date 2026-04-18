@@ -144,8 +144,10 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
-          echo "libghostty.a: $(ls -lh zig-out/lib/libghostty.a)"
-          echo "ghostty.h: $(ls -lh zig-out/include/ghostty.h)"
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
+          echo "libghostty.a: $(ls -lh ghostty/zig-out/lib/libghostty.a)"
+          echo "ghostty.h: $(ls -lh ghostty/zig-out/include/ghostty.h)"
 
       - name: Build cmux-linux
         run: |
@@ -354,6 +356,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (Debian 12 baseline)
         run: |
@@ -452,6 +456,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (Ubuntu 24.04)
         run: |
@@ -549,6 +555,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (Fedora)
         run: |
@@ -625,6 +633,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (Arch)
         run: |
@@ -707,6 +717,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (Rocky 10)
         run: |

@@ -69,6 +69,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux
         run: |
@@ -242,6 +244,8 @@ jobs:
         run: |
           cd ghostty
           zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux
         run: |

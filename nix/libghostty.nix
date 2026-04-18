@@ -100,9 +100,25 @@ in
 
     postBuild = ''
       mkdir -p $out/lib $out/include
-      # Library outputs from zig build (static and/or shared)
-      cp zig-out/lib/libghostty.a $out/lib/ || echo "WARN: no static lib"
-      cp zig-out/lib/libghostty.so $out/lib/ || echo "WARN: no shared lib"
+      # Library outputs from zig build (static and/or shared).
+      #
+      # Compat shim: ghostty upstream commit 4fd16ef9b
+      # ("build: install ghostty-internal dll/static with new names")
+      # renamed libghostty.{so,a} -> ghostty-internal.{so,a} (no `lib`
+      # prefix on Linux). Accept either name and install under the
+      # historical libghostty.{so,a} so downstream consumers
+      # (cmux-linux/build.zig linkSystemLibrary, .deb/.rpm packagers)
+      # don't have to change. Remove once the rename is either reverted
+      # or fully absorbed.
+      for ext in a so; do
+        if [ -f zig-out/lib/libghostty.$ext ]; then
+          cp zig-out/lib/libghostty.$ext $out/lib/
+        elif [ -f zig-out/lib/ghostty-internal.$ext ]; then
+          cp zig-out/lib/ghostty-internal.$ext $out/lib/libghostty.$ext
+        else
+          echo "WARN: no libghostty.$ext (neither old nor new name) produced"
+        fi
+      done
       # Headers for downstream consumers
       cp -r include/* $out/include/
       # Verify at least one library was produced

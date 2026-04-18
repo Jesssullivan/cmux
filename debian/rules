@@ -6,6 +6,8 @@
 override_dh_auto_build:
 	# Build libghostty
 	cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+	# Compat shim for upstream rename libghostty.{so,a} -> ghostty-internal.{so,a}
+	bash scripts/ghostty-compat-symlinks.sh
 	# Build cmux-linux
 	cd cmux-linux && zig build -Doptimize=ReleaseFast
 
