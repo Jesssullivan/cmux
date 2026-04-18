@@ -281,32 +281,115 @@ fn getSurfaceUserdata(target: c.ghostty.ghostty_target_s) ?*anyopaque {
     return c.ghostty.ghostty_surface_userdata(surface);
 }
 
-/// Read clipboard callback: libghostty wants clipboard contents.
-/// Returns false when clipboard data is not available.
+/// Context passed through the async clipboard read callback.
+const ClipboardReadContext = struct {
+    surface: c.ghostty_surface_t,
+    completion_context: ?*anyopaque,
+};
+
+/// Read clipboard callback: libghostty wants clipboard contents (paste).
+/// The userdata is the surface's userdata (GtkWidget* of the GtkGLArea).
+/// Starts an async clipboard read and completes via GLib callback.
 pub fn onReadClipboard(
-    _: ?*anyopaque,
-    _: c.ghostty.ghostty_clipboard_e,
-    _: ?*anyopaque,
+    userdata: ?*anyopaque,
+    clipboard_type: c.ghostty.ghostty_clipboard_e,
+    context: ?*anyopaque,
 ) callconv(.c) bool {
-    return false;
+    const widget: *c.GtkWidget = @ptrCast(@alignCast(userdata orelse return false));
+    const surface_data = @import("surface.zig").fromWidget(widget) orelse return false;
+    const ghostty_surface = surface_data.ghostty_surface orelse return false;
+
+    // Get the appropriate GDK clipboard
+    const display = c.gtk.gtk_widget_get_display(widget) orelse return false;
+    const clipboard = switch (clipboard_type) {
+        c.ghostty.GHOSTTY_CLIPBOARD_SELECTION => c.gtk.gdk_display_get_primary_clipboard(display),
+        else => c.gtk.gdk_display_get_clipboard(display),
+    };
+    if (clipboard == null) return false;
+
+    // Allocate context for the async callback
+    const alloc = std.heap.c_allocator;
+    const ctx = alloc.create(ClipboardReadContext) catch return false;
+    ctx.* = .{
+        .surface = ghostty_surface,
+        .completion_context = context,
+    };
+
+    c.gtk.gdk_clipboard_read_text_async(clipboard, null, &onClipboardReadComplete, ctx);
+    return true;
 }
 
-/// Confirm read clipboard callback.
-pub fn onConfirmReadClipboard(
-    _: ?*anyopaque,
-    _: [*c]const u8,
-    _: ?*anyopaque,
-    _: c.ghostty.ghostty_clipboard_request_e,
-) callconv(.c) void {}
+/// GAsyncReadyCallback: clipboard text is available.
+fn onClipboardReadComplete(
+    source: ?*c.gtk.GObject,
+    result: ?*c.gtk.GAsyncResult,
+    user_data: ?*anyopaque,
+) callconv(.c) void {
+    const alloc = std.heap.c_allocator;
+    const ctx: *ClipboardReadContext = @ptrCast(@alignCast(user_data orelse return));
+    defer alloc.destroy(ctx);
 
-/// Write clipboard callback: libghostty wants to set clipboard contents.
+    const clipboard: ?*c.gtk.GdkClipboard = @ptrCast(@alignCast(source));
+    if (clipboard == null) return;
+
+    const text = c.gtk.gdk_clipboard_read_text_finish(clipboard, result, null);
+
+    c.ghostty.ghostty_surface_complete_clipboard_request(
+        ctx.surface,
+        text,
+        ctx.completion_context,
+        true,
+    );
+
+    if (text) |t| c.gtk.g_free(t);
+}
+
+/// Confirm read clipboard callback: auto-confirm for now.
+/// A proper implementation would show a confirmation dialog.
+pub fn onConfirmReadClipboard(
+    userdata: ?*anyopaque,
+    data: [*c]const u8,
+    context: ?*anyopaque,
+    _: c.ghostty.ghostty_clipboard_request_e,
+) callconv(.c) void {
+    // Auto-confirm: complete the clipboard request immediately.
+    const widget: *c.GtkWidget = @ptrCast(@alignCast(userdata orelse return));
+    const surface_data = @import("surface.zig").fromWidget(widget) orelse return;
+    const ghostty_surface = surface_data.ghostty_surface orelse return;
+
+    c.ghostty.ghostty_surface_complete_clipboard_request(
+        ghostty_surface,
+        data,
+        context,
+        true,
+    );
+}
+
+/// Write clipboard callback: libghostty wants to set clipboard contents (copy).
 pub fn onWriteClipboard(
-    _: ?*anyopaque,
-    _: c_uint,
-    _: [*c]const c.ghostty.ghostty_clipboard_content_s,
-    _: usize,
+    userdata: ?*anyopaque,
+    clipboard_type: c_uint,
+    contents: [*c]const c.ghostty.ghostty_clipboard_content_s,
+    count: usize,
     _: bool,
-) callconv(.c) void {}
+) callconv(.c) void {
+    if (count == 0) return;
+    const widget: *c.GtkWidget = @ptrCast(@alignCast(userdata orelse return));
+
+    const display = c.gtk.gtk_widget_get_display(widget) orelse return;
+    const clipboard_enum: c.ghostty.ghostty_clipboard_e = @enumFromInt(clipboard_type);
+    const clipboard = switch (clipboard_enum) {
+        c.ghostty.GHOSTTY_CLIPBOARD_SELECTION => c.gtk.gdk_display_get_primary_clipboard(display),
+        else => c.gtk.gdk_display_get_clipboard(display),
+    };
+    if (clipboard == null) return;
+
+    // Use the first text/plain content
+    const content = contents[0];
+    if (content.data) |data| {
+        c.gtk.gdk_clipboard_set_text(clipboard, data);
+    }
+}
 
 /// Close surface callback: terminal process exited or user requested close.
 /// The userdata is the GtkWidget pointer set during surface creation.
