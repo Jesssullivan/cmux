@@ -417,7 +417,7 @@ fn handleGotoSplit(goto: c.ghostty.ghostty_action_goto_split_e) bool {
     const root = ws.root_node orelse return false;
     const focused_id = ws.focused_panel_id orelse return false;
 
-    const direction: enum { next, previous } = switch (goto) {
+    const direction: split_tree.TraversalDirection = switch (goto) {
         c.ghostty.GHOSTTY_GOTO_SPLIT_NEXT,
         c.ghostty.GHOSTTY_GOTO_SPLIT_RIGHT,
         c.ghostty.GHOSTTY_GOTO_SPLIT_DOWN,

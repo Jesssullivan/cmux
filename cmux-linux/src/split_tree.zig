@@ -225,12 +225,15 @@ pub fn collectLeaves(node: *Node, alloc: Allocator, out: *std.ArrayList(*Leaf)) 
     }
 }
 
+/// Direction for adjacent leaf navigation.
+pub const TraversalDirection = enum { next, previous };
+
 /// Find the next or previous leaf relative to the one with `panel_id`.
 /// `direction`: .next or .previous (wraps around).
 pub fn adjacentLeaf(
     root: *Node,
     panel_id: u128,
-    direction: enum { next, previous },
+    direction: TraversalDirection,
     alloc: Allocator,
 ) ?*Leaf {
     var leaves: std.ArrayList(*Leaf) = .empty;
