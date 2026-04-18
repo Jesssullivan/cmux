@@ -2,7 +2,6 @@
 ///
 /// Handles OpenGL rendering, input forwarding, and resize events.
 /// Reference: ghostty/src/apprt/gtk/Surface.zig
-
 const std = @import("std");
 const c = @import("c_api.zig");
 
@@ -127,3 +126,10 @@ pub const Surface = struct {
         }
     }
 };
+
+/// Get the Surface wrapper from a GtkWidget (if it's a terminal panel).
+pub fn fromWidget(widget: *c.GtkWidget) ?*Surface {
+    const data = c.gtk.g_object_get_data(@ptrCast(@alignCast(widget)), "cmux-surface");
+    if (data) |d| return @ptrCast(@alignCast(d));
+    return null;
+}
