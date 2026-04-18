@@ -106,6 +106,19 @@ CANDIDATES_PHASE1=(
   test_browser_open_split_reuse_policy
   test_workspace_create_background_starts_terminal
   test_workspace_create_initial_env
+  # Sprint A handlers (PRs #218-#229):
+  test_surface_action_rename
+  test_surface_action_close_variants
+  test_surface_action_new_reload_duplicate
+  test_workspace_action
+  test_auth_login
+  test_system_tree
+  test_notification_create_for_target
+  test_app_simulate_active
+  test_surface_report_tty
+  test_pane_resize
+  # Sprint B handlers (PR #230):
+  test_sprint_b_core_parity
 )
 
 # Build the test list. Apply TEST_FILTER if set (case-style glob).
