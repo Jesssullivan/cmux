@@ -247,6 +247,7 @@ const methods = .{
     .{ "browser.find_finish", if (c.has_webkit) handleBrowserFindFinish else handleBrowserUnavailable },
     .{ "notification.create", handleNotificationCreate },
     .{ "notification.create_for_surface", handleNotificationCreateForSurface },
+    .{ "notification.create_for_target", handleNotificationCreateForTarget },
     .{ "notification.list", handleNotificationList },
     .{ "notification.clear", handleNotificationClear },
     .{ "app.focus_override.set", handleAppFocusOverrideSet },
@@ -1753,6 +1754,77 @@ fn handleNotificationCreateForSurface(alloc: Allocator, params: json.Value) []co
     }
     notification_count += 1;
     return "{}";
+}
+
+fn handleNotificationCreateForTarget(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    // Both ids are required. Unlike create_for_surface we do not fall
+    // back to the focused surface — the caller has explicitly named the
+    // routing target and we should fail loudly if it does not resolve.
+    const ws_id_str = getParamString(params, "workspace_id") orelse
+        return "{\"error\":\"missing workspace_id\"}";
+    const sid_str = getParamString(params, "surface_id") orelse
+        return "{\"error\":\"missing surface_id\"}";
+
+    const ws_lookup = findWorkspaceById(tm, ws_id_str) orelse
+        return "{\"error\":\"invalid workspace_id\"}";
+    const ws = ws_lookup.ws;
+
+    const target_id = findSurfaceInWorkspace(ws, sid_str) orelse
+        return "{\"error\":\"invalid surface_id\"}";
+
+    const title = getParamString(params, "title") orelse "Notification";
+    // Optional fields. We accept `subtitle` for cross-platform parity but
+    // do not yet have a slot for it in StoredNotification; the body is
+    // truncated to fit the fixed-size buffer.
+    _ = getParamString(params, "subtitle");
+    const body_opt = getParamString(params, "body");
+
+    // Suppress only if the app is reporting itself focused AND the target
+    // surface is the currently-focused surface in its workspace.
+    if (app_focus_override) |focused| {
+        if (focused) {
+            if (ws.focused_panel_id) |fid| {
+                if (fid == target_id) return "{}";
+            }
+        }
+    }
+
+    if (notification_count >= notification_store_buf.len)
+        notification_count = notification_store_buf.len - 1;
+    var notif = &notification_store_buf[notification_count];
+    notif.* = .{ .id = blk: {
+        var id_buf: [16]u8 = undefined;
+        std.crypto.random.bytes(&id_buf);
+        break :blk std.mem.readInt(u128, &id_buf, .little);
+    } };
+
+    const tlen = @min(title.len, notif.title.len);
+    @memcpy(notif.title[0..tlen], title[0..tlen]);
+    notif.title_len = tlen;
+
+    if (body_opt) |body| {
+        const blen = @min(body.len, notif.body.len);
+        @memcpy(notif.body[0..blen], body[0..blen]);
+        notif.body_len = blen;
+    }
+
+    notif.surface_id = target_id;
+    notification_count += 1;
+
+    // Flash the addressed surface so list views surface the unread state
+    if (ws.panels.getPtr(target_id)) |panel_ptr| {
+        panel_ptr.*.flash_count += 1;
+    }
+
+    const ws_hex = formatId(ws.id);
+    const sid_hex = formatId(target_id);
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}",
+        .{ @as([]const u8, &ws_hex), @as([]const u8, &sid_hex) },
+    ) catch "{}";
 }
 
 fn handleNotificationList(alloc: Allocator, _: json.Value) []const u8 {
