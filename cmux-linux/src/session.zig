@@ -174,7 +174,7 @@ pub const SessionManager = struct {
 
         try writer.writeAll("],\"selected_workspace_index\":");
         if (tm.selected_index) |idx| {
-            try std.fmt.formatInt(@as(u64, idx), 10, .lower, .{}, writer);
+            try writer.print("{d}", .{@as(u64, idx)});
         } else {
             try writer.writeAll("null");
         }

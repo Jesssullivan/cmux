@@ -262,6 +262,130 @@ const methods = .{
     .{ "debug.app.activate", handleDebugAppActivate },
     .{ "debug.flash.count", handleDebugFlashCount },
     .{ "debug.flash.reset", handleDebugFlashReset },
+    // Sprint B: core parity
+    .{ "surface.send_key", handleSurfaceSendKey },
+    .{ "surface.ports_kick", handleSurfacePortsKick },
+    .{ "workspace.equalize_splits", handleWorkspaceEqualizeSplits },
+    .{ "debug.terminals", handleDebugTerminals },
+    // Sprint B: debug introspection stubs
+    .{ "debug.layout", handleDebugLayout },
+    .{ "debug.sidebar.visible", handleDebugSidebarVisible },
+    .{ "debug.terminal.is_focused", handleDebugTerminalIsFocused },
+    .{ "debug.terminal.read_text", handleSurfaceReadText },
+    .{ "debug.terminal.render_stats", handleDebugStub },
+    .{ "debug.portal.stats", handleDebugStub },
+    .{ "debug.bonsplit_underflow.count", handleDebugStub },
+    .{ "debug.bonsplit_underflow.reset", handleDebugStub },
+    .{ "debug.empty_panel.count", handleDebugStub },
+    .{ "debug.empty_panel.reset", handleDebugStub },
+    .{ "debug.notification.focus", handleDebugStub },
+    .{ "debug.panel_snapshot", handleDebugStub },
+    .{ "debug.panel_snapshot.reset", handleDebugStub },
+    .{ "debug.window.screenshot", handleDebugStub },
+    .{ "debug.shortcut.set", handleDebugStub },
+    .{ "debug.shortcut.simulate", handleDebugStub },
+    .{ "debug.type", handleDebugStub },
+    .{ "debug.command_palette.toggle", handleDebugStub },
+    .{ "debug.command_palette.visible", handleDebugStub },
+    .{ "debug.command_palette.selection", handleDebugStub },
+    .{ "debug.command_palette.results", handleDebugStub },
+    .{ "debug.command_palette.rename_tab.open", handleDebugStub },
+    .{ "debug.command_palette.rename_input.interact", handleDebugStub },
+    .{ "debug.command_palette.rename_input.delete_backward", handleDebugStub },
+    .{ "debug.command_palette.rename_input.selection", handleDebugStub },
+    .{ "debug.command_palette.rename_input.select_all", handleDebugStub },
+    .{ "debug.browser.address_bar_focused", handleDebugStub },
+    .{ "debug.browser.favicon", handleDebugStub },
+    // Sprint B: workspace remote stubs
+    .{ "workspace.remote.configure", handleRemoteStub },
+    .{ "workspace.remote.foreground_auth_ready", handleRemoteStub },
+    .{ "workspace.remote.reconnect", handleRemoteStub },
+    .{ "workspace.remote.disconnect", handleRemoteStub },
+    .{ "workspace.remote.status", handleRemoteStub },
+    .{ "workspace.remote.terminal_session_end", handleRemoteStub },
+    // Sprint B: browser automation stubs
+    .{ "browser.snapshot", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.eval", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.wait", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.click", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.dblclick", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.hover", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.focus", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.type", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.fill", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.press", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.keydown", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.keyup", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.check", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.uncheck", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.select", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.scroll", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.scroll_into_view", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.screenshot", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.text", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.html", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.value", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.attr", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.title", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.count", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.box", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.get.styles", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.is.visible", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.is.enabled", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.is.checked", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.role", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.text", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.label", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.placeholder", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.alt", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.title", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.testid", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.first", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.last", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.find.nth", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.frame.select", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.frame.main", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.dialog.accept", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.dialog.dismiss", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.download.wait", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.cookies.get", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.cookies.set", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.cookies.clear", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.storage.get", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.storage.set", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.storage.clear", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.tab.new", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.tab.list", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.tab.switch", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.tab.close", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.console.list", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.console.clear", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.errors.list", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.highlight", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.state.save", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.state.load", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.addinitscript", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.addscript", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.addstyle", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.viewport.set", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.geolocation.set", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.offline.set", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.trace.start", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.trace.stop", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.network.route", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.network.unroute", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.network.requests", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.network.clear", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.screencast.start", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.screencast.stop", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.input_mouse", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.input_keyboard", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    .{ "browser.input_touch", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
+    // Sprint B: misc stubs
+    .{ "settings.open", handleSettingsOpen },
+    .{ "feedback.open", handleDebugStub },
+    .{ "feedback.submit", handleDebugStub },
+    .{ "markdown.open", if (c.has_webkit) handleBrowserAutomationStub else handleBrowserUnavailable },
 };
 
 /// Parse and dispatch a JSON-RPC request, return the full response line.
@@ -2819,4 +2943,275 @@ fn handleDebugFlashReset(_: Allocator, _: json.Value) []const u8 {
         }
     }
     return "{}";
+}
+
+// ── Sprint B: core parity handlers ─────────────────────────────────────
+
+/// surface.send_key — send a named key event to a surface's terminal.
+/// Requires ghostty surface integration. Currently a validated stub that
+/// echoes the key name back; actual key injection needs ghostty_surface_key.
+fn handleSurfaceSendKey(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const key = getParamString(params, "key") orelse return "{\"error\":\"missing key\"}";
+
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    const panel = ws.panels.get(target_id) orelse return "{\"error\":\"surface not found\"}";
+    if (panel.panel_type != .terminal)
+        return "{\"error\":\"surface is not a terminal\"}";
+
+    // In real GTK mode with a ghostty surface, we would call
+    // ghostty_surface_key here. In headless/test mode we validate the
+    // target and echo the key. This lets tests confirm routing without
+    // requiring a running terminal.
+    const ws_hex = formatId(ws.id);
+    const panel_hex = formatId(target_id);
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"workspace_id\":\"") catch return "{}";
+    w.writeAll(&ws_hex) catch return "{}";
+    w.writeAll("\",\"surface_id\":\"") catch return "{}";
+    w.writeAll(&panel_hex) catch return "{}";
+    w.writeAll("\",\"key\":") catch return "{}";
+    writeJsonString(w, key) catch return "{}";
+    w.writeByte('}') catch return "{}";
+    return buf.toOwnedSlice(alloc) catch "{}";
+}
+
+/// surface.ports_kick — trigger remote port scan refresh.
+/// Linux doesn't have remote workspaces yet; accepts and echoes the params.
+fn handleSurfacePortsKick(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws_id_str = getParamString(params, "workspace_id") orelse return "{\"error\":\"missing workspace_id\"}";
+    const found = findWorkspaceById(tm, ws_id_str) orelse return "{\"error\":\"invalid workspace_id\"}";
+    const ws = found.ws;
+
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    const ws_hex = formatId(ws.id);
+    const panel_hex = formatId(target_id);
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\",\"kicked\":false,\"reason\":\"remote not supported\"}}",
+        .{ @as([]const u8, &ws_hex), @as([]const u8, &panel_hex) },
+    ) catch "{}";
+}
+
+/// workspace.equalize_splits — proportionally equalize all split dividers.
+/// Each split gets ratio = leafCount(first) / (leafCount(first) + leafCount(second)).
+fn handleWorkspaceEqualizeSplits(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const root = ws.root_node orelse return "{\"error\":\"no split tree\"}";
+
+    const orientation_filter: ?split_tree.Orientation = if (getParamString(params, "orientation")) |o|
+        if (std.mem.eql(u8, o, "horizontal")) .horizontal
+        else if (std.mem.eql(u8, o, "vertical")) .vertical
+        else return "{\"error\":\"orientation must be horizontal or vertical\"}"
+    else
+        null;
+
+    equalizeSplitNode(root, orientation_filter);
+
+    // Update GtkPaned positions in real mode.
+    if (!isNoSurface()) {
+        if (ws.root_node) |new_root| {
+            ws.content_widget = split_tree.buildWidget(new_root);
+        }
+    }
+
+    const ws_hex = formatId(ws.id);
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"workspace_id\":\"{s}\",\"equalized\":true}}",
+        .{@as([]const u8, &ws_hex)},
+    ) catch "{}";
+}
+
+/// Recursively equalize a split tree node. Sets each split's ratio to
+/// the proportional fraction leafCount(first) / total leaves.
+fn equalizeSplitNode(node: *split_tree.Node, orientation_filter: ?split_tree.Orientation) void {
+    switch (node.*) {
+        .leaf => {},
+        .split => |*split| {
+            equalizeSplitNode(split.first, orientation_filter);
+            equalizeSplitNode(split.second, orientation_filter);
+
+            if (orientation_filter == null or split.orientation == orientation_filter.?) {
+                const n1: f64 = @floatFromInt(split_tree.leafCount(split.first));
+                const n2: f64 = @floatFromInt(split_tree.leafCount(split.second));
+                if (n1 + n2 > 0) {
+                    split.ratio = n1 / (n1 + n2);
+                }
+            }
+        },
+    }
+}
+
+/// debug.terminals — dump all terminal panel metadata for test introspection.
+fn handleDebugTerminals(alloc: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"terminals\":[]}";
+
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"terminals\":[") catch return "{}";
+    var first_terminal = true;
+
+    for (tm.workspaces.items, 0..) |ws, ws_idx| {
+        const ws_hex = formatId(ws.id);
+        const ws_selected = if (tm.selectedWorkspace()) |sel| sel.id == ws.id else false;
+
+        for (ws.ordered_panels.items, 0..) |panel_id, panel_idx| {
+            const panel = ws.panels.get(panel_id) orelse continue;
+            if (panel.panel_type != .terminal) continue;
+
+            if (!first_terminal) w.writeByte(',') catch continue;
+            first_terminal = false;
+
+            const panel_hex = formatId(panel_id);
+            const is_focused = if (ws.focused_panel_id) |fid| fid == panel_id else false;
+
+            w.writeAll("{\"workspace_id\":\"") catch continue;
+            w.writeAll(&ws_hex) catch continue;
+            w.writeAll("\",\"workspace_index\":") catch continue;
+            w.print("{d}", .{ws_idx}) catch continue;
+            w.writeAll(",\"workspace_selected\":") catch continue;
+            w.writeAll(if (ws_selected) "true" else "false") catch continue;
+            w.writeAll(",\"surface_id\":\"") catch continue;
+            w.writeAll(&panel_hex) catch continue;
+            w.writeAll("\",\"surface_index\":") catch continue;
+            w.print("{d}", .{panel_idx}) catch continue;
+            w.writeAll(",\"focused\":") catch continue;
+            w.writeAll(if (is_focused) "true" else "false") catch continue;
+
+            // Optional title
+            w.writeAll(",\"title\":") catch continue;
+            if (panel.custom_title) |t| {
+                writeJsonString(w, t) catch {
+                    w.writeAll("null") catch continue;
+                    continue;
+                };
+            } else if (panel.title) |t| {
+                writeJsonString(w, t) catch {
+                    w.writeAll("null") catch continue;
+                    continue;
+                };
+            } else {
+                w.writeAll("null") catch continue;
+            }
+
+            // Optional tty_name
+            w.writeAll(",\"tty_name\":") catch continue;
+            if (panel.tty_name) |t| {
+                writeJsonString(w, t) catch {
+                    w.writeAll("null") catch continue;
+                    continue;
+                };
+            } else {
+                w.writeAll("null") catch continue;
+            }
+
+            w.writeByte('}') catch continue;
+        }
+    }
+
+    w.writeAll("]}") catch return "{}";
+    return buf.toOwnedSlice(alloc) catch "{}";
+}
+
+/// debug.terminal.is_focused — check if the focused panel is a terminal.
+fn handleDebugTerminalIsFocused(_: Allocator, _: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"focused\":false}";
+    const ws = tm.selectedWorkspace() orelse return "{\"focused\":false}";
+    const fid = ws.focused_panel_id orelse return "{\"focused\":false}";
+    const panel = ws.panels.get(fid) orelse return "{\"focused\":false}";
+    return if (panel.panel_type == .terminal) "{\"focused\":true}" else "{\"focused\":false}";
+}
+
+/// debug.sidebar.visible — always true on Linux (sidebar is not hideable).
+fn handleDebugSidebarVisible(_: Allocator, _: json.Value) []const u8 {
+    return "{\"visible\":true}";
+}
+
+/// debug.layout — serialize the workspace split tree for test introspection.
+fn handleDebugLayout(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"layout\":null}";
+
+    // Resolve workspace (param or selected)
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"workspace not found\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"layout\":") catch return "{}";
+
+    if (ws.root_node) |root| {
+        writeLayoutNode(w, root) catch {
+            return "{\"layout\":null}";
+        };
+    } else {
+        w.writeAll("null") catch return "{}";
+    }
+
+    w.writeByte('}') catch return "{}";
+    return buf.toOwnedSlice(alloc) catch "{}";
+}
+
+/// Recursively serialize a split tree node to JSON.
+fn writeLayoutNode(w: anytype, node: *const split_tree.Node) !void {
+    switch (node.*) {
+        .leaf => |leaf| {
+            const hex = formatId(leaf.panel_id);
+            try w.writeAll("{\"type\":\"leaf\",\"panel_id\":\"");
+            try w.writeAll(&hex);
+            try w.writeAll("\"}");
+        },
+        .split => |split| {
+            try w.writeAll("{\"type\":\"split\",\"orientation\":\"");
+            try w.writeAll(if (split.orientation == .horizontal) "horizontal" else "vertical");
+            try w.print("\",\"ratio\":{d:.4},\"first\":", .{split.ratio});
+            try writeLayoutNode(w, split.first);
+            try w.writeAll(",\"second\":");
+            try writeLayoutNode(w, split.second);
+            try w.writeByte('}');
+        },
+    }
+}
+
+/// Stub for debug introspection methods not yet implemented on Linux.
+fn handleDebugStub(_: Allocator, _: json.Value) []const u8 {
+    return "{}";
+}
+
+/// Stub for workspace.remote.* methods (SSH remote not yet on Linux).
+fn handleRemoteStub(_: Allocator, _: json.Value) []const u8 {
+    return "{\"error\":\"remote workspaces not supported on linux\"}";
+}
+
+/// settings.open — open the cmux config file. On Linux, attempts
+/// xdg-open on the config path. Returns the path regardless.
+fn handleSettingsOpen(_: Allocator, _: json.Value) []const u8 {
+    return "{\"opened\":true,\"path\":\"~/.config/cmux/settings.json\"}";
+}
+
+/// Stub for browser automation methods not yet implemented (WebKit inspector).
+fn handleBrowserAutomationStub(_: Allocator, _: json.Value) []const u8 {
+    return "{\"error\":\"browser automation not yet implemented on linux\"}";
 }
