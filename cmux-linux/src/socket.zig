@@ -1655,11 +1655,10 @@ fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
 /// surface.action / tab.action — apply a tab-level action to a surface.
 ///
 /// Mirrors macOS `v2TabAction` (Sources/TerminalController.swift). Linux
-/// implements property-mutation actions (rename, clear_name, pin, unpin,
-/// mark_read, mark_unread) and relative-close actions (close_left,
-/// close_right, close_others). Remaining actions (new_terminal_right,
-/// new_browser_right, reload, duplicate) are not yet wired and return
-/// an `unsupported` error so callers can detect parity gaps.
+/// implements: property-mutation (rename, clear_name, pin, unpin, mark_read,
+/// mark_unread), relative-close (close_left, close_right, close_others),
+/// panel-creation (new_terminal_right, new_browser_right, duplicate), and
+/// browser-specific (reload).
 fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
 
@@ -1826,22 +1825,179 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         ) catch "{}";
     }
 
-    // Recognized but not yet implemented on Linux. Returning a structured
-    // error lets callers distinguish "wrong call" from "platform gap".
-    // `action` is user input — escape it via writeJsonString.
-    if (std.mem.eql(u8, action, "new_terminal_right") or
-        std.mem.eql(u8, action, "new_browser_right") or
-        std.mem.eql(u8, action, "reload") or
-        std.mem.eql(u8, action, "duplicate"))
-    {
-        var buf: std.ArrayList(u8) = .empty;
-        const w = buf.writer(alloc);
-        w.writeAll("{\"error\":\"action not implemented on linux\",\"action\":") catch
-            return "{\"error\":\"action not implemented on linux\"}";
-        writeJsonString(w, action) catch
-            return "{\"error\":\"action not implemented on linux\"}";
-        w.writeByte('}') catch return "{\"error\":\"action not implemented on linux\"}";
-        return buf.toOwnedSlice(alloc) catch "{\"error\":\"action not implemented on linux\"}";
+    // ── new_terminal_right ───────────────────────────────────────────
+    // Create a new terminal panel and insert it immediately after the
+    // target in ordered_panels.  On Linux 1:1 panel model this adds a
+    // new sidebar entry; on macOS it opens a tab to the right.
+    if (std.mem.eql(u8, action, "new_terminal_right")) {
+        const new_panel = if (isNoSurface())
+            ws.createMockPanel(.terminal) catch return "{\"error\":\"create panel failed\"}"
+        else
+            ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
+
+        // createMockPanel / createTerminalPanel appends to end — reposition
+        // to target_pos + 1 so the new panel is "to the right" of the anchor.
+        const last_idx = ws.ordered_panels.items.len - 1;
+        _ = ws.ordered_panels.orderedRemove(last_idx);
+        var target_pos: usize = ws.ordered_panels.items.len; // fallback: end
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == target_id) {
+                target_pos = i + 1;
+                break;
+            }
+        }
+        const insert_pos = @min(target_pos, ws.ordered_panels.items.len);
+        ws.ordered_panels.insert(ws.alloc, insert_pos, new_panel.id) catch {
+            ws.ordered_panels.append(ws.alloc, new_panel.id) catch {};
+        };
+
+        // Add to split tree
+        if (ws.root_node) |root| {
+            if (split_tree.findLeaf(root, target_id)) |_| {
+                ws.root_node = split_tree.splitPane(
+                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                ) catch null;
+            }
+        }
+
+        // Rebuild widget tree in real GTK mode
+        if (!isNoSurface()) {
+            if (ws.root_node) |new_root| {
+                ws.content_widget = split_tree.buildWidget(new_root);
+            }
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        ws.focused_panel_id = new_panel.id;
+
+        const new_hex = formatId(new_panel.id);
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"new_terminal_right\",\"surface_id\":\"{s}\",\"new_surface_id\":\"{s}\"}}",
+            .{ panel_id_slice, @as([]const u8, &new_hex) },
+        ) catch "{}";
+    }
+
+    // ── new_browser_right ─────────────────────────────────────────────
+    // Same as new_terminal_right but creates a browser panel.  Requires
+    // WebKitGTK; returns error on no-webkit builds.
+    if (std.mem.eql(u8, action, "new_browser_right")) {
+        if (!c.has_webkit)
+            return "{\"error\":\"browser panels require WebKitGTK (-Dno-webkit was set)\"}";
+
+        const url = getParamString(params, "url");
+        const new_panel = if (isNoSurface())
+            ws.createMockPanel(.browser) catch return "{\"error\":\"create panel failed\"}"
+        else
+            ws.createBrowserPanel(url) catch return "{\"error\":\"create browser panel failed\"}";
+
+        // Reposition: move from end to target_pos + 1
+        const last_idx = ws.ordered_panels.items.len - 1;
+        _ = ws.ordered_panels.orderedRemove(last_idx);
+        var target_pos: usize = ws.ordered_panels.items.len;
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == target_id) {
+                target_pos = i + 1;
+                break;
+            }
+        }
+        const insert_pos = @min(target_pos, ws.ordered_panels.items.len);
+        ws.ordered_panels.insert(ws.alloc, insert_pos, new_panel.id) catch {
+            ws.ordered_panels.append(ws.alloc, new_panel.id) catch {};
+        };
+
+        if (ws.root_node) |root| {
+            if (split_tree.findLeaf(root, target_id)) |_| {
+                ws.root_node = split_tree.splitPane(
+                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                ) catch null;
+            }
+        }
+        if (!isNoSurface()) {
+            if (ws.root_node) |new_root| {
+                ws.content_widget = split_tree.buildWidget(new_root);
+            }
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        ws.focused_panel_id = new_panel.id;
+
+        const new_hex = formatId(new_panel.id);
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"new_browser_right\",\"surface_id\":\"{s}\",\"new_surface_id\":\"{s}\"}}",
+            .{ panel_id_slice, @as([]const u8, &new_hex) },
+        ) catch "{}";
+    }
+
+    // ── reload ────────────────────────────────────────────────────────
+    // Browser panels: trigger WebKit reload.  Terminal panels: no-op
+    // error (matching macOS which only reloads browser tabs).
+    // Uses the comptime-gated `reloadBrowserWidget` helper so this
+    // always-analysed function doesn't force resolution of webkit symbols.
+    if (std.mem.eql(u8, action, "reload")) {
+        if (panel.panel_type != .browser)
+            return "{\"error\":\"reload is only supported for browser panels\"}";
+        if (!c.has_webkit)
+            return "{\"error\":\"browser panels require WebKitGTK (-Dno-webkit was set)\"}";
+        reloadBrowserWidget(panel.widget);
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"reload\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    // ── duplicate ─────────────────────────────────────────────────────
+    // Browser panels: create a new browser panel with the same URL,
+    // inserted to the right.  Terminal panels: not yet supported (would
+    // require CWD detection to spawn at the same directory).
+    if (std.mem.eql(u8, action, "duplicate")) {
+        if (panel.panel_type != .browser)
+            return "{\"error\":\"duplicate is only supported for browser panels\"}";
+        if (!c.has_webkit)
+            return "{\"error\":\"browser panels require WebKitGTK (-Dno-webkit was set)\"}";
+
+        const dup_url = panel.url;
+        const new_panel = if (isNoSurface())
+            ws.createMockPanel(.browser) catch return "{\"error\":\"create panel failed\"}"
+        else
+            ws.createBrowserPanel(dup_url) catch return "{\"error\":\"create browser panel failed\"}";
+
+        // Reposition to target_pos + 1
+        const last_idx = ws.ordered_panels.items.len - 1;
+        _ = ws.ordered_panels.orderedRemove(last_idx);
+        var target_pos: usize = ws.ordered_panels.items.len;
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == target_id) {
+                target_pos = i + 1;
+                break;
+            }
+        }
+        const insert_pos = @min(target_pos, ws.ordered_panels.items.len);
+        ws.ordered_panels.insert(ws.alloc, insert_pos, new_panel.id) catch {
+            ws.ordered_panels.append(ws.alloc, new_panel.id) catch {};
+        };
+
+        if (ws.root_node) |root| {
+            if (split_tree.findLeaf(root, target_id)) |_| {
+                ws.root_node = split_tree.splitPane(
+                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                ) catch null;
+            }
+        }
+        if (!isNoSurface()) {
+            if (ws.root_node) |new_root| {
+                ws.content_widget = split_tree.buildWidget(new_root);
+            }
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        ws.focused_panel_id = new_panel.id;
+
+        const new_hex = formatId(new_panel.id);
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"duplicate\",\"surface_id\":\"{s}\",\"new_surface_id\":\"{s}\"}}",
+            .{ panel_id_slice, @as([]const u8, &new_hex) },
+        ) catch "{}";
     }
 
     // Unsupported action — same escape treatment for `action` echo.
@@ -1850,7 +2006,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
     w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
         return "{\"error\":\"unsupported action\"}";
     writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
-    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\",\"close_left\",\"close_right\",\"close_others\"]}") catch
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\",\"close_left\",\"close_right\",\"close_others\",\"new_terminal_right\",\"new_browser_right\",\"reload\",\"duplicate\"]}") catch
         return "{\"error\":\"unsupported action\"}";
     return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
@@ -2073,6 +2229,17 @@ fn handleBrowserUnavailable(_: Allocator, _: json.Value) []const u8 {
 }
 
 const browser_mod = @import("browser.zig");
+
+/// Reload a browser widget's WebView.  Compiled to a no-op when built
+/// without WebKitGTK so that callers inside always-analysed functions
+/// (like handleSurfaceAction) don't force resolution of webkit symbols.
+const reloadBrowserWidget = if (c.has_webkit) reloadBrowserWidgetImpl else reloadBrowserWidgetNoop;
+fn reloadBrowserWidgetImpl(panel_widget: ?*c.GtkWidget) void {
+    if (panel_widget) |widget| {
+        if (browser_mod.fromWidget(widget)) |bv| bv.reload();
+    }
+}
+fn reloadBrowserWidgetNoop(_: ?*c.GtkWidget) void {}
 
 fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
