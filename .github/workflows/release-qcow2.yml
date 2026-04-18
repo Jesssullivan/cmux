@@ -1,0 +1,120 @@
+name: QCOW2 Demo VM Images
+
+on:
+  push:
+    tags:
+      - 'lab-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. lab-v0.73.0)'
+        required: true
+
+concurrency:
+  group: release-qcow2
+  cancel-in-progress: false
+
+jobs:
+  build-qcow2:
+    name: Build QCOW2 (${{ matrix.variant }})
+    runs-on: [self-hosted, linux, kvm, cmux-distro-test]
+    environment: distro-tests
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # Build sequentially via max-parallel to avoid disk pressure on honey.
+      max-parallel: 1
+      matrix:
+        variant: [gnome, sway, hyprland]
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#lab-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building QCOW2 ${{ matrix.variant }} for $TAG (version $VERSION)"
+
+      - name: Build QCOW2 image
+        run: |
+          nix build .#qcow2-${{ matrix.variant }} \
+            --print-build-logs -L \
+            --option sandbox relaxed
+
+      - name: Compress QCOW2 image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          RAW=$(find result/ -name '*.qcow2' -o -name 'nixos.qcow2' | head -1)
+          if [ -z "$RAW" ]; then
+            # nixos-generators may place the image directly at result
+            RAW="result"
+          fi
+          OUT="cmux-demo-${VARIANT}-${VERSION}.qcow2"
+          qemu-img convert -c -O qcow2 "$RAW" "$OUT"
+          echo "Compressed: $OUT ($(du -h "$OUT" | cut -f1))"
+          qemu-img info "$OUT"
+
+      - name: Upload QCOW2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-qcow2-${{ matrix.variant }}
+          path: cmux-demo-*.qcow2
+          if-no-files-found: error
+
+  release:
+    name: Upload QCOW2 images to release
+    needs: [build-qcow2]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all QCOW2 artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-qcow2.outputs.tag }}
+        run: |
+          ASSETS=()
+          for f in cmux-qcow2-*/*.qcow2; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          echo "Uploading ${#ASSETS[@]} QCOW2 images for $TAG:"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "ERROR: No QCOW2 artifacts found"
+            ls -laR cmux-qcow2-*/ || true
+            exit 1
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists, uploading QCOW2 images..."
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Creating release $TAG with QCOW2 images..."
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "cmux $TAG" \
+              --notes "QCOW2 demo VM images for $TAG" \
+              "${ASSETS[@]}"
+          fi

@@ -24,6 +24,12 @@
       url = "github:Jesssullivan/ghostty";
       flake = false;
     };
+
+    # QCOW2 / cloud image builder
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -33,6 +39,7 @@
     zig,
     nix-vm-test,
     ghostty-src,
+    nixos-generators,
     ...
   }: let
     inherit (nixpkgs) lib legacyPackages;
@@ -137,6 +144,25 @@
         cmux-linux = pkgs.callPackage ./nix/cmux-linux.nix {
           zig_0_15 = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
           libghostty = self.packages.${pkgs.stdenv.hostPlatform.system}.libghostty;
+        };
+
+      }
+      // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+        # Downloadable QCOW2 demo VM images (x86_64-linux only)
+        qcow2-gnome = import ./nix/vm/image-builder.nix {
+          inherit nixpkgs nixos-generators;
+          module = ./nix/vm/wayland-gnome.nix;
+          overlay = self.overlays.default;
+        };
+        qcow2-sway = import ./nix/vm/image-builder.nix {
+          inherit nixpkgs nixos-generators;
+          module = ./nix/vm/wayland-sway.nix;
+          overlay = self.overlays.default;
+        };
+        qcow2-hyprland = import ./nix/vm/image-builder.nix {
+          inherit nixpkgs nixos-generators;
+          module = ./nix/vm/wayland-hyprland.nix;
+          overlay = self.overlays.default;
         };
       });
 
