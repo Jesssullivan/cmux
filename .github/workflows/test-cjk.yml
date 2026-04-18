@@ -24,8 +24,8 @@ concurrency:
 
 jobs:
   cjk-input:
-    name: CJK input validation (honey)
-    runs-on: [self-hosted, linux, gpu, cmux-test]
+    name: CJK input validation (cmux-nix)
+    runs-on: cmux-nix
     environment: gpu-tests
     timeout-minutes: 30
     steps:
@@ -33,6 +33,19 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
+
+      - name: Setup GloriousFlywheel
+        uses: tinyland-inc/GloriousFlywheel/.github/actions/setup-flywheel@main
+
+      - name: Bootstrap Nix CLI
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = http://attic.nix-cache.svc.cluster.local/main
+            extra-trusted-public-keys = main:NKRk1XYo/dfd9fcDqgotUJg2DTDHWp5ny+Ba7WzRjgE=
+
+      - name: Verify runner Nix toolchain
+        run: nix --version
 
       - name: Strip non-version tags from ghostty
         run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
