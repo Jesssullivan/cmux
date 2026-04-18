@@ -110,9 +110,10 @@ fn handleGotoTab(goto: c.ghostty.ghostty_action_goto_tab_e) bool {
         c.ghostty.GHOSTTY_GOTO_TAB_PREVIOUS => if (current > 0) current - 1 else count - 1,
         c.ghostty.GHOSTTY_GOTO_TAB_NEXT => if (current + 1 < count) current + 1 else 0,
         c.ghostty.GHOSTTY_GOTO_TAB_LAST => count - 1,
-        // Positive values are 1-based tab indices from ghostty
+        // Positive values are 1-based tab indices from ghostty.
+        // The C enum is translated as c_int; cast to isize directly.
         else => blk: {
-            const raw: isize = @intFromEnum(goto);
+            const raw: isize = @intCast(goto);
             if (raw < 1) break :blk current;
             const idx: usize = @intCast(raw - 1);
             break :blk if (idx < count) idx else count - 1;
@@ -377,11 +378,11 @@ pub fn onWriteClipboard(
     const widget: *c.GtkWidget = @ptrCast(@alignCast(userdata orelse return));
 
     const display = c.gtk.gtk_widget_get_display(widget) orelse return;
-    const clipboard_enum: c.ghostty.ghostty_clipboard_e = @enumFromInt(clipboard_type);
-    const clipboard = switch (clipboard_enum) {
-        c.ghostty.GHOSTTY_CLIPBOARD_SELECTION => c.gtk.gdk_display_get_primary_clipboard(display),
-        else => c.gtk.gdk_display_get_clipboard(display),
-    };
+    // C enum is translated as c_uint; compare directly against constants.
+    const clipboard = if (clipboard_type == c.ghostty.GHOSTTY_CLIPBOARD_SELECTION)
+        c.gtk.gdk_display_get_primary_clipboard(display)
+    else
+        c.gtk.gdk_display_get_clipboard(display);
     if (clipboard == null) return;
 
     // Use the first text/plain content
