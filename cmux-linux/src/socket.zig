@@ -192,6 +192,7 @@ const methods = .{
     .{ "system.version", handleVersion },
     .{ "system.identify", handleIdentify },
     .{ "system.capabilities", handleCapabilities },
+    .{ "auth.login", handleAuthLogin },
     .{ "window.list", handleWindowList },
     .{ "window.current", handleWindowCurrent },
     .{ "workspace.list", handleWorkspaceList },
@@ -546,6 +547,15 @@ fn handleIdentify(alloc: Allocator, _: json.Value) []const u8 {
 
 fn handleCapabilities(_: Allocator, _: json.Value) []const u8 {
     return "{\"workspaces\":true,\"splits\":true,\"notifications\":true,\"browser\":true,\"session\":true}";
+}
+
+fn handleAuthLogin(_: Allocator, _: json.Value) []const u8 {
+    // The Linux build does not gate the v2 socket behind a password.
+    // Match the macOS response shape: {authenticated, required}. We always
+    // report authenticated=true so existing v1/v2 clients short-circuit the
+    // password handshake gracefully, and required=false so they know the
+    // gate is not enforced on this platform.
+    return "{\"authenticated\":true,\"required\":false}";
 }
 
 // ── Window Handlers ─────────────────────────────────────────────────────
