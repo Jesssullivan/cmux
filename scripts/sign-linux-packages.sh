@@ -82,13 +82,21 @@ if ! gpg --list-secret-keys "$LINUX_GPG_KEY_ID" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Write the passphrase to a file inside the ephemeral GNUPGHOME so it
+# gets cleaned up by `trap cleanup EXIT`. Using --passphrase-file avoids
+# embedding shell-specific syntax (here-strings) in %__gpg_sign_cmd —
+# rpmsign may invoke the macro under /bin/sh which is not always bash.
+PASSPHRASE_FILE="$(mktemp "$GNUPGHOME/passphrase.XXXXXX")"
+chmod 600 "$PASSPHRASE_FILE"
+printf '%s' "$LINUX_GPG_PASSPHRASE" > "$PASSPHRASE_FILE"
+
 # rpmsign reads ~/.rpmmacros — point it at the imported key
 RPMMACROS="$HOME/.rpmmacros"
 if command -v rpmsign >/dev/null 2>&1; then
   cat > "$RPMMACROS" <<RPMCONF
 %_signature gpg
 %_gpg_name $LINUX_GPG_KEY_ID
-%__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --pinentry-mode loopback --passphrase-fd 3 --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename} 3<<<"\$LINUX_GPG_PASSPHRASE"
+%__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --pinentry-mode loopback --passphrase-file ${PASSPHRASE_FILE} --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
 RPMCONF
 fi
 
@@ -98,11 +106,15 @@ sign_detached() {
   echo "sign-linux-packages: signing $file → $out"
   gpg --batch --yes \
     --pinentry-mode loopback \
-    --passphrase-fd 0 \
+    --passphrase-file "$PASSPHRASE_FILE" \
     --local-user "$LINUX_GPG_KEY_ID" \
     --armor --detach-sign \
     --output "$out" \
-    "$file" <<<"$LINUX_GPG_PASSPHRASE"
+    "$file"
+  # Verify immediately so a bad passphrase / wrong key ID / corrupted
+  # import surfaces here in CI rather than at user-verify time.
+  echo "sign-linux-packages: verifying $out"
+  gpg --batch --verify "$out" "$file" 2>&1 | sed 's/^/  gpg: /'
 }
 
 sign_rpm() {
@@ -113,8 +125,15 @@ sign_rpm() {
     sign_detached "$file"
     return
   fi
-  LINUX_GPG_PASSPHRASE="$LINUX_GPG_PASSPHRASE" rpmsign --addsign "$file"
-  # Also produce a detached sig for tooling that prefers it
+  rpmsign --addsign "$file"
+  # Verify the in-package signature was actually applied.
+  echo "sign-linux-packages: verifying in-package RPM signature for $file"
+  rpm -K "$file" 2>&1 | sed 's/^/  rpm: /'
+  if ! rpm -K "$file" | grep -q 'signatures OK'; then
+    echo "sign-linux-packages: ERROR — RPM signature verification failed for $file" >&2
+    exit 1
+  fi
+  # Also produce a detached sig for tooling that prefers it (and verify it).
   sign_detached "$file"
 }
 
@@ -132,7 +151,12 @@ for f in "$ARTIFACT_DIR"/*.rpm; do
 done
 
 if [ "$signed_count" -eq 0 ]; then
-  echo "sign-linux-packages: WARN — no artifacts found in $ARTIFACT_DIR (looked for *.deb, *.rpm, *.tar.gz)" >&2
+  # Reaching here means secrets ARE set (the early no-secret no-op exited
+  # at line ~31). If no artifacts exist the build is broken — fail loud
+  # so the release pipeline doesn't silently ship unsigned bits.
+  echo "sign-linux-packages: ERROR — secrets are set but no artifacts found in $ARTIFACT_DIR" >&2
+  echo "  (looked for *.deb, *.rpm, *.tar.gz; check the build step)" >&2
+  exit 1
 else
   echo "sign-linux-packages: signed $signed_count artifact(s) in $ARTIFACT_DIR"
 fi

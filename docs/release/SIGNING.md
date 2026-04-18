@@ -159,10 +159,12 @@ To rotate the signing key:
 - **CI logs show "LINUX_GPG_PRIVATE_KEY_BASE64 not set — skipping"**:
   the secret is missing on this fork. Set it (see above) and re-run
   the release workflow.
-- **`rpmsign: line N: unexpected EOF while looking for matching '"'`**:
-  passphrase contains characters that break the heredoc. Avoid `'`
-  and `"` in the passphrase, or update `%__gpg_sign_cmd` in the script
-  to read the passphrase from a file descriptor instead of a heredoc.
+- **rpmsign quoting issues with passphrase**: the script reads the
+  passphrase via `--passphrase-file` (file lives inside the ephemeral
+  `GNUPGHOME`), so passphrase contents are not subject to shell quoting
+  rules. If you see quoting errors in `rpmsign` output, the script has
+  been edited to embed the passphrase in `%__gpg_sign_cmd` directly —
+  revert to the `--passphrase-file` form.
 - **`gpg: decryption failed: No secret key`**: `LINUX_GPG_KEY_ID`
   doesn't match the imported key. Use the long key ID from
   `gpg --list-secret-keys --keyid-format=long`.
