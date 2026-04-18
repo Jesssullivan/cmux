@@ -104,15 +104,21 @@ def main() -> int:
             if resp.get("action") != "clear_color":
                 raise cmuxError(f"clear_color: bad response: {resp}")
 
-            # ─── Recognized-but-unimplemented actions on Linux ─────────────
-            for action in ("set_description", "clear_description", "mark_read", "mark_unread"):
-                params: dict = {"workspace_id": ws_props, "action": action}
-                if action == "set_description":
-                    params["description"] = "x"
-                resp = c._call("workspace.action", params) or {}
-                err = str(resp.get("error", ""))
-                if "not implemented" not in err.lower():
-                    raise cmuxError(f"{action}: expected 'not implemented' error, got {resp}")
+            # ─── Description actions ──────────────────────────────────────
+            resp = _action(c, ws_props, "set_description", description="test desc")
+            if resp.get("action") != "set_description" or resp.get("description") != "test desc":
+                raise cmuxError(f"set_description: bad response: {resp}")
+            resp = _action(c, ws_props, "clear_description")
+            if resp.get("action") != "clear_description":
+                raise cmuxError(f"clear_description: bad response: {resp}")
+
+            # ─── Read/unread actions ──────────────────────────────────────
+            resp = _action(c, ws_props, "mark_unread")
+            if resp.get("action") != "mark_unread":
+                raise cmuxError(f"mark_unread: bad response: {resp}")
+            resp = _action(c, ws_props, "mark_read")
+            if resp.get("action") != "mark_read":
+                raise cmuxError(f"mark_read: bad response: {resp}")
 
             # ─── Unsupported action returns a structured error ─────────────
             resp = _action(c, ws_props, "definitely-not-a-real-action")
