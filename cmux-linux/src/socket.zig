@@ -1655,10 +1655,10 @@ fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
 /// surface.action / tab.action — apply a tab-level action to a surface.
 ///
 /// Mirrors macOS `v2TabAction` (Sources/TerminalController.swift). Linux
-/// implements the trivial property-mutation actions (rename, clear_name,
-/// pin, unpin, mark_read, mark_unread). Tab-relative close/new actions
-/// (close_left, close_right, close_others, new_terminal_right,
-/// new_browser_right, reload, duplicate) are not yet wired and will return
+/// implements property-mutation actions (rename, clear_name, pin, unpin,
+/// mark_read, mark_unread) and relative-close actions (close_left,
+/// close_right, close_others). Remaining actions (new_terminal_right,
+/// new_browser_right, reload, duplicate) are not yet wired and return
 /// an `unsupported` error so callers can detect parity gaps.
 fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
@@ -1756,13 +1756,80 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         ) catch "{}";
     }
 
+    // ── Close relative actions ──────────────────────────────────────
+    // close_left / close_right / close_others: close sibling surfaces
+    // relative to the anchor in ordered_panels. Pinned panels are
+    // skipped (matching macOS).
+    if (std.mem.eql(u8, action, "close_left") or
+        std.mem.eql(u8, action, "close_right") or
+        std.mem.eql(u8, action, "close_others"))
+    {
+        // Find anchor position in ordered list.
+        var anchor_idx: ?usize = null;
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == target_id) {
+                anchor_idx = i;
+                break;
+            }
+        }
+        const idx = anchor_idx orelse return "{\"error\":\"surface not in panel order\"}";
+
+        // Collect IDs to remove (snapshot before mutation).
+        var to_close = std.ArrayList(u128).init(alloc);
+        defer to_close.deinit();
+        var skipped_pinned: usize = 0;
+
+        for (ws.ordered_panels.items, 0..) |id, i| {
+            if (id == target_id) continue; // never close anchor
+
+            const dominated = if (std.mem.eql(u8, action, "close_left"))
+                i < idx
+            else if (std.mem.eql(u8, action, "close_right"))
+                i > idx
+            else // close_others
+                true;
+
+            if (!dominated) continue;
+
+            if (ws.panels.get(id)) |p| {
+                if (p.is_pinned) {
+                    skipped_pinned += 1;
+                    continue;
+                }
+            }
+            to_close.append(id) catch continue;
+        }
+
+        // Remove collected panels (split tree + panel map).
+        for (to_close.items) |id| {
+            if (ws.root_node) |root| {
+                ws.root_node = split_tree.closePane(ws.alloc, root, id);
+            }
+            ws.removePanel(id);
+        }
+
+        // Ensure focus stays on the anchor.
+        ws.focused_panel_id = target_id;
+
+        // Rebuild widget tree.
+        if (!isNoSurface()) {
+            if (ws.root_node) |new_root| {
+                ws.content_widget = split_tree.buildWidget(new_root);
+            }
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"{s}\",\"surface_id\":\"{s}\",\"closed\":{d},\"skipped_pinned\":{d}}}",
+            .{ action, panel_id_slice, to_close.items.len, skipped_pinned },
+        ) catch "{}";
+    }
+
     // Recognized but not yet implemented on Linux. Returning a structured
     // error lets callers distinguish "wrong call" from "platform gap".
     // `action` is user input — escape it via writeJsonString.
-    if (std.mem.eql(u8, action, "close_left") or
-        std.mem.eql(u8, action, "close_right") or
-        std.mem.eql(u8, action, "close_others") or
-        std.mem.eql(u8, action, "new_terminal_right") or
+    if (std.mem.eql(u8, action, "new_terminal_right") or
         std.mem.eql(u8, action, "new_browser_right") or
         std.mem.eql(u8, action, "reload") or
         std.mem.eql(u8, action, "duplicate"))
@@ -1783,7 +1850,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
     w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
         return "{\"error\":\"unsupported action\"}";
     writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
-    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\"]}") catch
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\",\"close_left\",\"close_right\",\"close_others\"]}") catch
         return "{\"error\":\"unsupported action\"}";
     return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
