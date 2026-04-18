@@ -6,6 +6,8 @@ execution program.
 Short current-state readout:
 - `docs/program-status.md`
 - `docs/linux-packaging-cd-plan.md`
+- `docs/linux-work-week-2026-04-14.md`
+- `docs/linear-qa-shard-punchlist.md`
 
 The goal is straightforward:
 
@@ -20,6 +22,14 @@ Deliver a native Linux `cmux` that is:
 - feature-complete on the main supported desktop distros
 - explicit about constrained-distro limitations
 - backed by repeatable packaging and CI validation
+
+## Current Execution Surface
+
+For the current work week, use these as the active execution docs:
+
+- [linux-work-week-2026-04-14.md](/Users/jess/git/cmux/docs/linux-work-week-2026-04-14.md:1)
+- [linear-qa-shard-punchlist.md](/Users/jess/git/cmux/docs/linear-qa-shard-punchlist.md:1)
+- [program-review-2026-04-14.md](/Users/jess/git/cmux/docs/program-review-2026-04-14.md:1)
 
 ## Support Tiers
 

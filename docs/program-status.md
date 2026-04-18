@@ -11,6 +11,9 @@ It complements, rather than replaces:
 - `docs/linux-program-plan.md`
 - `docs/linux-packaging-cd-plan.md`
 - `docs/linux-parity-matrix.md`
+- `docs/linux-work-week-2026-04-14.md`
+- `docs/linear-qa-shard-punchlist.md`
+- `docs/program-review-2026-04-14.md`
 - `docs/linux-validation-checklist.md`
 - `docs/tracker-refresh-notes.md`
 
