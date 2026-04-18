@@ -2403,11 +2403,34 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
 
     // Create a new workspace for the broken pane, preserving current selection
     const prev_selected = tm.selected_index;
-    const new_ws = tm.createWorkspace() catch return "{\"error\":\"create workspace failed\"}";
+    const new_ws = tm.createWorkspace() catch {
+        // Re-attach to source on failure to avoid leaking the panel
+        target.ws.attachPanel(panel) catch {};
+        return "{\"error\":\"create workspace failed\"}";
+    };
     tm.selected_index = prev_selected;
 
-    // Attach the panel to the new workspace
-    new_ws.attachPanel(panel) catch return "{\"error\":\"attach failed\"}";
+    // createWorkspace auto-creates a default panel — remove it so only the
+    // transferred panel remains in the new workspace.
+    if (new_ws.ordered_panels.items.len > 0) {
+        const default_id = new_ws.ordered_panels.items[0];
+        new_ws.removePanel(default_id);
+    }
+    if (new_ws.root_node) |node| {
+        split_tree.destroy(new_ws.alloc, node);
+        new_ws.root_node = null;
+        new_ws.content_widget = null;
+    }
+
+    // Attach the transferred panel and rebuild split tree
+    new_ws.attachPanel(panel) catch {
+        target.ws.attachPanel(panel) catch {};
+        return "{\"error\":\"attach failed\"}";
+    };
+    new_ws.root_node = split_tree.createLeaf(new_ws.alloc, panel.id, panel.widget) catch null;
+    if (new_ws.root_node) |node| {
+        new_ws.content_widget = split_tree.buildWidget(node);
+    }
 
     if (window.getSidebar()) |sb| sb.refresh();
 
@@ -2449,8 +2472,21 @@ fn handlePaneJoin(alloc: Allocator, params: json.Value) []const u8 {
     const panel = src.ws.detachPanel(src.id) orelse
         return "{\"error\":\"detach failed\"}";
 
-    // Attach to target workspace
-    dst_ws.attachPanel(panel) catch return "{\"error\":\"attach failed\"}";
+    // Attach to target workspace (re-attach to source on failure)
+    dst_ws.attachPanel(panel) catch {
+        src.ws.attachPanel(panel) catch {};
+        return "{\"error\":\"attach failed\"}";
+    };
+
+    // Close source workspace if it became empty after the join
+    if (src.ws.panelCount() == 0) {
+        for (tm.workspaces.items, 0..) |ws_item, idx| {
+            if (ws_item == src.ws) {
+                tm.closeWorkspace(idx);
+                break;
+            }
+        }
+    }
 
     if (window.getSidebar()) |sb| sb.refresh();
 
@@ -2492,7 +2528,10 @@ fn handleSurfaceMove(_: Allocator, params: json.Value) []const u8 {
     if (src.ws == dst_ws) return "{}"; // Already in target workspace
 
     const panel = src.ws.detachPanel(src.id) orelse return "{\"error\":\"detach failed\"}";
-    dst_ws.attachPanel(panel) catch return "{\"error\":\"attach failed\"}";
+    dst_ws.attachPanel(panel) catch {
+        src.ws.attachPanel(panel) catch {};
+        return "{\"error\":\"attach failed\"}";
+    };
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
 }
@@ -2526,16 +2565,19 @@ fn handleSurfaceReorder(_: Allocator, params: json.Value) []const u8 {
     } else if (getParamString(params, "after_surface_id")) |ref_str| blk: {
         const ref_id = if (findSurfaceGlobal(tm, ref_str)) |r| r.id else return "{\"error\":\"invalid after_surface_id\"}";
         for (ws.ordered_panels.items, 0..) |id, i| {
-            if (id == ref_id) break :blk @min(i + 1, ws.ordered_panels.items.len - 1);
+            if (id == ref_id) break :blk i + 1;
         }
         return "{\"error\":\"after_surface not in workspace\"}";
     } else return "{}"; // No position specified — no-op
 
     if (src == dst) return "{}";
 
-    // Remove from current position and insert at target
+    // Remove from current position, adjust target for the shift, then insert.
+    // When src < dst, removal shifts all later elements left by one.
     _ = ws.ordered_panels.orderedRemove(src);
-    ws.ordered_panels.insert(ws.alloc, dst, panel_id) catch return "{\"error\":\"reorder insert failed\"}";
+    const adj_dst = if (src < dst) dst - 1 else dst;
+    const clamped = @min(adj_dst, ws.ordered_panels.items.len);
+    ws.ordered_panels.insert(ws.alloc, clamped, panel_id) catch return "{\"error\":\"reorder insert failed\"}";
 
     return "{}";
 }
