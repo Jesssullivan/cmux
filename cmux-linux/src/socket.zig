@@ -223,6 +223,7 @@ const methods = .{
     .{ "surface.clear_history", handleSurfaceClearHistory },
     .{ "surface.action", handleSurfaceAction },
     .{ "tab.action", handleSurfaceAction },
+    .{ "surface.report_tty", handleSurfaceReportTty },
     .{ "pane.list", handlePaneList },
     .{ "pane.focus", handlePaneFocus },
     .{ "pane.create", handlePaneCreate },
@@ -1629,6 +1630,61 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
     w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\"]}") catch
         return "{\"error\":\"unsupported action\"}";
     return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
+}
+
+fn handleSurfaceReportTty(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    // Resolve workspace + target surface using the same pattern as
+    // handleSurfaceSendText so callers can omit either or both ids and
+    // fall back to the currently selected workspace + focused surface.
+    const workspace_found = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"invalid workspace_id\"}"
+    else
+        null;
+
+    const ws = if (workspace_found) |found|
+        found.ws
+    else if (getParamString(params, "surface_id")) |id_str|
+        if (findSurfaceGlobal(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid surface_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        if (workspace_found != null)
+            findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        else if (findSurfaceGlobal(tm, id_str)) |found|
+            found.id
+        else
+            return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    const tty_name_raw = getParamString(params, "tty_name") orelse return "{\"error\":\"missing tty_name\"}";
+    const tty_name = std.mem.trim(u8, tty_name_raw, " \t\r\n");
+    if (tty_name.len == 0) return "{\"error\":\"missing tty_name\"}";
+
+    const panel_ptr = ws.panels.getPtr(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
+
+    // Allocate the new value first, then free the old one so a failed
+    // allocation never leaves the panel pointing at freed memory.
+    const new_tty = ws.alloc.dupe(u8, tty_name) catch return "{\"error\":\"out of memory\"}";
+    if (panel_ptr.*.tty_name) |old| ws.alloc.free(old);
+    panel_ptr.*.tty_name = new_tty;
+
+    const ws_hex = formatId(ws.id);
+    const panel_hex = formatId(panel_ptr.*.id);
+
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(alloc);
+    const writer = buf.writer(alloc);
+    writer.print(
+        "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\",\"tty_name\":",
+        .{ @as([]const u8, &ws_hex), @as([]const u8, &panel_hex) },
+    ) catch return "{\"error\":\"encode failed\"}";
+    writeJsonString(writer, tty_name) catch return "{\"error\":\"encode failed\"}";
+    writer.writeByte('}') catch return "{\"error\":\"encode failed\"}";
+    return buf.toOwnedSlice(alloc) catch "{}";
 }
 
 // ── Batch 3: Additional Pane Operations ─────────────────────────────────
