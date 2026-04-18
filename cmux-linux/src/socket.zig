@@ -231,6 +231,7 @@ const methods = .{
     .{ "pane.surfaces", handlePaneSurfaces },
     .{ "pane.last", handlePaneLast },
     .{ "pane.swap", handlePaneSwap },
+    .{ "pane.resize", handlePaneResize },
     .{ "pane.break", handlePaneBreak },
     .{ "pane.join", handlePaneJoin },
     .{ "workspace.move_to_window", handleWorkspaceMoveToWindow },
@@ -1964,6 +1965,75 @@ fn handlePaneLast(alloc: Allocator, _: json.Value) []const u8 {
     const pid = ws.focused_panel_id orelse return "{}";
     const panel_hex = formatId(pid);
     return std.fmt.allocPrint(alloc, "{{\"pane_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
+}
+
+fn handlePaneResize(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid workspace_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const dir_str = getParamString(params, "direction") orelse
+        return "{\"error\":\"missing direction (left|right|up|down)\"}";
+
+    const amount_raw = getParamInt(params, "amount") orelse 1;
+    if (amount_raw < 1) return "{\"error\":\"amount must be >= 1\"}";
+    const amount: usize = @intCast(amount_raw);
+
+    // Map direction to split orientation + which child the pane must be in.
+    const orientation: split_tree.Orientation = if (std.mem.eql(u8, dir_str, "left") or std.mem.eql(u8, dir_str, "right"))
+        .horizontal
+    else if (std.mem.eql(u8, dir_str, "up") or std.mem.eql(u8, dir_str, "down"))
+        .vertical
+    else
+        return "{\"error\":\"direction must be left|right|up|down\"}";
+
+    // "right"/"down" → grow first child → pane in first child, increase ratio
+    // "left"/"up"    → grow second child → pane in second child, decrease ratio
+    const in_first = std.mem.eql(u8, dir_str, "right") or std.mem.eql(u8, dir_str, "down");
+
+    const target_id = if (getParamString(params, "pane_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid pane_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused pane\"}";
+
+    const root = ws.root_node orelse return "{\"error\":\"no split tree\"}";
+
+    const split = split_tree.findResizeSplit(root, target_id, orientation, in_first) orelse
+        return std.fmt.allocPrint(
+        alloc,
+        "{{\"error\":\"no {s} split ancestor in direction {s}\"}}",
+        .{ @tagName(orientation), dir_str },
+    ) catch "{\"error\":\"no matching split\"}";
+
+    // Each unit of `amount` adjusts the ratio by 0.05 (5%).
+    const delta: f64 = @as(f64, @floatFromInt(amount)) * 0.05;
+    const sign: f64 = if (in_first) 1.0 else -1.0;
+    const requested = split.ratio + (sign * delta);
+    split.ratio = @min(@max(requested, 0.1), 0.9);
+
+    // Update the GtkPaned position in real mode.
+    if (!isNoSurface()) {
+        if (split.paned) |paned_widget| {
+            const alloc_size = if (orientation == .horizontal)
+                c.gtk.gtk_widget_get_width(paned_widget)
+            else
+                c.gtk.gtk_widget_get_height(paned_widget);
+            if (alloc_size > 0) {
+                const pos: c_int = @intFromFloat(split.ratio * @as(f64, @floatFromInt(alloc_size)));
+                c.gtk.gtk_paned_set_position(@ptrCast(@alignCast(paned_widget)), pos);
+            }
+        }
+    }
+
+    const pane_hex = formatId(target_id);
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"pane_id\":\"{s}\",\"direction\":\"{s}\",\"ratio\":{d:.4}}}",
+        .{ @as([]const u8, &pane_hex), dir_str, split.ratio },
+    ) catch "{}";
 }
 
 // ── Batch 4: Complex Structural Operations ──────────────────────────────
