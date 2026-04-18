@@ -219,6 +219,8 @@ const methods = .{
     .{ "surface.health", handleSurfaceHealth },
     .{ "surface.trigger_flash", handleSurfaceTriggerFlash },
     .{ "surface.clear_history", handleSurfaceClearHistory },
+    .{ "surface.action", handleSurfaceAction },
+    .{ "tab.action", handleSurfaceAction },
     .{ "pane.list", handlePaneList },
     .{ "pane.focus", handlePaneFocus },
     .{ "pane.create", handlePaneCreate },
@@ -1236,6 +1238,142 @@ fn handleSurfaceTriggerFlash(_: Allocator, params: json.Value) []const u8 {
 
 fn handleSurfaceClearHistory(_: Allocator, _: json.Value) []const u8 {
     return "{}"; // Terminal scrollback clear stub
+}
+
+/// surface.action / tab.action — apply a tab-level action to a surface.
+///
+/// Mirrors macOS `v2TabAction` (Sources/TerminalController.swift). Linux
+/// implements the trivial property-mutation actions (rename, clear_name,
+/// pin, unpin, mark_read, mark_unread). Tab-relative close/new actions
+/// (close_left, close_right, close_others, new_terminal_right,
+/// new_browser_right, reload, duplicate) are not yet wired and will return
+/// an `unsupported` error so callers can detect parity gaps.
+fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
+    const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+
+    // Resolve workspace (param or current)
+    const ws = if (getParamString(params, "workspace_id")) |id_str|
+        if (findWorkspaceById(tm, id_str)) |found| found.ws else return "{\"error\":\"workspace not found\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const action = getParamString(params, "action") orelse return "{\"error\":\"missing action\"}";
+
+    // Resolve target surface (surface_id, tab_id, or focused)
+    const target_id = if (getParamString(params, "surface_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+    else if (getParamString(params, "tab_id")) |id_str|
+        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid tab_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+
+    const panel = ws.panels.get(target_id) orelse return "{\"error\":\"surface not found\"}";
+    const panel_hex = formatId(target_id);
+    const panel_id_slice: []const u8 = &panel_hex;
+
+    if (std.mem.eql(u8, action, "rename")) {
+        const title = getParamString(params, "title") orelse return "{\"error\":\"missing title\"}";
+        // Allocate the new value FIRST, then free the old. Otherwise an alloc
+        // failure leaves panel.custom_title pointing at freed memory.
+        const new_title = ws.alloc.dupe(u8, title) catch return "{\"error\":\"alloc failed\"}";
+        if (panel.custom_title) |old| ws.alloc.free(old);
+        panel.custom_title = new_title;
+        if (window.getSidebar()) |sb| sb.refresh();
+        // Escape `title` via writeJsonString so quotes / backslashes / control
+        // chars in the user-supplied value cannot break the JSON envelope.
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"action\":\"rename\",\"surface_id\":\"") catch return "{}";
+        w.writeAll(panel_id_slice) catch return "{}";
+        w.writeAll("\",\"title\":") catch return "{}";
+        writeJsonString(w, title) catch return "{}";
+        w.writeByte('}') catch return "{}";
+        return buf.toOwnedSlice(alloc) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "clear_name")) {
+        if (panel.custom_title) |old| {
+            ws.alloc.free(old);
+            panel.custom_title = null;
+        }
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"clear_name\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "pin")) {
+        panel.is_pinned = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"pin\",\"surface_id\":\"{s}\",\"pinned\":true}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "unpin")) {
+        panel.is_pinned = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"unpin\",\"surface_id\":\"{s}\",\"pinned\":false}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "mark_read")) {
+        panel.is_manually_unread = false;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"mark_read\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    if (std.mem.eql(u8, action, "mark_unread")) {
+        panel.is_manually_unread = true;
+        if (window.getSidebar()) |sb| sb.refresh();
+        return std.fmt.allocPrint(
+            alloc,
+            "{{\"action\":\"mark_unread\",\"surface_id\":\"{s}\"}}",
+            .{panel_id_slice},
+        ) catch "{}";
+    }
+
+    // Recognized but not yet implemented on Linux. Returning a structured
+    // error lets callers distinguish "wrong call" from "platform gap".
+    // `action` is user input — escape it via writeJsonString.
+    if (std.mem.eql(u8, action, "close_left") or
+        std.mem.eql(u8, action, "close_right") or
+        std.mem.eql(u8, action, "close_others") or
+        std.mem.eql(u8, action, "new_terminal_right") or
+        std.mem.eql(u8, action, "new_browser_right") or
+        std.mem.eql(u8, action, "reload") or
+        std.mem.eql(u8, action, "duplicate"))
+    {
+        var buf: std.ArrayList(u8) = .empty;
+        const w = buf.writer(alloc);
+        w.writeAll("{\"error\":\"action not implemented on linux\",\"action\":") catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        writeJsonString(w, action) catch
+            return "{\"error\":\"action not implemented on linux\"}";
+        w.writeByte('}') catch return "{\"error\":\"action not implemented on linux\"}";
+        return buf.toOwnedSlice(alloc) catch "{\"error\":\"action not implemented on linux\"}";
+    }
+
+    // Unsupported action — same escape treatment for `action` echo.
+    var buf: std.ArrayList(u8) = .empty;
+    const w = buf.writer(alloc);
+    w.writeAll("{\"error\":\"unsupported action\",\"action\":") catch
+        return "{\"error\":\"unsupported action\"}";
+    writeJsonString(w, action) catch return "{\"error\":\"unsupported action\"}";
+    w.writeAll(",\"supported\":[\"rename\",\"clear_name\",\"pin\",\"unpin\",\"mark_read\",\"mark_unread\"]}") catch
+        return "{\"error\":\"unsupported action\"}";
+    return buf.toOwnedSlice(alloc) catch "{\"error\":\"unsupported action\"}";
 }
 
 // ── Batch 3: Additional Pane Operations ─────────────────────────────────
