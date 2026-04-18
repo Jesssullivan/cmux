@@ -6,10 +6,12 @@ const std = @import("std");
 const c = @import("c_api.zig");
 const TabManager = @import("tab_manager.zig").TabManager;
 const Sidebar = @import("sidebar.zig").Sidebar;
+const SessionManager = @import("session.zig").SessionManager;
 
 /// Global state for the main window (single window for now).
 var tab_manager: TabManager = undefined;
 var sidebar: Sidebar = undefined;
+var session_manager: SessionManager = undefined;
 var tab_manager_initialized: bool = false;
 
 /// Create the main application window with tabbed workspaces and sidebar.
@@ -75,10 +77,17 @@ pub fn createWindow(gtk_app: *c.GtkApplication, ghostty_app: c.ghostty_app_t) vo
     // Set window content
     c.gtk.adw_application_window_set_content(win, content_box);
 
-    // Create the first workspace (initial terminal tab)
-    _ = tab_manager.createWorkspace() catch |err| {
-        std.log.err("Failed to create initial workspace: {}", .{err});
-    };
+    // Attempt session restore; fall back to creating a fresh workspace.
+    session_manager = SessionManager.init(alloc);
+    const restored = session_manager.restore(&tab_manager);
+    if (!restored) {
+        _ = tab_manager.createWorkspace() catch |err| {
+            std.log.err("Failed to create initial workspace: {}", .{err});
+        };
+    }
+
+    // Start session autosave (every 8s)
+    session_manager.startAutosave(&tab_manager);
 
     // Refresh sidebar to show the initial workspace
     sidebar.refresh();
