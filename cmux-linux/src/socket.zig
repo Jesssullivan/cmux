@@ -1774,8 +1774,8 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         const idx = anchor_idx orelse return "{\"error\":\"surface not in panel order\"}";
 
         // Collect IDs to remove (snapshot before mutation).
-        var to_close = std.ArrayList(u128).init(alloc);
-        defer to_close.deinit();
+        var to_close = std.ArrayList(u128).empty;
+        defer to_close.deinit(alloc);
         var skipped_pinned: usize = 0;
 
         for (ws.ordered_panels.items, 0..) |id, i| {
@@ -1796,7 +1796,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
                     continue;
                 }
             }
-            to_close.append(id) catch continue;
+            to_close.append(alloc, id) catch continue;
         }
 
         // Remove collected panels (split tree + panel map).
