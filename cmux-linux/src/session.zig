@@ -18,6 +18,25 @@ const SCHEMA_VERSION: u32 = 1;
 const AUTOSAVE_INTERVAL_SECS: u32 = 8;
 const MAX_SCROLLBACK_BYTES: usize = 400 * 1024;
 
+/// Write a JSON-safe quoted string, escaping special characters.
+fn writeJsonString(writer: anytype, text: []const u8) !void {
+    try writer.writeByte('"');
+    for (text) |ch| {
+        switch (ch) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            0x08 => try writer.writeAll("\\b"),
+            0x0c => try writer.writeAll("\\f"),
+            0x00...0x07, 0x0b, 0x0e...0x1f => try writer.print("\\u00{x:0>2}", .{ch}),
+            else => try writer.writeByte(ch),
+        }
+    }
+    try writer.writeByte('"');
+}
+
 // ── Snapshot Types ───────────────────────────────────────────────
 
 pub const AppSessionSnapshot = struct {
@@ -211,18 +230,33 @@ pub const SessionManager = struct {
     }
 
     fn writeWorkspaceJson(writer: anytype, snap: WorkspaceSnapshot) !void {
-        try writer.writeAll("{\"process_title\":\"");
-        try writer.writeAll(snap.process_title);
-        try writer.writeAll("\",\"is_pinned\":");
+        try writer.writeAll("{\"process_title\":");
+        try writeJsonString(writer, snap.process_title);
+        if (snap.custom_title) |t| {
+            try writer.writeAll(",\"custom_title\":");
+            try writeJsonString(writer, t);
+        }
+        if (snap.custom_color) |color| {
+            try writer.writeAll(",\"custom_color\":");
+            try writeJsonString(writer, color);
+        }
+        if (snap.description) |desc| {
+            try writer.writeAll(",\"description\":");
+            try writeJsonString(writer, desc);
+        }
+        try writer.writeAll(",\"is_pinned\":");
         try writer.writeAll(if (snap.is_pinned) "true" else "false");
-        try writer.writeAll(",\"current_directory\":\"");
-        try writer.writeAll(snap.current_directory);
-        try writer.writeAll("\"}");
+        try writer.writeAll(",\"is_manually_unread\":");
+        try writer.writeAll(if (snap.is_manually_unread) "true" else "false");
+        try writer.writeAll(",\"current_directory\":");
+        try writeJsonString(writer, snap.current_directory);
+        try writer.writeByte('}');
     }
 
     /// Attempt to restore a previous session.
-    /// Returns true if restoration was successful.
-    pub fn restore(self: *SessionManager) bool {
+    /// Returns true if at least one workspace was restored.
+    pub fn restore(self: *SessionManager, tm: *TabManager) bool {
+        self.session_path = self.resolveSessionPath() catch null;
         const path = self.session_path orelse return false;
 
         // Check if session restore is disabled
@@ -244,8 +278,63 @@ pub const SessionManager = struct {
         const version_val = parsed.value.object.get("version") orelse return false;
         if (version_val != .integer or version_val.integer != SCHEMA_VERSION) return false;
 
-        // TODO: rebuild windows, workspaces, splits, and surfaces from snapshot
-        log.info("Session restore: found valid snapshot (v{d})", .{SCHEMA_VERSION});
-        return false; // Not yet implemented — return false to create fresh session
+        // Navigate to windows[0].tab_manager.workspaces[]
+        const windows = parsed.value.object.get("windows") orelse return false;
+        if (windows != .array or windows.array.items.len == 0) return false;
+
+        const win0 = windows.array.items[0];
+        if (win0 != .object) return false;
+        const tab_mgr = win0.object.get("tab_manager") orelse return false;
+        if (tab_mgr != .object) return false;
+        const workspaces = tab_mgr.object.get("workspaces") orelse return false;
+        if (workspaces != .array or workspaces.array.items.len == 0) return false;
+
+        var restored: usize = 0;
+        for (workspaces.array.items) |ws_val| {
+            if (ws_val != .object) continue;
+
+            const ws = tm.createWorkspace() catch continue;
+
+            // Restore metadata
+            if (ws_val.object.get("custom_title")) |v| {
+                if (v == .string and v.string.len > 0) {
+                    ws.custom_title = ws.alloc.dupe(u8, v.string) catch null;
+                    tm.updateTabTitle(ws);
+                }
+            }
+            if (ws_val.object.get("custom_color")) |v| {
+                if (v == .string and v.string.len > 0) {
+                    ws.custom_color = ws.alloc.dupe(u8, v.string) catch null;
+                }
+            }
+            if (ws_val.object.get("description")) |v| {
+                if (v == .string and v.string.len > 0) {
+                    ws.description = ws.alloc.dupe(u8, v.string) catch null;
+                }
+            }
+            if (ws_val.object.get("is_pinned")) |v| {
+                if (v == .bool) ws.is_pinned = v.bool;
+            }
+            if (ws_val.object.get("is_manually_unread")) |v| {
+                if (v == .bool) ws.is_manually_unread = v.bool;
+            }
+
+            restored += 1;
+        }
+
+        // Restore selected workspace index
+        if (tab_mgr.object.get("selected_workspace_index")) |v| {
+            if (v == .integer and v.integer >= 0) {
+                const idx: usize = @intCast(v.integer);
+                if (idx < tm.workspaces.items.len) {
+                    tm.selectWorkspace(idx);
+                }
+            }
+        }
+
+        if (restored > 0) {
+            log.info("Session restore: restored {d} workspace(s) from snapshot (v{d})", .{ restored, SCHEMA_VERSION });
+        }
+        return restored > 0;
     }
 };
