@@ -46,6 +46,7 @@ pub fn onAction(
         c.ghostty.GHOSTTY_ACTION_RESIZE_SPLIT => handleResizeSplit(action.action.resize_split),
         c.ghostty.GHOSTTY_ACTION_EQUALIZE_SPLITS => handleEqualizeSplits(),
         c.ghostty.GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM => handleToggleSplitZoom(),
+        c.ghostty.GHOSTTY_ACTION_MOVE_TAB => handleMoveTab(action.action.move_tab),
         else => false,
     };
 }
@@ -150,6 +151,37 @@ fn handleCloseTab() bool {
     tm.closeWorkspace(idx);
     if (window.getSidebar()) |sb| sb.refresh();
     return true;
+}
+
+/// Reorder a tab by moving it left (negative) or right (positive).
+fn handleMoveTab(move: c.ghostty.ghostty_action_move_tab_s) bool {
+    const tm = window.getTabManager() orelse return false;
+    const count = tm.count();
+    if (count <= 1) return false;
+    const current = tm.selected_index orelse return false;
+
+    // Compute target index with wrapping
+    const amount: isize = @intCast(move.amount);
+    const current_i: isize = @intCast(current);
+    const count_i: isize = @intCast(count);
+    const raw_target = @mod(current_i + amount, count_i);
+    const target_idx: usize = @intCast(raw_target);
+
+    if (target_idx == current) return true;
+
+    // Use AdwTabView reorder API
+    if (tm.tab_view) |tv| {
+        const n_pages = c.gtk.adw_tab_view_get_n_pages(tv);
+        if (n_pages <= 1) return false;
+        const page = c.gtk.adw_tab_view_get_nth_page(tv, @intCast(current)) orelse return false;
+        const success = c.gtk.adw_tab_view_reorder_page(tv, page, @intCast(target_idx));
+        if (success != 0) {
+            tm.selected_index = target_idx;
+            if (window.getSidebar()) |sb| sb.refresh();
+        }
+        return success != 0;
+    }
+    return false;
 }
 
 /// Forward a desktop notification from the terminal (OSC 9/99).
@@ -762,6 +794,17 @@ pub fn onCloseSurface(
 
     const panel_id = found_panel_id orelse return;
     const ws = tm.workspaces.items[found_ws_idx];
+
+    // Update the split tree: close the pane and promote its sibling.
+    if (ws.root_node) |root| {
+        if (split_tree.leafCount(root) > 1) {
+            _ = split_tree.closePane(ws.alloc, root, panel_id);
+            ws.removePanel(panel_id);
+            rebuildWorkspaceWidget(tm, ws);
+            return;
+        }
+    }
+
     ws.removePanel(panel_id);
 
     // If the workspace is now empty, close it (unless it's the last one).
