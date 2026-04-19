@@ -6,6 +6,7 @@ const std = @import("std");
 const c = @import("c_api.zig");
 const window = @import("window.zig");
 const main_mod = @import("main.zig");
+const split_tree = @import("split_tree.zig");
 
 const log = std.log.scoped(.app);
 
@@ -40,6 +41,12 @@ pub fn onAction(
         c.ghostty.GHOSTTY_ACTION_COLOR_CHANGE => handleColorChange(action.action.color_change),
         c.ghostty.GHOSTTY_ACTION_RELOAD_CONFIG => handleReloadConfig(action.action.reload_config),
         c.ghostty.GHOSTTY_ACTION_CONFIG_CHANGE => handleConfigChange(action.action.config_change),
+        c.ghostty.GHOSTTY_ACTION_NEW_SPLIT => handleNewSplit(action.action.new_split),
+        c.ghostty.GHOSTTY_ACTION_GOTO_SPLIT => handleGotoSplit(action.action.goto_split),
+        c.ghostty.GHOSTTY_ACTION_RESIZE_SPLIT => handleResizeSplit(action.action.resize_split),
+        c.ghostty.GHOSTTY_ACTION_EQUALIZE_SPLITS => handleEqualizeSplits(),
+        c.ghostty.GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM => handleToggleSplitZoom(),
+        c.ghostty.GHOSTTY_ACTION_MOVE_TAB => handleMoveTab(action.action.move_tab),
         else => false,
     };
 }
@@ -144,6 +151,37 @@ fn handleCloseTab() bool {
     tm.closeWorkspace(idx);
     if (window.getSidebar()) |sb| sb.refresh();
     return true;
+}
+
+/// Reorder a tab by moving it left (negative) or right (positive).
+fn handleMoveTab(move: c.ghostty.ghostty_action_move_tab_s) bool {
+    const tm = window.getTabManager() orelse return false;
+    const count = tm.count();
+    if (count <= 1) return false;
+    const current = tm.selected_index orelse return false;
+
+    // Compute target index with wrapping
+    const amount: isize = @intCast(move.amount);
+    const current_i: isize = @intCast(current);
+    const count_i: isize = @intCast(count);
+    const raw_target = @mod(current_i + amount, count_i);
+    const target_idx: usize = @intCast(raw_target);
+
+    if (target_idx == current) return true;
+
+    // Use AdwTabView reorder API
+    if (tm.tab_view) |tv| {
+        const n_pages = c.gtk.adw_tab_view_get_n_pages(tv);
+        if (n_pages <= 1) return false;
+        const page = c.gtk.adw_tab_view_get_nth_page(tv, @intCast(current)) orelse return false;
+        const success = c.gtk.adw_tab_view_reorder_page(tv, page, @intCast(target_idx));
+        if (success != 0) {
+            tm.selected_index = target_idx;
+            if (window.getSidebar()) |sb| sb.refresh();
+        }
+        return success != 0;
+    }
+    return false;
 }
 
 /// Forward a desktop notification from the terminal (OSC 9/99).
@@ -362,6 +400,255 @@ fn handleConfigChange(change: c.ghostty.ghostty_action_config_change_s) bool {
     return true;
 }
 
+// ── Split management ───────────────────────────────────────────────
+
+/// Create a new split pane in the focused workspace.
+fn handleNewSplit(direction: c.ghostty.ghostty_action_split_direction_e) bool {
+    const tm = window.getTabManager() orelse return false;
+    const ws = tm.selectedWorkspace() orelse return false;
+    const root = ws.root_node orelse return false;
+    const focused_id = ws.focused_panel_id orelse return false;
+
+    // Determine orientation from ghostty direction
+    const orientation: split_tree.Orientation = switch (direction) {
+        c.ghostty.GHOSTTY_SPLIT_DIRECTION_RIGHT,
+        c.ghostty.GHOSTTY_SPLIT_DIRECTION_LEFT,
+        => .horizontal,
+        c.ghostty.GHOSTTY_SPLIT_DIRECTION_DOWN,
+        c.ghostty.GHOSTTY_SPLIT_DIRECTION_UP,
+        => .vertical,
+        else => .horizontal,
+    };
+
+    // Find the target node BEFORE creating the panel to avoid orphans on failure
+    const target = findNodeByPanel(root, focused_id) orelse return false;
+
+    // Create a new terminal panel
+    const panel = ws.createTerminalPanel(tm.ghostty_app) catch return false;
+
+    // Split the target node; clean up on failure to avoid orphaned panel
+    _ = split_tree.splitPane(
+        ws.alloc,
+        target,
+        orientation,
+        panel.id,
+        panel.widget,
+    ) catch {
+        ws.removePanel(panel.id);
+        ws.focused_panel_id = focused_id;
+        return false;
+    };
+
+    // Rebuild the GTK widget tree
+    rebuildWorkspaceWidget(tm, ws);
+
+    // Transfer GTK keyboard focus to the new pane so key events
+    // route to the same panel the data model considers focused.
+    if (panel.widget) |w| _ = c.gtk.gtk_widget_grab_focus(w);
+    return true;
+}
+
+/// Navigate to an adjacent split pane.
+fn handleGotoSplit(goto: c.ghostty.ghostty_action_goto_split_e) bool {
+    const tm = window.getTabManager() orelse return false;
+    const ws = tm.selectedWorkspace() orelse return false;
+    const root = ws.root_node orelse return false;
+    const focused_id = ws.focused_panel_id orelse return false;
+
+    const direction: split_tree.TraversalDirection = switch (goto) {
+        c.ghostty.GHOSTTY_GOTO_SPLIT_NEXT,
+        c.ghostty.GHOSTTY_GOTO_SPLIT_RIGHT,
+        c.ghostty.GHOSTTY_GOTO_SPLIT_DOWN,
+        => .next,
+        c.ghostty.GHOSTTY_GOTO_SPLIT_PREVIOUS,
+        c.ghostty.GHOSTTY_GOTO_SPLIT_LEFT,
+        c.ghostty.GHOSTTY_GOTO_SPLIT_UP,
+        => .previous,
+        else => .next,
+    };
+
+    const target_leaf = split_tree.adjacentLeaf(root, focused_id, direction, ws.alloc) orelse return false;
+    ws.focused_panel_id = target_leaf.panel_id;
+
+    // Focus the target widget
+    if (target_leaf.widget) |w| {
+        _ = c.gtk.gtk_widget_grab_focus(w);
+    }
+    return true;
+}
+
+/// Resize the focused split pane.
+fn handleResizeSplit(resize: c.ghostty.ghostty_action_resize_split_s) bool {
+    const tm = window.getTabManager() orelse return false;
+    const ws = tm.selectedWorkspace() orelse return false;
+    const root = ws.root_node orelse return false;
+    const focused_id = ws.focused_panel_id orelse return false;
+
+    // Map ghostty resize direction to split_tree orientation and side
+    const orientation: split_tree.Orientation = switch (resize.direction) {
+        c.ghostty.GHOSTTY_RESIZE_SPLIT_LEFT,
+        c.ghostty.GHOSTTY_RESIZE_SPLIT_RIGHT,
+        => .horizontal,
+        c.ghostty.GHOSTTY_RESIZE_SPLIT_UP,
+        c.ghostty.GHOSTTY_RESIZE_SPLIT_DOWN,
+        => .vertical,
+        else => return false,
+    };
+
+    // Growing right/down means the panel is in the first child,
+    // growing left/up means it's in the second child.
+    const in_first = switch (resize.direction) {
+        c.ghostty.GHOSTTY_RESIZE_SPLIT_RIGHT,
+        c.ghostty.GHOSTTY_RESIZE_SPLIT_DOWN,
+        => true,
+        else => false,
+    };
+
+    const split = split_tree.findResizeSplit(root, focused_id, orientation, in_first) orelse return false;
+
+    // Convert pixel amount to ratio fraction using the actual pane size.
+    const paned_size: c_int = switch (orientation) {
+        .horizontal => if (split.paned) |p| c.gtk.gtk_widget_get_width(p) else 0,
+        .vertical => if (split.paned) |p| c.gtk.gtk_widget_get_height(p) else 0,
+    };
+    if (paned_size <= 0) return false;
+    const delta: f64 = @as(f64, @floatFromInt(resize.amount)) / @as(f64, @floatFromInt(paned_size));
+    const new_ratio = if (in_first) split.ratio + delta else split.ratio - delta;
+    split.ratio = std.math.clamp(new_ratio, 0.1, 0.9);
+
+    // Apply the new ratio to the GtkPaned widget
+    split_tree.applyRatios(root);
+    return true;
+}
+
+/// Equalize all split ratios in the focused workspace.
+fn handleEqualizeSplits() bool {
+    const tm = window.getTabManager() orelse return false;
+    const ws = tm.selectedWorkspace() orelse return false;
+    const root = ws.root_node orelse return false;
+
+    split_tree.equalize(root);
+    split_tree.applyRatios(root);
+    return true;
+}
+
+/// Toggle split zoom (maximize focused pane / restore).
+/// Currently a no-op placeholder — needs show/hide logic for sibling panes.
+fn handleToggleSplitZoom() bool {
+    // TODO: implement zoom by hiding sibling panes and restoring them
+    log.info("toggle_split_zoom: not yet implemented", .{});
+    return false;
+}
+
+/// Find the Node (leaf or split) containing a panel by its ID.
+fn findNodeByPanel(node: *split_tree.Node, panel_id: u128) ?*split_tree.Node {
+    switch (node.*) {
+        .leaf => |leaf| {
+            if (leaf.panel_id == panel_id) return node;
+            return null;
+        },
+        .split => |split| {
+            if (findNodeByPanel(split.first, panel_id)) |n| return n;
+            if (findNodeByPanel(split.second, panel_id)) |n| return n;
+            return null;
+        },
+    }
+}
+
+/// Rebuild the workspace's GTK widget tree after a split tree mutation.
+/// Unparents leaf widgets before building the new tree so GTK4's
+/// parent assertion (gtk_widget_get_parent(child) == NULL) is satisfied.
+fn rebuildWorkspaceWidget(tm: *@import("tab_manager.zig").TabManager, ws: *@import("workspace.zig").Workspace) void {
+    const root = ws.root_node orelse return;
+    const old_widget = ws.content_widget;
+
+    // Step 1: Remove the old page from AdwTabView so the root widget
+    // (and any directly-parented leaf) is unparented.
+    var insert_idx: c_int = 0;
+    if (tm.tab_view) |tv| {
+        if (old_widget) |ow| {
+            if (c.gtk.adw_tab_view_get_page(tv, ow)) |p| {
+                insert_idx = c.gtk.adw_tab_view_get_page_position(tv, p);
+                c.gtk.adw_tab_view_close_page(tv, p);
+            }
+        }
+    }
+
+    // Step 2: Detach leaf widgets from any old GtkPaned containers.
+    // Without this, nested leaves remain parented to the previous
+    // paned tree and buildWidget's set_start_child/set_end_child
+    // calls silently fail.
+    detachLeavesFromParents(root);
+
+    // Step 3: Build new widget tree (all leaves are now unparented).
+    const new_widget = split_tree.buildWidget(root) orelse return;
+    ws.content_widget = new_widget;
+
+    // Step 4: Insert the new widget tree into AdwTabView.
+    if (tm.tab_view) |tv| {
+        const new_page = c.gtk.adw_tab_view_insert(tv, new_widget, insert_idx);
+        if (new_page) |np| {
+            c.gtk.adw_tab_page_set_title(np, ws.displayTitle().ptr);
+            c.gtk.adw_tab_view_set_selected_page(tv, np);
+        }
+    }
+
+    // Apply split ratios after widget is allocated.
+    // Use an idle callback so GTK has time to allocate sizes.
+    // Carry workspace ID (not raw pointer) to avoid use-after-free
+    // if the workspace is closed before the idle fires.
+    const alloc = std.heap.c_allocator;
+    const ctx = alloc.create(ApplyRatiosCtx) catch return;
+    ctx.* = .{ .ws_id = ws.id };
+    _ = c.gtk.g_idle_add(&applyRatiosIdle, ctx);
+}
+
+/// Detach leaf widgets from their current GTK parents.
+/// GTK4 requires widgets to be unparented before reparenting into a new
+/// container (gtk_paned_set_start_child asserts parent == NULL).
+fn detachLeavesFromParents(node: *split_tree.Node) void {
+    switch (node.*) {
+        .leaf => |leaf| {
+            if (leaf.widget) |w| {
+                const parent = c.gtk.gtk_widget_get_parent(w);
+                if (parent != null) {
+                    // GtkPaned children are removed via set_*_child(NULL)
+                    if (c.gtk.gtk_widget_get_first_child(parent) == w) {
+                        c.gtk.gtk_paned_set_start_child(@ptrCast(@alignCast(parent)), null);
+                    } else {
+                        c.gtk.gtk_paned_set_end_child(@ptrCast(@alignCast(parent)), null);
+                    }
+                }
+            }
+        },
+        .split => |*split| {
+            detachLeavesFromParents(split.first);
+            detachLeavesFromParents(split.second);
+            // Clear old paned reference — a new one will be created by buildWidget
+            split.paned = null;
+        },
+    }
+}
+
+/// Context for deferred ratio application.
+const ApplyRatiosCtx = struct { ws_id: u128 };
+
+/// GLib idle callback to apply split ratios after allocation.
+/// Returns G_SOURCE_REMOVE so it only fires once.
+fn applyRatiosIdle(data: ?*anyopaque) callconv(.c) c.gtk.gboolean {
+    const alloc = std.heap.c_allocator;
+    const ctx: *ApplyRatiosCtx = @ptrCast(@alignCast(data orelse return c.gtk.G_SOURCE_REMOVE));
+    defer alloc.destroy(ctx);
+    const tm = window.getTabManager() orelse return c.gtk.G_SOURCE_REMOVE;
+    for (tm.workspaces.items) |ws| {
+        if (ws.id == ctx.ws_id) {
+            if (ws.root_node) |r| split_tree.applyRatios(r);
+            break;
+        }
+    }
+    return c.gtk.G_SOURCE_REMOVE;
+}
+
 /// Extract the surface userdata pointer from a ghostty target.
 fn getSurfaceUserdata(target: c.ghostty.ghostty_target_s) ?*anyopaque {
     if (target.tag != c.ghostty.GHOSTTY_TARGET_SURFACE) return null;
@@ -511,6 +798,17 @@ pub fn onCloseSurface(
 
     const panel_id = found_panel_id orelse return;
     const ws = tm.workspaces.items[found_ws_idx];
+
+    // Update the split tree: close the pane and promote its sibling.
+    if (ws.root_node) |root| {
+        if (split_tree.leafCount(root) > 1) {
+            _ = split_tree.closePane(ws.alloc, root, panel_id);
+            ws.removePanel(panel_id);
+            rebuildWorkspaceWidget(tm, ws);
+            return;
+        }
+    }
+
     ws.removePanel(panel_id);
 
     // If the workspace is now empty, close it (unless it's the last one).
