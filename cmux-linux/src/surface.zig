@@ -220,10 +220,18 @@ pub const Surface = struct {
             c.gtk.gdk_keyval_to_lower(keyval),
         );
 
+        // Determine consumed mods: if text was produced and the keyval
+        // differs from its lowercase form, shift was consumed to produce
+        // the character (e.g., Shift+a → "A").
+        var consumed: c_int = c.ghostty.GHOSTTY_MODS_NONE;
+        if (text_len > 0 and keyval != c.gtk.gdk_keyval_to_lower(keyval)) {
+            consumed |= c.ghostty.GHOSTTY_MODS_SHIFT;
+        }
+
         const key_event = c.ghostty.ghostty_input_key_s{
             .action = @intCast(action),
             .mods = mods,
-            .consumed_mods = c.ghostty.GHOSTTY_MODS_NONE,
+            .consumed_mods = @intCast(consumed),
             .keycode = keycode,
             .text = text_ptr,
             .unshifted_codepoint = unshifted_codepoint,
@@ -333,6 +341,8 @@ fn gtkModsToGhostty(state: c_uint) c.ghostty.ghostty_input_mods_e {
     if (state & c.gtk.GDK_ALT_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_ALT;
     if (state & c.gtk.GDK_SUPER_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_SUPER;
     if (state & c.gtk.GDK_LOCK_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_CAPS;
+    // GDK_MOD2_MASK is Num Lock on most Linux systems
+    if (state & c.gtk.GDK_MOD2_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_NUM;
     return @intCast(mods);
 }
 
