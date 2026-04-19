@@ -586,6 +586,7 @@ fn handleToggleWindowDecorations() bool {
     const win = c.gtk.gtk_application_get_active_window(@ptrCast(@alignCast(gtk_app))) orelse return false;
     const decorated = c.gtk.gtk_window_get_decorated(win);
     c.gtk.gtk_window_set_decorated(win, if (decorated != 0) 0 else 1);
+    log.info("toggle_window_decorations: CSD toggled (may have no effect on Wayland)", .{});
     return true;
 }
 
@@ -617,7 +618,10 @@ fn handleProgressReport(target: c.ghostty.ghostty_target_s, report: c.ghostty.gh
             if (panel.widget) |pw| {
                 if (pw == widget) {
                     panel.progress_state = report.state;
-                    panel.progress_value = report.progress;
+                    panel.progress_value = if (report.progress >= 0)
+                        @intCast(report.progress)
+                    else
+                        null;
                     return true;
                 }
             }
@@ -630,7 +634,7 @@ fn handleProgressReport(target: c.ghostty.ghostty_target_s, report: c.ghostty.gh
 /// Currently a no-op — scrollbar rendering requires custom widget support.
 fn handleScrollbar(scrollbar: c.ghostty.ghostty_action_scrollbar_s) bool {
     _ = scrollbar; // scrollbar position tracking for future use
-    return true;
+    return false;
 }
 
 /// Find the Node (leaf or split) containing a panel by its ID.
