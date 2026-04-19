@@ -441,6 +441,10 @@ fn handleNewSplit(direction: c.ghostty.ghostty_action_split_direction_e) bool {
 
     // Rebuild the GTK widget tree
     rebuildWorkspaceWidget(tm, ws);
+
+    // Transfer GTK keyboard focus to the new pane so key events
+    // route to the same panel the data model considers focused.
+    if (panel.widget) |w| _ = c.gtk.gtk_widget_grab_focus(w);
     return true;
 }
 
