@@ -23,7 +23,7 @@ pub fn onAction(
         c.ghostty.GHOSTTY_ACTION_NEW_TAB => handleNewTab(),
         c.ghostty.GHOSTTY_ACTION_NEW_WINDOW => handleNewTab(),
         c.ghostty.GHOSTTY_ACTION_GOTO_TAB => handleGotoTab(action.action.goto_tab),
-        c.ghostty.GHOSTTY_ACTION_CLOSE_TAB => handleCloseTab(),
+        c.ghostty.GHOSTTY_ACTION_CLOSE_TAB => handleCloseTab(action.action.close_tab_mode),
         c.ghostty.GHOSTTY_ACTION_DESKTOP_NOTIFICATION => handleDesktopNotification(action.action.desktop_notification),
         c.ghostty.GHOSTTY_ACTION_OPEN_URL => handleOpenUrl(action.action.open_url),
         c.ghostty.GHOSTTY_ACTION_TOGGLE_FULLSCREEN => handleToggleFullscreen(),
@@ -47,6 +47,11 @@ pub fn onAction(
         c.ghostty.GHOSTTY_ACTION_EQUALIZE_SPLITS => handleEqualizeSplits(),
         c.ghostty.GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM => handleToggleSplitZoom(),
         c.ghostty.GHOSTTY_ACTION_MOVE_TAB => handleMoveTab(action.action.move_tab),
+        c.ghostty.GHOSTTY_ACTION_TOGGLE_TAB_OVERVIEW => handleToggleTabOverview(),
+        c.ghostty.GHOSTTY_ACTION_TOGGLE_WINDOW_DECORATIONS => handleToggleWindowDecorations(),
+        c.ghostty.GHOSTTY_ACTION_MOUSE_OVER_LINK => handleMouseOverLink(target, action.action.mouse_over_link),
+        c.ghostty.GHOSTTY_ACTION_PROGRESS_REPORT => handleProgressReport(target, action.action.progress_report),
+        c.ghostty.GHOSTTY_ACTION_SCROLLBAR => handleScrollbar(action.action.scrollbar),
         else => false,
     };
 }
@@ -142,13 +147,39 @@ fn handleGotoTab(goto: c.ghostty.ghostty_action_goto_tab_e) bool {
     return true;
 }
 
-/// Close the current workspace (tab).
-fn handleCloseTab() bool {
+/// Close tab(s) according to the close mode: this, other, or right.
+fn handleCloseTab(mode: c.ghostty.ghostty_action_close_tab_mode_e) bool {
     const tm = window.getTabManager() orelse return false;
-    const idx = tm.selected_index orelse return false;
-    // Don't close the last workspace — keep at least one
-    if (tm.count() <= 1) return false;
-    tm.closeWorkspace(idx);
+    const current = tm.selected_index orelse return false;
+    const count = tm.count();
+
+    switch (mode) {
+        c.ghostty.GHOSTTY_ACTION_CLOSE_TAB_MODE_THIS => {
+            // Don't close the last workspace
+            if (count <= 1) return false;
+            tm.closeWorkspace(current);
+        },
+        c.ghostty.GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER => {
+            if (count <= 1) return true; // nothing to close
+            // Close all except current — iterate in reverse to keep indices valid
+            var i: usize = count;
+            while (i > 0) {
+                i -= 1;
+                if (i != current) tm.closeWorkspace(i);
+            }
+        },
+        c.ghostty.GHOSTTY_ACTION_CLOSE_TAB_MODE_RIGHT => {
+            if (current + 1 >= count) return true; // nothing to close
+            // Close all tabs to the right of current — iterate in reverse
+            var i: usize = count;
+            while (i > current + 1) {
+                i -= 1;
+                tm.closeWorkspace(i);
+            }
+        },
+        else => return false,
+    }
+
     if (window.getSidebar()) |sb| sb.refresh();
     return true;
 }
@@ -537,6 +568,72 @@ fn handleEqualizeSplits() bool {
 fn handleToggleSplitZoom() bool {
     // TODO: implement zoom by hiding sibling panes and restoring them
     log.info("toggle_split_zoom: not yet implemented", .{});
+    return false;
+}
+
+/// Toggle the AdwTabOverview (tab grid view).
+/// Requires AdwTabOverview to be wired into the window — returns false
+/// until that widget is added.
+fn handleToggleTabOverview() bool {
+    // TODO: add AdwTabOverview widget to window.zig and wire toggle
+    log.info("toggle_tab_overview: not yet implemented", .{});
+    return false;
+}
+
+/// Toggle window decorations (CSD / no-CSD).
+fn handleToggleWindowDecorations() bool {
+    const gtk_app = c.gtk.g_application_get_default() orelse return false;
+    const win = c.gtk.gtk_application_get_active_window(@ptrCast(@alignCast(gtk_app))) orelse return false;
+    const decorated = c.gtk.gtk_window_get_decorated(win);
+    c.gtk.gtk_window_set_decorated(win, if (decorated != 0) 0 else 1);
+    log.info("toggle_window_decorations: CSD toggled (may have no effect on Wayland)", .{});
+    return true;
+}
+
+/// Update cursor shape when hovering over a clickable link.
+fn handleMouseOverLink(target: c.ghostty.ghostty_target_s, link: c.ghostty.ghostty_action_mouse_over_link_s) bool {
+    const surface_ud = getSurfaceUserdata(target) orelse return false;
+    const widget: *c.GtkWidget = @ptrCast(@alignCast(surface_ud));
+
+    // Set pointer cursor when over a link, default otherwise
+    if (link.url != null and link.len > 0) {
+        c.gtk.gtk_widget_set_cursor_from_name(widget, "pointer");
+    } else {
+        c.gtk.gtk_widget_set_cursor(widget, null);
+    }
+    return true;
+}
+
+/// Handle shell integration progress reports (OSC 9;4).
+/// Updates the panel's progress state for taskbar/tab badge display.
+fn handleProgressReport(target: c.ghostty.ghostty_target_s, report: c.ghostty.ghostty_action_progress_report_s) bool {
+    const tm = window.getTabManager() orelse return false;
+    const surface_ud = getSurfaceUserdata(target) orelse return false;
+    const widget: *c.GtkWidget = @ptrCast(@alignCast(surface_ud));
+
+    for (tm.workspaces.items) |ws| {
+        var it = ws.panels.valueIterator();
+        while (it.next()) |panel_ptr| {
+            const panel = panel_ptr.*;
+            if (panel.widget) |pw| {
+                if (pw == widget) {
+                    panel.progress_state = report.state;
+                    panel.progress_value = if (report.progress >= 0)
+                        @intCast(report.progress)
+                    else
+                        null;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/// Handle scrollbar position updates from the terminal.
+/// Currently a no-op — scrollbar rendering requires custom widget support.
+fn handleScrollbar(scrollbar: c.ghostty.ghostty_action_scrollbar_s) bool {
+    _ = scrollbar; // scrollbar position tracking for future use
     return false;
 }
 
