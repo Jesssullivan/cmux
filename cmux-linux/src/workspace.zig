@@ -30,6 +30,10 @@ pub const Panel = struct {
     surface: c.ghostty.ghostty_surface_t = null,
     widget: ?*c.GtkWidget = null,
     flash_count: u32 = 0,
+    /// Shell integration progress state (OSC 9;4).
+    progress_state: c.ghostty.ghostty_action_progress_report_state_e = c.ghostty.GHOSTTY_PROGRESS_STATE_REMOVE,
+    /// Progress percentage (0-100), or -1 if not reported.
+    progress_value: i8 = -1,
 };
 
 pub const StatusEntry = struct {
