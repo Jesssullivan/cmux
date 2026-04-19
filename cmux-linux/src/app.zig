@@ -470,8 +470,13 @@ fn handleResizeSplit(resize: c.ghostty.ghostty_action_resize_split_s) bool {
 
     const split = split_tree.findResizeSplit(root, focused_id, orientation, in_first) orelse return false;
 
-    // Adjust ratio by the amount (ghostty sends pixels, we convert to fraction)
-    const delta: f64 = @as(f64, @floatFromInt(resize.amount)) / 1000.0;
+    // Convert pixel amount to ratio fraction using the actual pane size.
+    const paned_size: c_int = switch (orientation) {
+        .horizontal => if (split.paned) |p| c.gtk.gtk_widget_get_width(p) else 0,
+        .vertical => if (split.paned) |p| c.gtk.gtk_widget_get_height(p) else 0,
+    };
+    if (paned_size <= 0) return false;
+    const delta: f64 = @as(f64, @floatFromInt(resize.amount)) / @as(f64, @floatFromInt(paned_size));
     const new_ratio = if (in_first) split.ratio + delta else split.ratio - delta;
     split.ratio = std.math.clamp(new_ratio, 0.1, 0.9);
 
@@ -515,28 +520,40 @@ fn findNodeByPanel(node: *split_tree.Node, panel_id: u128) ?*split_tree.Node {
 }
 
 /// Rebuild the workspace's GTK widget tree after a split tree mutation.
+/// Unparents leaf widgets before building the new tree so GTK4's
+/// parent assertion (gtk_widget_get_parent(child) == NULL) is satisfied.
 fn rebuildWorkspaceWidget(tm: *@import("tab_manager.zig").TabManager, ws: *@import("workspace.zig").Workspace) void {
     const root = ws.root_node orelse return;
     const old_widget = ws.content_widget;
 
-    // Build new widget tree
+    // Step 1: Remove the old page from AdwTabView so the root widget
+    // (and any directly-parented leaf) is unparented.
+    var insert_idx: c_int = 0;
+    if (tm.tab_view) |tv| {
+        if (old_widget) |ow| {
+            if (c.gtk.adw_tab_view_get_page(tv, ow)) |p| {
+                insert_idx = c.gtk.adw_tab_view_get_page_position(tv, p);
+                c.gtk.adw_tab_view_close_page(tv, p);
+            }
+        }
+    }
+
+    // Step 2: Detach leaf widgets from any old GtkPaned containers.
+    // Without this, nested leaves remain parented to the previous
+    // paned tree and buildWidget's set_start_child/set_end_child
+    // calls silently fail.
+    detachLeavesFromParents(root);
+
+    // Step 3: Build new widget tree (all leaves are now unparented).
     const new_widget = split_tree.buildWidget(root) orelse return;
     ws.content_widget = new_widget;
 
-    // Replace in AdwTabView
+    // Step 4: Insert the new widget tree into AdwTabView.
     if (tm.tab_view) |tv| {
-        if (old_widget) |ow| {
-            const page = c.gtk.adw_tab_view_get_page(tv, ow);
-            if (page) |p| {
-                // Remove old page and add new one at the same position
-                const idx = c.gtk.adw_tab_view_get_page_position(tv, p);
-                c.gtk.adw_tab_view_close_page(tv, p);
-                const new_page = c.gtk.adw_tab_view_insert(tv, new_widget, idx);
-                if (new_page) |np| {
-                    c.gtk.adw_tab_page_set_title(np, ws.displayTitle().ptr);
-                    c.gtk.adw_tab_view_set_selected_page(tv, np);
-                }
-            }
+        const new_page = c.gtk.adw_tab_view_insert(tv, new_widget, insert_idx);
+        if (new_page) |np| {
+            c.gtk.adw_tab_page_set_title(np, ws.displayTitle().ptr);
+            c.gtk.adw_tab_view_set_selected_page(tv, np);
         }
     }
 
@@ -548,6 +565,33 @@ fn rebuildWorkspaceWidget(tm: *@import("tab_manager.zig").TabManager, ws: *@impo
     const ctx = alloc.create(ApplyRatiosCtx) catch return;
     ctx.* = .{ .ws_id = ws.id };
     _ = c.gtk.g_idle_add(&applyRatiosIdle, ctx);
+}
+
+/// Detach leaf widgets from their current GTK parents.
+/// GTK4 requires widgets to be unparented before reparenting into a new
+/// container (gtk_paned_set_start_child asserts parent == NULL).
+fn detachLeavesFromParents(node: *split_tree.Node) void {
+    switch (node.*) {
+        .leaf => |leaf| {
+            if (leaf.widget) |w| {
+                const parent = c.gtk.gtk_widget_get_parent(w);
+                if (parent != null) {
+                    // GtkPaned children are removed via set_*_child(NULL)
+                    if (c.gtk.gtk_widget_get_first_child(parent) == w) {
+                        c.gtk.gtk_paned_set_start_child(@ptrCast(@alignCast(parent)), null);
+                    } else {
+                        c.gtk.gtk_paned_set_end_child(@ptrCast(@alignCast(parent)), null);
+                    }
+                }
+            }
+        },
+        .split => |*split| {
+            detachLeavesFromParents(split.first);
+            detachLeavesFromParents(split.second);
+            // Clear old paned reference — a new one will be created by buildWidget
+            split.paned = null;
+        },
+    }
 }
 
 /// Context for deferred ratio application.
