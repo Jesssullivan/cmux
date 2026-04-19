@@ -388,22 +388,24 @@ fn handleNewSplit(direction: c.ghostty.ghostty_action_split_direction_e) bool {
         else => .horizontal,
     };
 
-    // Find the leaf node for the focused panel
-    const leaf = split_tree.findLeaf(root, focused_id) orelse return false;
-    _ = leaf;
+    // Find the target node BEFORE creating the panel to avoid orphans on failure
+    const target = findNodeByPanel(root, focused_id) orelse return false;
 
     // Create a new terminal panel
     const panel = ws.createTerminalPanel(tm.ghostty_app) catch return false;
 
-    // Find and split the node containing the focused panel
-    const target = findNodeByPanel(root, focused_id) orelse return false;
+    // Split the target node; clean up on failure to avoid orphaned panel
     _ = split_tree.splitPane(
         ws.alloc,
         target,
         orientation,
         panel.id,
         panel.widget,
-    ) catch return false;
+    ) catch {
+        ws.removePanel(panel.id);
+        ws.focused_panel_id = focused_id;
+        return false;
+    };
 
     // Rebuild the GTK widget tree
     rebuildWorkspaceWidget(tm, ws);
@@ -494,7 +496,7 @@ fn handleEqualizeSplits() bool {
 fn handleToggleSplitZoom() bool {
     // TODO: implement zoom by hiding sibling panes and restoring them
     log.info("toggle_split_zoom: not yet implemented", .{});
-    return true;
+    return false;
 }
 
 /// Find the Node (leaf or split) containing a panel by its ID.
@@ -538,16 +540,32 @@ fn rebuildWorkspaceWidget(tm: *@import("tab_manager.zig").TabManager, ws: *@impo
         }
     }
 
-    // Apply split ratios after widget is allocated
-    // Use an idle callback so GTK has time to allocate sizes
-    _ = c.gtk.g_idle_add(&applyRatiosIdle, root);
+    // Apply split ratios after widget is allocated.
+    // Use an idle callback so GTK has time to allocate sizes.
+    // Carry workspace ID (not raw pointer) to avoid use-after-free
+    // if the workspace is closed before the idle fires.
+    const alloc = std.heap.c_allocator;
+    const ctx = alloc.create(ApplyRatiosCtx) catch return;
+    ctx.* = .{ .ws_id = ws.id };
+    _ = c.gtk.g_idle_add(&applyRatiosIdle, ctx);
 }
+
+/// Context for deferred ratio application.
+const ApplyRatiosCtx = struct { ws_id: u128 };
 
 /// GLib idle callback to apply split ratios after allocation.
 /// Returns G_SOURCE_REMOVE so it only fires once.
 fn applyRatiosIdle(data: ?*anyopaque) callconv(.c) c.gtk.gboolean {
-    const root: *split_tree.Node = @ptrCast(@alignCast(data orelse return c.gtk.G_SOURCE_REMOVE));
-    split_tree.applyRatios(root);
+    const alloc = std.heap.c_allocator;
+    const ctx: *ApplyRatiosCtx = @ptrCast(@alignCast(data orelse return c.gtk.G_SOURCE_REMOVE));
+    defer alloc.destroy(ctx);
+    const tm = window.getTabManager() orelse return c.gtk.G_SOURCE_REMOVE;
+    for (tm.workspaces.items) |ws| {
+        if (ws.id == ctx.ws_id) {
+            if (ws.root_node) |r| split_tree.applyRatios(r);
+            break;
+        }
+    }
     return c.gtk.G_SOURCE_REMOVE;
 }
 

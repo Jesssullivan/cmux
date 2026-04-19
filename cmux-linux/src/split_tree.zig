@@ -217,7 +217,9 @@ pub fn findResizeSplit(
 /// Collect all leaf nodes in left-to-right / top-to-bottom order.
 pub fn collectLeaves(node: *Node, alloc: Allocator, out: *std.ArrayList(*Leaf)) void {
     switch (node.*) {
-        .leaf => |*leaf| out.append(alloc, leaf) catch {},
+        .leaf => |*leaf| out.append(alloc, leaf) catch |err| {
+            std.log.warn("collectLeaves: failed to append leaf: {}", .{err});
+        },
         .split => |split| {
             collectLeaves(split.first, alloc, out);
             collectLeaves(split.second, alloc, out);
