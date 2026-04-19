@@ -341,8 +341,10 @@ fn gtkModsToGhostty(state: c_uint) c.ghostty.ghostty_input_mods_e {
     if (state & c.gtk.GDK_ALT_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_ALT;
     if (state & c.gtk.GDK_SUPER_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_SUPER;
     if (state & c.gtk.GDK_LOCK_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_CAPS;
-    // GDK_MOD2_MASK is Num Lock on most Linux systems
-    if (state & c.gtk.GDK_MOD2_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_NUM;
+    // GDK_MOD2_MASK (0x10) is Num Lock on most Linux systems.
+    // Defined as a C macro, so not always visible through Zig's @cImport.
+    const GDK_MOD2_MASK: c_uint = 1 << 4;
+    if (state & GDK_MOD2_MASK != 0) mods |= c.ghostty.GHOSTTY_MODS_NUM;
     return @intCast(mods);
 }
 
