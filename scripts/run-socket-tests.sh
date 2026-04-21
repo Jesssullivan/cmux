@@ -108,7 +108,7 @@ fi
 echo "Socket ready"
 
 # ── Baseline allowlist ──────────────────────────────────────────────
-# The 15 tests known to pass on cmux-linux today. A failure in any of
+# The 18 tests known to pass on cmux-linux today. A failure in any of
 # these fails the job.
 BASELINE=(
   test_close_surface_selection
@@ -121,6 +121,9 @@ BASELINE=(
   test_signals_auto
   test_surface_split_tree
   test_system_api
+  test_surface_action_rename
+  test_surface_action_close_variants
+  test_surface_action_new_reload_duplicate
   test_trigger_flash
   test_windows_api
   test_workspace_lifecycle
@@ -136,10 +139,7 @@ CANDIDATES_PHASE1=(
   test_browser_open_split_reuse_policy
   test_workspace_create_background_starts_terminal
   test_workspace_create_initial_env
-  # Sprint A handlers (PRs #218-#229):
-  test_surface_action_rename
-  test_surface_action_close_variants
-  test_surface_action_new_reload_duplicate
+  # Remaining Sprint A / Sprint B gaps observed on run 24743528001.
   test_workspace_action
   test_auth_login
   test_system_tree
