@@ -50,6 +50,9 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building QCOW2 ${{ matrix.variant }} for $TAG (version $VERSION)"
 
+      - name: Configure self-hosted Nix
+        run: bash scripts/configure-self-hosted-nix.sh
+
       - name: Build QCOW2 image
         run: |
           nix build .#qcow2-${{ matrix.variant }} \
