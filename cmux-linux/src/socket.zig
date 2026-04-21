@@ -554,6 +554,61 @@ fn getTerminalGhosttySurface(panel: *Panel) ?c.ghostty.ghostty_surface_t {
     return panel.surface;
 }
 
+fn trimmedNonEmpty(value: ?[]const u8) ?[]const u8 {
+    const raw = value orelse return null;
+    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+    if (trimmed.len == 0) return null;
+    return trimmed;
+}
+
+fn configureMockTerminalFromWorkspaceCreate(alloc: Allocator, panel: *Panel, params: json.Value) !void {
+    try panel.mock_terminal.setWorkingDirectory(
+        alloc,
+        trimmedNonEmpty(getParamString(params, "working_directory") orelse getParamString(params, "cwd")),
+    );
+    panel.mock_terminal.clearEnvOverrides();
+
+    if (params != .object) return;
+    const raw_env = params.object.get("initial_env") orelse return;
+    if (raw_env != .object) return;
+
+    var it = raw_env.object.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* != .string) continue;
+        const key = std.mem.trim(u8, entry.key_ptr.*, " \t\r\n");
+        if (key.len == 0) continue;
+        try panel.mock_terminal.putEnvOverride(alloc, key, entry.value_ptr.*.string);
+    }
+}
+
+fn runMockTerminalCommand(alloc: Allocator, panel: *Panel, command: []const u8) !void {
+    const trimmed_command = std.mem.trim(u8, command, " \t\r\n");
+    if (trimmed_command.len == 0) return;
+
+    var env_map = try std.process.getEnvMap(alloc);
+    defer env_map.deinit();
+
+    if (panel.mock_terminal.env_overrides) |*overrides| {
+        var it = overrides.iterator();
+        while (it.next()) |entry| {
+            try env_map.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+    }
+
+    const result = try std.process.Child.run(.{
+        .allocator = alloc,
+        .argv = &.{ "/bin/sh", "-lc", trimmed_command },
+        .cwd = panel.mock_terminal.working_directory,
+        .env_map = &env_map,
+        .max_output_bytes = 512 * 1024,
+    });
+    defer alloc.free(result.stdout);
+    defer alloc.free(result.stderr);
+
+    try panel.mock_terminal.appendTranscript(alloc, result.stdout);
+    try panel.mock_terminal.appendTranscript(alloc, result.stderr);
+}
+
 fn trimToLastLines(text: []const u8, line_limit: usize) []const u8 {
     if (line_limit == 0) return text;
     if (text.len == 0) return text;
@@ -927,7 +982,25 @@ fn handleWorkspaceList(alloc: Allocator, params: json.Value) []const u8 {
 
 fn handleWorkspaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const prev_selected = tm.selected_index;
     const ws = tm.createWorkspace() catch return "{\"error\":\"create failed\"}";
+    if (prev_selected) |selected| tm.selected_index = selected;
+
+    if (isNoSurface()) {
+        if (ws.focused_panel_id) |panel_id| {
+            if (ws.panels.get(panel_id)) |panel| {
+                configureMockTerminalFromWorkspaceCreate(ws.alloc, panel, params) catch {
+                    return "{\"error\":\"mock terminal setup failed\"}";
+                };
+                if (trimmedNonEmpty(getParamString(params, "initial_command"))) |command| {
+                    runMockTerminalCommand(ws.alloc, panel, command) catch {
+                        return "{\"error\":\"mock initial command failed\"}";
+                    };
+                }
+            }
+        }
+    }
+
     if (window.getSidebar()) |sb| sb.refresh();
 
     // Register in window model
@@ -1646,8 +1719,9 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
     const ws_hex = formatId(ws.id);
 
     if (isNoSurface()) {
-        // Test-only mode has mock panels with no live terminal surface.
-        // Treat send_text as a no-op success once the target is validated.
+        runMockTerminalCommand(ws.alloc, panel, text) catch {
+            return "{\"error\":\"mock terminal execution failed\"}";
+        };
         return std.fmt.allocPrint(
             alloc,
             "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}",
@@ -1713,8 +1787,19 @@ fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
     const panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
     if (panel.panel_type != .terminal) return "{\"error\":\"surface is not a terminal\"}";
 
+    if (isNoSurface()) {
+        const raw_text = panel.mock_terminal.transcriptText();
+        const trimmed_text = if (line_limit) |limit| trimToLastLines(raw_text, limit) else raw_text;
+
+        var buf: std.ArrayList(u8) = .empty;
+        const writer = buf.writer(alloc);
+        writer.writeAll("{\"text\":") catch return "{\"error\":\"encode failed\"}";
+        writeJsonString(writer, trimmed_text) catch return "{\"error\":\"encode failed\"}";
+        writer.writeAll("}") catch return "{\"error\":\"encode failed\"}";
+        return buf.toOwnedSlice(alloc) catch "{\"error\":\"encode failed\"}";
+    }
+
     const surface = getTerminalGhosttySurface(panel) orelse {
-        if (isNoSurface()) return "{\"error\":\"surface.read_text unavailable in CMUX_NO_SURFACE mode\"}";
         return "{\"error\":\"terminal surface not ready\"}";
     };
 
@@ -2015,7 +2100,11 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         if (ws.root_node) |root| {
             if (split_tree.findLeaf(root, target_id)) |_| {
                 ws.root_node = split_tree.splitPane(
-                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                    ws.alloc,
+                    root,
+                    .horizontal,
+                    new_panel.id,
+                    new_panel.widget,
                 ) catch null;
             }
         }
@@ -2068,7 +2157,11 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         if (ws.root_node) |root| {
             if (split_tree.findLeaf(root, target_id)) |_| {
                 ws.root_node = split_tree.splitPane(
-                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                    ws.alloc,
+                    root,
+                    .horizontal,
+                    new_panel.id,
+                    new_panel.widget,
                 ) catch null;
             }
         }
@@ -2140,7 +2233,11 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         if (ws.root_node) |root| {
             if (split_tree.findLeaf(root, target_id)) |_| {
                 ws.root_node = split_tree.splitPane(
-                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                    ws.alloc,
+                    root,
+                    .horizontal,
+                    new_panel.id,
+                    new_panel.widget,
                 ) catch null;
             }
         }
@@ -2318,10 +2415,10 @@ fn handlePaneResize(alloc: Allocator, params: json.Value) []const u8 {
 
     const split = split_tree.findResizeSplit(root, target_id, orientation, in_first) orelse
         return std.fmt.allocPrint(
-        alloc,
-        "{{\"error\":\"no {s} split ancestor in direction {s}\"}}",
-        .{ @tagName(orientation), dir_str },
-    ) catch "{\"error\":\"no matching split\"}";
+            alloc,
+            "{{\"error\":\"no {s} split ancestor in direction {s}\"}}",
+            .{ @tagName(orientation), dir_str },
+        ) catch "{\"error\":\"no matching split\"}";
 
     // Each unit of `amount` adjusts the ratio by 0.05 (5%).
     const delta: f64 = @as(f64, @floatFromInt(amount)) * 0.05;
@@ -3192,9 +3289,7 @@ fn handleWorkspaceEqualizeSplits(alloc: Allocator, params: json.Value) []const u
     const root = ws.root_node orelse return "{\"error\":\"no split tree\"}";
 
     const orientation_filter: ?split_tree.Orientation = if (getParamString(params, "orientation")) |o|
-        if (std.mem.eql(u8, o, "horizontal")) .horizontal
-        else if (std.mem.eql(u8, o, "vertical")) .vertical
-        else return "{\"error\":\"orientation must be horizontal or vertical\"}"
+        if (std.mem.eql(u8, o, "horizontal")) .horizontal else if (std.mem.eql(u8, o, "vertical")) .vertical else return "{\"error\":\"orientation must be horizontal or vertical\"}"
     else
         null;
 

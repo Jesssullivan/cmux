@@ -3,7 +3,6 @@
 /// Each workspace owns a split tree of terminal/browser panels,
 /// plus metadata (title, color, directory, git branch, status).
 /// Maps to macOS Sources/Workspace.swift.
-
 const std = @import("std");
 const split_tree = @import("split_tree.zig");
 const c = @import("c_api.zig");
@@ -34,6 +33,52 @@ pub const Panel = struct {
     progress_state: c.ghostty.ghostty_action_progress_report_state_e = c.ghostty.GHOSTTY_PROGRESS_STATE_REMOVE,
     /// Progress percentage (0-100). Null if no progress has been reported yet.
     progress_value: ?u8 = null,
+    /// Headless socket-test state used when CMUX_NO_SURFACE is enabled.
+    mock_terminal: MockTerminalState = .{},
+};
+
+pub const MockTerminalState = struct {
+    transcript: std.ArrayListUnmanaged(u8) = .{},
+    working_directory: ?[]const u8 = null,
+    env_overrides: ?std.process.EnvMap = null,
+
+    pub fn deinit(self: *MockTerminalState, alloc: Allocator) void {
+        self.transcript.deinit(alloc);
+        if (self.working_directory) |cwd| alloc.free(cwd);
+        if (self.env_overrides) |*env| env.deinit();
+        self.env_overrides = null;
+    }
+
+    pub fn setWorkingDirectory(self: *MockTerminalState, alloc: Allocator, cwd: ?[]const u8) !void {
+        if (self.working_directory) |old| {
+            alloc.free(old);
+            self.working_directory = null;
+        }
+        if (cwd) |value| {
+            self.working_directory = try alloc.dupe(u8, value);
+        }
+    }
+
+    pub fn clearEnvOverrides(self: *MockTerminalState) void {
+        if (self.env_overrides) |*env| env.deinit();
+        self.env_overrides = null;
+    }
+
+    pub fn putEnvOverride(self: *MockTerminalState, alloc: Allocator, key: []const u8, value: []const u8) !void {
+        if (self.env_overrides == null) {
+            self.env_overrides = std.process.EnvMap.init(alloc);
+        }
+        try self.env_overrides.?.put(key, value);
+    }
+
+    pub fn appendTranscript(self: *MockTerminalState, alloc: Allocator, text: []const u8) !void {
+        if (text.len == 0) return;
+        try self.transcript.appendSlice(alloc, text);
+    }
+
+    pub fn transcriptText(self: *const MockTerminalState) []const u8 {
+        return self.transcript.items;
+    }
 };
 
 pub const StatusEntry = struct {
@@ -96,6 +141,13 @@ pub const Workspace = struct {
         while (it.next()) |panel_ptr| {
             const panel = panel_ptr.*;
             if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
+            if (panel.title) |title| self.alloc.free(title);
+            if (panel.custom_title) |title| self.alloc.free(title);
+            if (panel.directory) |directory| self.alloc.free(directory);
+            if (panel.url) |url| self.alloc.free(url);
+            if (panel.git_branch) |git_branch| self.alloc.free(git_branch);
+            if (panel.tty_name) |tty_name| self.alloc.free(tty_name);
+            panel.mock_terminal.deinit(self.alloc);
             self.alloc.destroy(panel);
         }
         self.panels.deinit(self.alloc);
