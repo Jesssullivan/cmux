@@ -29,6 +29,49 @@ daemon_store_available() {
   nix store info --store daemon >/dev/null 2>&1
 }
 
+start_determinate_daemon() {
+  local daemon_bin
+  daemon_bin="$(command -v determinate-nixd)"
+
+  if [[ "$(id -u)" -eq 0 ]]; then
+    nohup "$daemon_bin" daemon >"$DETERMINATE_NIXD_LOG" 2>&1 &
+    return 0
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "::error::determinate-nixd requires root to launch the daemon, but sudo is unavailable on this runner" >&2
+    return 1
+  fi
+
+  if ! sudo -n true >/dev/null 2>&1; then
+    echo "::error::Passwordless sudo is unavailable for launching determinate-nixd on this runner" >&2
+    return 1
+  fi
+
+  nohup sudo -n "$daemon_bin" daemon >"$DETERMINATE_NIXD_LOG" 2>&1 &
+}
+
+emit_diagnostics() {
+  echo "::notice::Nix daemon socket diagnostics"
+  for path in \
+    /nix/var/nix/daemon-socket \
+    /nix/var/nix/daemon-socket/socket \
+    /nix/var/determinate/determinate-nixd.socket \
+    /var/run/nix-daemon.socket \
+    /var/run/determinate-nixd.socket
+  do
+    if [[ -e "$path" || -L "$path" ]]; then
+      ls -ld "$path" >&2
+    else
+      echo "missing: $path" >&2
+    fi
+  done
+
+  if command -v ps >/dev/null 2>&1; then
+    ps -ef | grep '[d]eterminate-nixd' >&2 || true
+  fi
+}
+
 determine_daemon_mode() {
   if daemon_store_available; then
     echo "NIX_REMOTE=daemon" >>"$GITHUB_ENV"
@@ -37,9 +80,9 @@ determine_daemon_mode() {
   fi
 
   if command -v determinate-nixd >/dev/null 2>&1; then
-    echo "::notice::Initializing Determinate Nix for this workflow"
+    echo "::notice::Starting determinate-nixd for this workflow"
     rm -f "$DETERMINATE_NIXD_LOG"
-    nohup "$(command -v determinate-nixd)" init --keep-mounted >"$DETERMINATE_NIXD_LOG" 2>&1 &
+    start_determinate_daemon
 
     local attempt
     for attempt in $(seq 1 100); do
@@ -55,10 +98,12 @@ determine_daemon_mode() {
     if [[ -f "$DETERMINATE_NIXD_LOG" ]]; then
       sed -n '1,120p' "$DETERMINATE_NIXD_LOG" >&2
     fi
+    emit_diagnostics
     exit 1
   fi
 
   echo "::error::No usable Nix daemon detected on this self-hosted runner" >&2
+  emit_diagnostics
   exit 1
 }
 
