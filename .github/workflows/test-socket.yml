@@ -63,6 +63,7 @@ jobs:
         run: nix develop --command bash -c 'cd cmux-linux && zig build -Doptimize=ReleaseFast && ls -lh zig-out/bin/cmux'
 
       - name: Run socket tests
+        id: socket_tests
         continue-on-error: true
         env:
           TEST_FILTER: ${{ inputs.test_filter || '' }}
@@ -72,6 +73,12 @@ jobs:
           # / TIN-183 for the expansion plan.
           CMUX_TEST_PHASE1: '1'
         run: nix develop --command bash scripts/run-socket-tests.sh
+
+      - name: Fail on baseline socket-test failure
+        if: ${{ always() && steps.socket_tests.outcome == 'failure' }}
+        run: |
+          echo "error: baseline socket tests failed; see the Run socket tests step and uploaded artifact." >&2
+          exit 1
 
       - name: Upload test results
         if: always()
