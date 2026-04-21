@@ -422,6 +422,11 @@ jobs:
       - name: Configure self-hosted Nix
         run: bash scripts/configure-self-hosted-nix.sh
 
+      - name: Verify runner Nix daemon
+        run: |
+          nix --version
+          nix store info --store daemon
+
       - name: Verify KVM access
         run: |
           echo "=== KVM device ==="
@@ -438,13 +443,13 @@ jobs:
           fi
 
       - name: Rocky 9 package test (RPM proxy)
-        run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
+        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 
       - name: Debian 12 package test
-        run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+        run: nix --store daemon build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
 
       - name: Ubuntu 24.04 package test
-        run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+        run: nix --store daemon build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
 
       - name: Upload distro validation logs
         if: always()

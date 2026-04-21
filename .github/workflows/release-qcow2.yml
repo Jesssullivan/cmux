@@ -53,9 +53,14 @@ jobs:
       - name: Configure self-hosted Nix
         run: bash scripts/configure-self-hosted-nix.sh
 
+      - name: Verify runner Nix daemon
+        run: |
+          nix --version
+          nix store info --store daemon
+
       - name: Build QCOW2 image
         run: |
-          nix build .#qcow2-${{ matrix.variant }} \
+          nix --store daemon build .#qcow2-${{ matrix.variant }} \
             --print-build-logs -L \
             --option sandbox relaxed
 
