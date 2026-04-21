@@ -1,54 +1,37 @@
 # TODO
 
-## Issue 151: Remote SSH (Living Execution)
-- [x] `cmux ssh` creates remote workspace metadata and does not require `--name`
-- [x] Remote daemon bootstrap/upload/start path with `cmuxd-remote serve --stdio`
-- [x] Reconnect/disconnect controls (CLI/API/context menu) + improved error surfacing
-- [x] Retry count/time surfaced in remote daemon/probe error details
-- [x] Remove automatic remote service port mirroring (`ssh -L` from detected remote listening ports)
-- [x] Add transport-scoped proxy broker (SOCKS5 + HTTP CONNECT) for remote traffic
-- [x] Extend `cmuxd-remote` RPC beyond `hello/ping` with proxy stream methods (`proxy.open|close`)
-- [x] Auto-wire WKWebView in remote workspaces to proxy via `WKWebsiteDataStore.proxyConfigurations`
-- [x] Add browser proxy e2e tests (remote egress IP, websocket, reconnect continuity)
-- [x] Implement PTY resize coordinator with tmux semantics (`smallest screen wins`)
-- [x] Add resize tests for multi-attachment sessions (attach/detach/reconnect transitions)
+This file is a short, repo-local pointer to the active lanes.
+Detailed execution belongs in owned trackers and status docs, not here.
 
-## Command Palette
-- [x] Add cmd+shift+p palette with all commands (implemented in cmuxApp.swift, ghostty default is super+shift+p / ctrl+shift+p)
+## Source Of Truth
 
-## Feature Requests
-- [x] Warm pool of Claude Code instances mapped to a keyboard shortcut (PR #177, Cmd+Shift+K)
+- GitHub issues in `Jesssullivan/cmux` for repo-local execution lanes
+- Tinyland Linear for cross-repo planning and status
+- `docs/program-status.md`
+- `docs/linux-parity-matrix.md`
+- `docs/ghostty-fork.md`
 
-## Claude Code Integration
-- [x] Add "Install Claude Code integration" menu item in menubar (PR #175)
+## Active Lanes
 
-## Additional Integrations
-- [x] Codex integration (#2103)
-- [x] OpenCode integration (#2087)
+- [ ] Upstream ingestion
+  - Sync `Jesssullivan/cmux` with the remaining `manaflow-ai/cmux` delta in controlled batches
+  - Reconcile `vendor/bonsplit` tracking posture and decide whether the Jess fork or upstream `main` is the canonical pin source
+  - Resync `homebrew-cmux` during the next release-hygiene pass
 
-## Browser
-- [x] Per-WKWebView proxy observability/inspection once remote proxy path is shipped (URL, method, headers, body, status, timing)
+- [ ] Linux proof and parity
+  - `#209` Fedora 42 fresh-install VM proof
+  - `#187` Rocky 10 fresh-install proof / proxy retirement
+  - `#206` WebAuthn bridge completion
+  - `#216` Expand Linux `tests_v2` socket coverage beyond the current stable baseline
 
-## Bugs
-- [x] **P0** Terminal title updates are suppressed when workspace is not focused (PR #147)
-- [x] Sidebar tab reorder can get stuck in dragging state (PR #172)
-- [x] Drag-and-drop files/images into terminal shows URL instead of file path (PR #172)
-- [x] After opening a browser tab, up/down arrow keys stop working in the terminal (PR #172)
-- [x] Notification marked unread doesn't get pushed to the top of the list
-- [x] Browser cmd+shift+H ring flashes only once — replaced SwiftUI animation with CAKeyframeAnimation
+- [ ] Remote/fleet follow-up
+  - `#201` Tailnet-direct `cmuxd-remote` listener mode
 
-## Refactoring
-- [x] **P0** Remove all index-based APIs in favor of short ID refs (surface:N, pane:N, workspace:N, window:N) (PR #174 + cleanup)
-- [x] **P0** CLI commands should be workspace-relative using CMUX_WORKSPACE_ID env var (PR #89)
+- [ ] Non-blocking decision lane
+  - `#76` Linux client naming RFC
 
-## UI/UX Improvements
-- [x] Show loading indicator in terminal while it's loading
-- [x] Add question mark icon to learn shortcuts (sidebar footer help popover)
-- [x] Notification popover: each button item should show outline outside when focused/hovered
-- [x] Notification popover: add right-click context menu to mark as read/unread
-- [x] Right-click tab should allow renaming that workspace (context menu already has "Rename Workspace...")
-- [x] Cmd+click should open links in cmux (browser panel) instead of external browser
-- [x] "Waiting for input" notification should include custom terminal title if set
-- [x] Close button for current/active tab should always be visible (not just on hover)
-- [x] Add browser icon to the left of the plus button in the tab bar
-- [x] Replace Claude Code specific branding/strings with generic "Agent / Agent Harness" for Linux parity (OpenCode, OMO as equal first-class integrations)
+## Hygiene Rules
+
+- Keep this file short and current.
+- Do not use this file as an archive of completed work.
+- When a lane gains real scope, move the detail into GitHub/Linear/docs and leave only the pointer here.

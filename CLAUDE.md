@@ -228,6 +228,33 @@ git add ghostty
 git commit -m "Update ghostty submodule"
 ```
 
+## External interaction policy
+
+Agents may write to repo surfaces owned by `Jesssullivan/*` or
+`tinyland-inc/*`. Everything else is human-gated.
+
+- Never create, update, close, comment on, label, milestone, review, or open
+  PRs/issues/discussions in non-owned repos or forges unless Jess explicitly
+  asks for that exact action in the current conversation.
+- This prohibition includes `manaflow-ai/*`, `ghostty-org/*`, `numtide/*`,
+  Flathub, AUR/COPR, package registries, and any other third-party upstream.
+- Do not use `gh` or API write calls against non-owned repos for upstream
+  publication or correspondence.
+- For submodules and dependency forks, push only to owned forks by default.
+  Do not push to upstream remotes.
+- If upstream interaction would help, stop at a handoff artifact in an owned
+  surface instead:
+  - update `docs/upstream-candidate-ledger.md`
+  - add or update a Jess-owned/Tinyland-owned GitHub issue
+  - add or update a Tinyland Linear issue/project note
+- Every staged upstream handoff should include:
+  - target repo and target issue/PR (or proposed title)
+  - rationale, constraints, and risk
+  - copy-ready issue/PR/comment text
+  - branch, commit, or diff references Jess should use manually
+
+The rule is: agents prepare, Jess publishes and corresponds by hand.
+
 ## Release
 
 Use the `/release` command to prepare a new release. This will:
