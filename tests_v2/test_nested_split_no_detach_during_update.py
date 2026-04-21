@@ -40,49 +40,58 @@ def _health_map(c: cmux) -> dict[str, bool]:
 
 def main() -> int:
     with cmux(SOCKET_PATH) as c:
-        c.activate_app()
-        c.new_workspace()
-        time.sleep(0.25)
+        workspace_id = None
+        try:
+            c.activate_app()
+            workspace_id = c.new_workspace()
+            c.select_workspace(workspace_id)
+            time.sleep(0.25)
 
-        base = c.list_surfaces()
-        if not base:
-            raise cmuxError("expected initial surface")
-        left_panel = base[0][1]
+            base = c.list_surfaces()
+            if not base:
+                raise cmuxError("expected initial surface")
+            left_panel = base[0][1]
 
-        right_panel = c.new_split("right")
-        time.sleep(0.05)
-        c.focus_surface(right_panel)
-        time.sleep(0.02)
+            right_panel = c.new_split("right")
+            time.sleep(0.05)
+            c.focus_surface(right_panel)
+            time.sleep(0.02)
 
-        new_right_panel = c.new_split("right")
+            new_right_panel = c.new_split("right")
 
-        panel_ids = [left_panel, right_panel, new_right_panel]
-        panel_ids_l = [p.lower() for p in panel_ids]
+            panel_ids = [left_panel, right_panel, new_right_panel]
+            panel_ids_l = [p.lower() for p in panel_ids]
 
-        # Poll for transient detachments.
-        false_counts: dict[str, int] = {pid: 0 for pid in panel_ids_l}
-        deadline = time.time() + 1.0
-        seen_detach: list[tuple[float, str]] = []
-        while time.time() < deadline:
-            hm = _health_map(c)
-            for pid in panel_ids_l:
-                if hm.get(pid) is False:
-                    seen_detach.append((time.time(), pid))
-                    false_counts[pid] = false_counts.get(pid, 0) + 1
-            # 5ms cadence; keep it tight to catch single-frame blips.
-            time.sleep(0.005)
+            # Poll for transient detachments.
+            false_counts: dict[str, int] = {pid: 0 for pid in panel_ids_l}
+            deadline = time.time() + 1.0
+            seen_detach: list[tuple[float, str]] = []
+            while time.time() < deadline:
+                hm = _health_map(c)
+                for pid in panel_ids_l:
+                    if hm.get(pid) is False:
+                        seen_detach.append((time.time(), pid))
+                        false_counts[pid] = false_counts.get(pid, 0) + 1
+                # 5ms cadence; keep it tight to catch single-frame blips.
+                time.sleep(0.005)
 
-        # Allow a couple of ultra-short false samples; fail if we see more.
-        offenders = {pid: n for pid, n in false_counts.items() if n > 2}
-        if offenders:
-            # Include only first few for brevity.
-            sample = ", ".join([f"{pid}" for _ts, pid in seen_detach[:5]])
-            raise cmuxError(
-                f"saw in_window=false during nested split: {sample} (count={len(seen_detach)}) offenders={offenders}"
-            )
+            # Allow a couple of ultra-short false samples; fail if we see more.
+            offenders = {pid: n for pid, n in false_counts.items() if n > 2}
+            if offenders:
+                # Include only first few for brevity.
+                sample = ", ".join([f"{pid}" for _ts, pid in seen_detach[:5]])
+                raise cmuxError(
+                    f"saw in_window=false during nested split: {sample} (count={len(seen_detach)}) offenders={offenders}"
+                )
+        finally:
+            if workspace_id is not None:
+                try:
+                    c.close_workspace(workspace_id)
+                except Exception:
+                    pass
 
-        print("PASS: nested split did not detach panels (surface_health)")
-        return 0
+    print("PASS: nested split did not detach panels (surface_health)")
+    return 0
 
 
 if __name__ == "__main__":
