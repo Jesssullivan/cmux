@@ -112,6 +112,9 @@ jobs:
           echo "Generated nix/release-artifacts.override.nix for ${TAG}"
           cat nix/release-artifacts.override.nix
 
+      - name: Configure self-hosted Nix
+        run: bash scripts/configure-self-hosted-nix.sh
+
       - name: Verify KVM access
         run: |
           echo "=== KVM device ==="
