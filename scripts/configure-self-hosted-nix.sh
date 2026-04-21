@@ -12,6 +12,7 @@ if [[ -z "${GITHUB_ENV:-}" ]]; then
 fi
 
 ATTIC_PUBLIC_KEY="main:NKRk1XYo/dfd9fcDqgotUJg2DTDHWp5ny+Ba7WzRjgE="
+DETERMINATE_NIXD_LOG="/tmp/determinate-nixd.log"
 
 emit_github_env() {
   local key="$1"
@@ -24,12 +25,44 @@ emit_github_env() {
   } >>"$GITHUB_ENV"
 }
 
-if [[ -S /nix/var/nix/daemon-socket/socket ]]; then
-  echo "NIX_REMOTE=daemon" >>"$GITHUB_ENV"
-  echo "::notice::Using preinstalled Nix daemon at /nix/var/nix/daemon-socket/socket"
-else
-  echo "::warning::Nix daemon socket not found; using the runner's default Nix mode"
-fi
+daemon_store_available() {
+  nix store info --store daemon >/dev/null 2>&1
+}
+
+determine_daemon_mode() {
+  if daemon_store_available; then
+    echo "NIX_REMOTE=daemon" >>"$GITHUB_ENV"
+    echo "::notice::Using preinitialized Nix daemon"
+    return 0
+  fi
+
+  if command -v determinate-nixd >/dev/null 2>&1; then
+    echo "::notice::Initializing Determinate Nix for this workflow"
+    rm -f "$DETERMINATE_NIXD_LOG"
+    nohup "$(command -v determinate-nixd)" init --keep-mounted >"$DETERMINATE_NIXD_LOG" 2>&1 &
+
+    local attempt
+    for attempt in $(seq 1 100); do
+      if daemon_store_available; then
+        echo "NIX_REMOTE=daemon" >>"$GITHUB_ENV"
+        echo "::notice::Determinate Nix daemon is ready"
+        return 0
+      fi
+      sleep 0.2
+    done
+
+    echo "::error::Determinate Nix daemon did not become ready" >&2
+    if [[ -f "$DETERMINATE_NIXD_LOG" ]]; then
+      sed -n '1,120p' "$DETERMINATE_NIXD_LOG" >&2
+    fi
+    exit 1
+  fi
+
+  echo "::error::No usable Nix daemon detected on this self-hosted runner" >&2
+  exit 1
+}
+
+determine_daemon_mode
 
 declare -a nix_config_lines=()
 if [[ -n "${NIX_CONFIG:-}" ]]; then
