@@ -2275,6 +2275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     weak var tabManager: TabManager?
     weak var notificationStore: TerminalNotificationStore?
     weak var sidebarState: SidebarState?
+    weak var fileExplorerState: FileExplorerState?
     weak var fullscreenControlsViewModel: TitlebarControlsViewModel?
     weak var sidebarSelectionState: SidebarSelectionState?
     var shortcutLayoutCharacterProvider: (UInt16, NSEvent.ModifierFlags) -> String? = KeyboardLayout.character(forKeyCode:modifierFlags:)
@@ -2520,6 +2521,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        let authCallbacks = urls.filter(AuthCallbackRouter.isAuthCallbackURL)
+        for url in authCallbacks {
+            Task { @MainActor in
+                do {
+                    try await AuthManager.shared.handleCallbackURL(url)
+                } catch {
+                    NSLog("auth.callback failed: %@", "\(error)")
+                }
+            }
+        }
+
         let directories = externalOpenDirectories(from: urls)
         guard !directories.isEmpty else { return }
 
@@ -2536,6 +2548,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let env = ProcessInfo.processInfo.environment
         let isRunningUnderXCTest = isRunningUnderXCTest(env)
         let telemetryEnabled = TelemetrySettings.enabledForCurrentLaunch
+        AppIconLaunchState.markDidFinishLaunching()
+
+        claimAuthCallbackURLSchemes()
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -2627,7 +2642,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         NSWindow.allowsAutomaticWindowTabbing = false
         disableNativeTabbingShortcut()
-        ensureApplicationIcon()
+        if !isRunningUnderXCTest {
+            ensureApplicationIcon()
+        }
         if !isRunningUnderXCTest {
             configureUserNotifications()
             installMenuBarVisibilityObserver()
@@ -5757,6 +5774,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard isMainTerminalWindow(window) else { return }
         guard window.attachedSheet == nil else { return }
         guard !isCommandPaletteEffectivelyVisible(in: window) else { return }
+        // If the active first responder is a text-field editor (e.g. a popover's
+        // search field whose field editor is borrowed from the parent window),
+        // never re-route the keystroke to the terminal. Symmetric with
+        // applyFirstResponderIfNeeded's NSText guard. Terminals use GhosttyNSView,
+        // never NSText, so this can't suppress legitimate terminal repair.
+        if window.firstResponder is NSText {
+            return
+        }
         guard let context = contextForMainWindow(window) ?? contextForMainTerminalWindow(window),
               let workspace = context.tabManager.selectedWorkspace,
               let panelId = workspace.focusedPanelId,
@@ -5871,7 +5896,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var refreshedCount = 0
         forEachTerminalPanel { terminalPanel in
             terminalPanel.hostedView.refreshHostBackgroundAfterGhosttyConfigReload()
-            terminalPanel.hostedView.reconcileGeometryNow()
             terminalPanel.surface.forceRefresh(reason: "appDelegate.refreshAfterGhosttyConfigReload")
             refreshedCount += 1
         }
@@ -6757,6 +6781,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    private func claimAuthCallbackURLSchemes() {
+        // Pin the current build as the default for cmux://  and cmux-dev://
+        // so the auth-callback deeplink routes back to this app instead of an
+        // unrelated LaunchServices entry.
+        let bundleURL = Bundle.main.bundleURL
+        for scheme in ["cmux", "cmux-dev"] {
+            NSWorkspace.shared.setDefaultApplication(
+                at: bundleURL,
+                toOpenURLsWithScheme: scheme
+            ) { _ in }
+        }
+    }
+
     private func externalOpenDirectories(from urls: [URL]) -> [String] {
         // LaunchServices can surface the running app bundle on relaunch; ignore self paths so
         // they do not get treated as explicit folder opens and suppress session restore.
@@ -7102,11 +7139,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         cmuxConfigStore.wireDirectoryTracking(tabManager: tabManager)
         cmuxConfigStore.loadAll()
 
+        let fileExplorerState = FileExplorerState()
+
         let root = ContentView(updateViewModel: updateViewModel, windowId: windowId)
             .environmentObject(tabManager)
             .environmentObject(notificationStore)
             .environmentObject(sidebarState)
             .environmentObject(sidebarSelectionState)
+            .environmentObject(fileExplorerState)
             .environmentObject(cmuxConfigStore)
 
         // Use the current key window's size for new windows so Cmd+Shift+N
@@ -7846,8 +7886,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let tabManager else { return }
         let tab = tabManager.addTab()
         let config = GhosttyConfig.load()
-        let lineCount = min(max(config.scrollbackLimit * 2, 2000), 60000)
-        let command = "for i in {1..\(lineCount)}; do printf \"scrollback %06d\\n\" $i; done\n"
+        let minimumTargetBytes = 2_000_000
+        let maximumTargetBytes = 200_000_000
+        let minimumLineCount = 2000
+        let effectiveLimit = max(config.scrollbackLimit, 0)
+        let doubledLimit = min(effectiveLimit, maximumTargetBytes / 2) * 2
+        let targetBytes = min(max(doubledLimit, minimumTargetBytes), maximumTargetBytes)
+        // `%06d` guarantees at least a 6-digit field width. Any lines beyond
+        // 999,999 only get wider, so this conservative floor always emits at
+        // least `targetBytes` without oscillating at digit-count boundaries.
+        let baseBytesPerLine = "scrollback 000000\n".utf8.count
+        let lineCount = max((targetBytes + baseBytesPerLine - 1) / baseBytesPerLine, minimumLineCount)
+
+        let command = #"awk 'BEGIN { for (i = 1; i <= \#(lineCount); ++i) printf "scrollback %06d\n", i }'"# + "\n"
         sendTextWhenReady(command, to: tab)
     }
 
@@ -10279,9 +10330,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func installShortcutMonitor() {
         // Local monitor only receives events when app is active (not global)
-        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .keyUp, .flagsChanged, .systemDefined]
+        ) { [weak self] event in
             guard let self else { return event }
-            if event.type == .keyDown {
+            if event.type == .keyDown || event.type == .systemDefined {
 #if DEBUG
                 let phaseTotalStart = ProcessInfo.processInfo.systemUptime
                 let preludeStart = ProcessInfo.processInfo.systemUptime
@@ -10592,6 +10645,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func handleCustomShortcut(event: NSEvent) -> Bool {
+        guard !KeyboardShortcutRecorderActivity.isAnyRecorderActive else {
+            clearConfiguredShortcutChordState()
+            return false
+        }
+
         // `charactersIgnoringModifiers` can be nil for some synthetic NSEvents and certain special keys.
         // Treat nil as "" and rely on keyCode/layout-aware fallback logic where needed.
         // When a non-Latin input source is active (Korean, Chinese, Japanese, etc.),
@@ -11101,6 +11159,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Check Show Notifications shortcut
         if matchConfiguredShortcut(event: event, action: .showNotifications) {
             toggleNotificationsPopover(animated: false, anchorView: fullscreenControlsViewModel?.notificationsAnchorView)
+            return true
+        }
+
+        if matchConfiguredShortcut(event: event, action: .toggleFileExplorer) {
+            // Dispatch async to escape AppKit's performKeyEquivalent animation context.
+            // Without this, NSAnimationContext implicitly animates the layout change.
+            DispatchQueue.main.async { [weak self] in
+                self?.fileExplorerState?.toggle()
+            }
             return true
         }
 
@@ -12268,7 +12335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // Debug/test hook: mirrors local monitor routing (keyDown + keyUp lifecycle).
     func debugHandleShortcutMonitorEvent(event: NSEvent) -> Bool {
-        if event.type == .keyDown {
+        if event.type == .keyDown || event.type == .systemDefined {
             return handleCustomShortcut(event: event)
         }
         handleBrowserOmnibarSelectionRepeatLifecycleEvent(event)
@@ -14502,7 +14569,15 @@ private extension NSWindow {
             }
 #endif
             if !consumedByMenu {
-                // Fall through to the original performKeyEquivalent path below.
+                // After a direct-to-menu miss, let Ghostty resolve the command key
+                // through its normal binding path so user key overrides still win.
+                let consumedByGhostty = firstResponderGhosttyView?.performKeyEquivalentAfterMenuMiss(with: event) == true
+#if DEBUG
+                dlog("  → mainMenu miss; ghostty command path: \(consumedByGhostty)")
+#endif
+                if consumedByGhostty {
+                    return true
+                }
             } else {
 #if DEBUG
                 dlog("  → consumed by mainMenu (bypassed SwiftUI)")
