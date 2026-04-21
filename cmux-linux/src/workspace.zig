@@ -141,12 +141,6 @@ pub const Workspace = struct {
         while (it.next()) |panel_ptr| {
             const panel = panel_ptr.*;
             if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
-            if (panel.title) |title| self.alloc.free(title);
-            if (panel.custom_title) |title| self.alloc.free(title);
-            if (panel.directory) |directory| self.alloc.free(directory);
-            if (panel.url) |url| self.alloc.free(url);
-            if (panel.git_branch) |git_branch| self.alloc.free(git_branch);
-            if (panel.tty_name) |tty_name| self.alloc.free(tty_name);
             panel.mock_terminal.deinit(self.alloc);
             self.alloc.destroy(panel);
         }
