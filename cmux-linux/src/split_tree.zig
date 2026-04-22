@@ -295,8 +295,6 @@ pub fn destroy(alloc: Allocator, node: *Node) void {
         .split => |split| {
             destroy(alloc, split.first);
             destroy(alloc, split.second);
-            alloc.destroy(split.first);
-            alloc.destroy(split.second);
         },
     }
     alloc.destroy(node);
