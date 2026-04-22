@@ -3,7 +3,6 @@
 /// Each node is either a Leaf (terminal surface in a GtkGLArea) or a
 /// Split (GtkPaned containing two child nodes with an orientation and
 /// divider ratio). Maps to macOS Bonsplit's SplitNode model.
-
 const std = @import("std");
 const c = @import("c_api.zig");
 
@@ -59,21 +58,32 @@ pub fn splitPane(
     new_panel_id: u128,
     new_widget: ?*c.GtkWidget,
 ) !*Node {
+    return splitPanePlaced(alloc, target, orientation, new_panel_id, new_widget, false);
+}
+
+/// Split a leaf node into two panes, optionally inserting the new pane first.
+pub fn splitPanePlaced(
+    alloc: Allocator,
+    target: *Node,
+    orientation: Orientation,
+    new_panel_id: u128,
+    new_widget: ?*c.GtkWidget,
+    insert_first: bool,
+) !*Node {
     // Save the original leaf content
     const original = target.*;
 
     // Create two child nodes
-    const first = try alloc.create(Node);
-    first.* = original;
-
-    const second = try createLeaf(alloc, new_panel_id, new_widget);
+    const existing = try alloc.create(Node);
+    existing.* = original;
+    const created = try createLeaf(alloc, new_panel_id, new_widget);
 
     // Replace target with a split
     target.* = .{ .split = .{
         .orientation = orientation,
         .ratio = 0.5,
-        .first = first,
-        .second = second,
+        .first = if (insert_first) created else existing,
+        .second = if (insert_first) existing else created,
     } };
 
     return target;
@@ -170,6 +180,30 @@ pub fn findLeaf(node: *Node, panel_id: u128) ?*Leaf {
         .leaf => |*leaf| if (leaf.panel_id == panel_id) leaf else null,
         .split => |split| findLeaf(split.first, panel_id) orelse findLeaf(split.second, panel_id),
     };
+}
+
+/// Find the mutable node that owns a given leaf panel.
+pub fn findLeafNode(node: *Node, panel_id: u128) ?*Node {
+    return switch (node.*) {
+        .leaf => |leaf| if (leaf.panel_id == panel_id) node else null,
+        .split => |split| findLeafNode(split.first, panel_id) orelse findLeafNode(split.second, panel_id),
+    };
+}
+
+/// Rename a leaf panel ID in-place. Used when the last selected surface in a
+/// pane closes but sibling surfaces still keep the pane alive.
+pub fn replaceLeafPanelId(node: *Node, old_panel_id: u128, new_panel_id: u128) bool {
+    switch (node.*) {
+        .leaf => |*leaf| {
+            if (leaf.panel_id != old_panel_id) return false;
+            leaf.panel_id = new_panel_id;
+            return true;
+        },
+        .split => |*split| {
+            if (replaceLeafPanelId(split.first, old_panel_id, new_panel_id)) return true;
+            return replaceLeafPanelId(split.second, old_panel_id, new_panel_id);
+        },
+    }
 }
 
 /// Check whether a subtree contains a given panel.

@@ -17,6 +17,9 @@ pub const PanelType = enum {
 
 pub const Panel = struct {
     id: u128,
+    /// Logical pane identifier. On Linux this is usually equal to `id`,
+    /// but headless browser reuse can attach multiple surfaces to one pane.
+    pane_id: u128,
     panel_type: PanelType,
     title: ?[]const u8 = null,
     custom_title: ?[]const u8 = null,
@@ -156,6 +159,7 @@ pub const Workspace = struct {
         const panel = try self.alloc.create(Panel);
         panel.* = .{
             .id = id,
+            .pane_id = id,
             .panel_type = .terminal,
         };
 
@@ -182,6 +186,7 @@ pub const Workspace = struct {
         const panel = try self.alloc.create(Panel);
         panel.* = .{
             .id = id,
+            .pane_id = id,
             .panel_type = .browser,
             .url = if (url) |u| self.alloc.dupe(u8, u) catch null else null,
         };
@@ -203,6 +208,7 @@ pub const Workspace = struct {
         const panel = try self.alloc.create(Panel);
         panel.* = .{
             .id = id,
+            .pane_id = id,
             .panel_type = panel_type,
         };
         try self.panels.put(self.alloc, id, panel);
@@ -271,11 +277,14 @@ pub const Workspace = struct {
             return;
         }
 
-        var first_idx: usize = 0;
-        while (first_idx < self.ordered_panels.items.len) : (first_idx += 1) {
-            const first_id = self.ordered_panels.items[first_idx];
-            const first_panel = self.panels.get(first_id) orelse continue;
-            self.root_node = try split_tree.createLeaf(self.alloc, first_id, first_panel.widget);
+        var first_pane_id: ?u128 = null;
+        for (self.ordered_panels.items) |panel_id| {
+            const panel = self.panels.get(panel_id) orelse continue;
+            const pane_id = panel.pane_id;
+            if (first_pane_id != null) continue;
+            const anchor = self.panels.get(pane_id) orelse panel;
+            self.root_node = try split_tree.createLeaf(self.alloc, pane_id, anchor.widget);
+            first_pane_id = pane_id;
             break;
         }
         if (self.root_node == null) {
@@ -283,14 +292,25 @@ pub const Workspace = struct {
             return;
         }
 
-        for (self.ordered_panels.items[first_idx + 1 ..]) |panel_id| {
+        for (self.ordered_panels.items, 0..) |panel_id, panel_index| {
             const panel = self.panels.get(panel_id) orelse continue;
+            const pane_id = panel.pane_id;
+            var seen_earlier = false;
+            for (self.ordered_panels.items[0..panel_index]) |prior_id| {
+                const prior_panel = self.panels.get(prior_id) orelse continue;
+                if (prior_panel.pane_id == pane_id) {
+                    seen_earlier = true;
+                    break;
+                }
+            }
+            if (seen_earlier or pane_id == first_pane_id.?) continue;
+            const anchor = self.panels.get(pane_id) orelse panel;
             self.root_node = try split_tree.splitPane(
                 self.alloc,
                 self.root_node.?,
                 .horizontal,
-                panel.id,
-                panel.widget,
+                pane_id,
+                anchor.widget,
             );
         }
 
@@ -309,6 +329,14 @@ pub const Workspace = struct {
     /// Get the number of panels.
     pub fn panelCount(self: *const Workspace) usize {
         return self.panels.count();
+    }
+
+    pub fn firstPanelIdForPane(self: *const Workspace, pane_id: u128) ?u128 {
+        for (self.ordered_panels.items) |panel_id| {
+            const panel = self.panels.get(panel_id) orelse continue;
+            if (panel.pane_id == pane_id) return panel.id;
+        }
+        return null;
     }
 
     /// Get the focused panel.
