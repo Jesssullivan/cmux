@@ -2523,28 +2523,36 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
 
     // Create a new workspace for the broken pane, preserving current selection
     const prev_selected = tm.selected_index;
-    const new_ws = tm.createWorkspace() catch {
+    const new_ws = (if (isNoSurface()) tm.createEmptyWorkspace() else tm.createWorkspace()) catch {
         // Re-attach to source on failure to avoid leaking the panel
         target.ws.attachPanel(panel) catch {};
         return "{\"error\":\"create workspace failed\"}";
     };
     tm.selected_index = prev_selected;
 
-    // createWorkspace auto-creates a default panel — remove it so only the
-    // transferred panel remains in the new workspace.
-    if (new_ws.ordered_panels.items.len > 0) {
-        const default_id = new_ws.ordered_panels.items[0];
-        new_ws.removePanel(default_id);
-    }
-    if (new_ws.root_node) |node| {
-        split_tree.destroy(new_ws.alloc, node);
-        new_ws.root_node = null;
-        new_ws.content_widget = null;
+    if (!isNoSurface()) {
+        // createWorkspace auto-creates a default panel — remove it so only the
+        // transferred panel remains in the new workspace.
+        if (new_ws.ordered_panels.items.len > 0) {
+            const default_id = new_ws.ordered_panels.items[0];
+            new_ws.removePanel(default_id);
+        }
+        if (new_ws.root_node) |node| {
+            split_tree.destroy(new_ws.alloc, node);
+            new_ws.root_node = null;
+            new_ws.content_widget = null;
+        }
     }
 
     // Attach the transferred panel and rebuild split tree
     new_ws.attachPanel(panel) catch {
         target.ws.attachPanel(panel) catch {};
+        for (tm.workspaces.items, 0..) |ws_item, idx| {
+            if (ws_item == new_ws) {
+                tm.closeWorkspace(idx);
+                break;
+            }
+        }
         return "{\"error\":\"attach failed\"}";
     };
     if (isNoSurface()) {
