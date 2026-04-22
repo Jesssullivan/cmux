@@ -1172,9 +1172,7 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     }
 
     // Rebuild widget tree (skip GTK calls in test mode — not thread-safe)
-    if (isNoSurface()) {
-        syncHeadlessWorkspace(ws);
-    } else {
+    if (!isNoSurface()) {
         ws.content_widget = split_tree.buildWidget(ws.root_node.?);
     }
     ws.focused_panel_id = panel.id;
@@ -1228,9 +1226,7 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
     ws.removePanel(target_id);
 
     // Rebuild widget tree (skip GTK calls in test mode)
-    if (isNoSurface()) {
-        syncHeadlessWorkspace(ws);
-    } else {
+    if (!isNoSurface()) {
         if (ws.root_node) |new_root| {
             ws.content_widget = split_tree.buildWidget(new_root);
         }
@@ -1678,9 +1674,7 @@ fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
-    if (isNoSurface()) {
-        syncHeadlessWorkspace(ws);
-    } else {
+    if (!isNoSurface()) {
         ws.content_widget = split_tree.buildWidget(ws.root_node.?);
     }
     ws.focused_panel_id = panel.id;
@@ -2067,9 +2061,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         ws.focused_panel_id = target_id;
 
         // Rebuild widget tree.
-        if (isNoSurface()) {
-            syncHeadlessWorkspace(ws);
-        } else {
+        if (!isNoSurface()) {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2123,9 +2115,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         }
 
         // Rebuild widget tree in real GTK mode
-        if (isNoSurface()) {
-            syncHeadlessWorkspace(ws);
-        } else {
+        if (!isNoSurface()) {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2180,9 +2170,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
                 ) catch null;
             }
         }
-        if (isNoSurface()) {
-            syncHeadlessWorkspace(ws);
-        } else {
+        if (!isNoSurface()) {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2258,9 +2246,7 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
                 ) catch null;
             }
         }
-        if (isNoSurface()) {
-            syncHeadlessWorkspace(ws);
-        } else {
+        if (!isNoSurface()) {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
