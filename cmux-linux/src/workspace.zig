@@ -8,6 +8,16 @@ const split_tree = @import("split_tree.zig");
 const c = @import("c_api.zig");
 
 const Allocator = std.mem.Allocator;
+const log = std.log.scoped(.workspace);
+
+fn isNoSurface() bool {
+    return std.posix.getenv("CMUX_NO_SURFACE") != null;
+}
+
+fn logHeadless(comptime fmt: []const u8, args: anytype) void {
+    if (!isNoSurface()) return;
+    log.info(fmt, args);
+}
 
 pub const PanelType = enum {
     terminal,
@@ -137,6 +147,7 @@ pub const Workspace = struct {
     }
 
     pub fn deinit(self: *Workspace) void {
+        logHeadless("deinit workspace={x} panels={d}", .{ self.id, self.panels.count() });
         var it = self.panels.valueIterator();
         while (it.next()) |panel_ptr| {
             const panel = panel_ptr.*;
@@ -214,6 +225,7 @@ pub const Workspace = struct {
     /// Remove a panel by ID from both maps.
     pub fn removePanel(self: *Workspace, panel_id: u128) void {
         if (self.panels.get(panel_id)) |panel| {
+            logHeadless("removePanel workspace={x} panel={x}", .{ self.id, panel_id });
             self.destroyPanel(panel);
             _ = self.panels.remove(panel_id);
         }
@@ -230,6 +242,7 @@ pub const Workspace = struct {
     /// Returns the panel pointer if found, null otherwise.
     pub fn detachPanel(self: *Workspace, panel_id: u128) ?*Panel {
         const panel = self.panels.get(panel_id) orelse return null;
+        logHeadless("detachPanel workspace={x} panel={x}", .{ self.id, panel_id });
         _ = self.panels.remove(panel_id);
         for (self.ordered_panels.items, 0..) |id, i| {
             if (id == panel_id) {
@@ -251,6 +264,7 @@ pub const Workspace = struct {
 
     /// Attach an existing panel to this workspace (for transfers from another workspace).
     pub fn attachPanel(self: *Workspace, panel: *Panel) !void {
+        logHeadless("attachPanel workspace={x} panel={x}", .{ self.id, panel.id });
         try self.panels.put(self.alloc, panel.id, panel);
         try self.ordered_panels.append(self.alloc, panel.id);
         self.focused_panel_id = panel.id;
@@ -260,6 +274,7 @@ pub const Workspace = struct {
     /// Headless socket tests use this to keep tree state consistent with the
     /// authoritative ordered panel list after structural operations.
     pub fn rebuildLinearSplitTree(self: *Workspace) !void {
+        logHeadless("rebuildLinearSplitTree workspace={x} count={d}", .{ self.id, self.ordered_panels.items.len });
         if (self.root_node) |node| {
             split_tree.destroy(self.alloc, node);
             self.root_node = null;
@@ -329,6 +344,7 @@ pub const Workspace = struct {
     }
 
     fn destroyPanel(self: *Workspace, panel: *Panel) void {
+        logHeadless("destroyPanel workspace={x} panel={x}", .{ self.id, panel.id });
         if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
         if (panel.title) |value| self.alloc.free(value);
         if (panel.custom_title) |value| self.alloc.free(value);

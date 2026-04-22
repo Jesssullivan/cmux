@@ -2515,11 +2515,17 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
         break :blk .{ .id = fid, .ws = ws };
     };
     const target = found orelse return "{\"error\":\"pane not found\"}";
+    if (isNoSurface()) {
+        log.info("pane.break start panel={x} workspace={x}", .{ target.id, target.ws.id });
+    }
 
     // Detach the panel from the source workspace
     const panel = target.ws.detachPanel(target.id) orelse
         return "{\"error\":\"detach failed\"}";
     syncHeadlessWorkspace(target.ws);
+    if (isNoSurface()) {
+        log.info("pane.break detached panel={x} source_workspace={x}", .{ panel.id, target.ws.id });
+    }
 
     // Create a new workspace for the broken pane, preserving current selection
     const prev_selected = tm.selected_index;
@@ -2529,6 +2535,9 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
         return "{\"error\":\"create workspace failed\"}";
     };
     tm.selected_index = prev_selected;
+    if (isNoSurface()) {
+        log.info("pane.break created workspace={x}", .{new_ws.id});
+    }
 
     if (!isNoSurface()) {
         // createWorkspace auto-creates a default panel — remove it so only the
@@ -2556,7 +2565,11 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
         return "{\"error\":\"attach failed\"}";
     };
     if (isNoSurface()) {
+        log.info("pane.break attached panel={x} workspace={x}", .{ panel.id, new_ws.id });
+    }
+    if (isNoSurface()) {
         syncHeadlessWorkspace(new_ws);
+        log.info("pane.break synced workspace={x}", .{new_ws.id});
     } else {
         new_ws.root_node = split_tree.createLeaf(new_ws.alloc, panel.id, panel.widget) catch null;
         if (new_ws.root_node) |node| {
