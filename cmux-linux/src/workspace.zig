@@ -140,9 +140,7 @@ pub const Workspace = struct {
         var it = self.panels.valueIterator();
         while (it.next()) |panel_ptr| {
             const panel = panel_ptr.*;
-            if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
-            panel.mock_terminal.deinit(self.alloc);
-            self.alloc.destroy(panel);
+            self.destroyPanel(panel);
         }
         self.panels.deinit(self.alloc);
         self.ordered_panels.deinit(self.alloc);
@@ -216,8 +214,7 @@ pub const Workspace = struct {
     /// Remove a panel by ID from both maps.
     pub fn removePanel(self: *Workspace, panel_id: u128) void {
         if (self.panels.get(panel_id)) |panel| {
-            if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
-            self.alloc.destroy(panel);
+            self.destroyPanel(panel);
             _ = self.panels.remove(panel_id);
         }
         // Remove from ordered list
@@ -259,6 +256,56 @@ pub const Workspace = struct {
         self.focused_panel_id = panel.id;
     }
 
+    /// Rebuild a simple left-associated split tree from ordered_panels.
+    /// Headless socket tests use this to keep tree state consistent with the
+    /// authoritative ordered panel list after structural operations.
+    pub fn rebuildLinearSplitTree(self: *Workspace) !void {
+        if (self.root_node) |node| {
+            split_tree.destroy(self.alloc, node);
+            self.root_node = null;
+        }
+        self.content_widget = null;
+
+        if (self.ordered_panels.items.len == 0) {
+            self.focused_panel_id = null;
+            return;
+        }
+
+        var first_idx: usize = 0;
+        while (first_idx < self.ordered_panels.items.len) : (first_idx += 1) {
+            const first_id = self.ordered_panels.items[first_idx];
+            const first_panel = self.panels.get(first_id) orelse continue;
+            self.root_node = try split_tree.createLeaf(self.alloc, first_id, first_panel.widget);
+            break;
+        }
+        if (self.root_node == null) {
+            self.focused_panel_id = null;
+            return;
+        }
+
+        for (self.ordered_panels.items[first_idx + 1 ..]) |panel_id| {
+            const panel = self.panels.get(panel_id) orelse continue;
+            self.root_node = try split_tree.splitPane(
+                self.alloc,
+                self.root_node.?,
+                .horizontal,
+                panel.id,
+                panel.widget,
+            );
+        }
+
+        if (self.focused_panel_id) |focused_id| {
+            if (self.panels.get(focused_id) != null) return;
+        }
+        for (self.ordered_panels.items) |panel_id| {
+            if (self.panels.get(panel_id) != null) {
+                self.focused_panel_id = panel_id;
+                return;
+            }
+        }
+        self.focused_panel_id = null;
+    }
+
     /// Get the number of panels.
     pub fn panelCount(self: *const Workspace) usize {
         return self.panels.count();
@@ -279,6 +326,18 @@ pub const Workspace = struct {
     /// Get the display title (custom > process > default).
     pub fn displayTitle(self: *const Workspace) []const u8 {
         return self.custom_title orelse self.title orelse "Terminal";
+    }
+
+    fn destroyPanel(self: *Workspace, panel: *Panel) void {
+        if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
+        if (panel.title) |value| self.alloc.free(value);
+        if (panel.custom_title) |value| self.alloc.free(value);
+        if (panel.directory) |value| self.alloc.free(value);
+        if (panel.url) |value| self.alloc.free(value);
+        if (panel.git_branch) |value| self.alloc.free(value);
+        if (panel.tty_name) |value| self.alloc.free(value);
+        panel.mock_terminal.deinit(self.alloc);
+        self.alloc.destroy(panel);
     }
 };
 

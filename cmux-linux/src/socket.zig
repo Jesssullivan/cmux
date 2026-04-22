@@ -545,6 +545,11 @@ fn isNoSurface() bool {
     return std.posix.getenv("CMUX_NO_SURFACE") != null;
 }
 
+fn syncHeadlessWorkspace(ws: *Workspace) void {
+    if (!isNoSurface()) return;
+    ws.rebuildLinearSplitTree() catch {};
+}
+
 fn getTerminalGhosttySurface(panel: *Panel) ?c.ghostty.ghostty_surface_t {
     if (panel.widget) |widget| {
         if (surface_mod.fromWidget(widget)) |surface| {
@@ -1167,7 +1172,9 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     }
 
     // Rebuild widget tree (skip GTK calls in test mode — not thread-safe)
-    if (!isNoSurface()) {
+    if (isNoSurface()) {
+        syncHeadlessWorkspace(ws);
+    } else {
         ws.content_widget = split_tree.buildWidget(ws.root_node.?);
     }
     ws.focused_panel_id = panel.id;
@@ -1221,7 +1228,9 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
     ws.removePanel(target_id);
 
     // Rebuild widget tree (skip GTK calls in test mode)
-    if (!isNoSurface()) {
+    if (isNoSurface()) {
+        syncHeadlessWorkspace(ws);
+    } else {
         if (ws.root_node) |new_root| {
             ws.content_widget = split_tree.buildWidget(new_root);
         }
@@ -1669,7 +1678,9 @@ fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
-    if (!isNoSurface()) {
+    if (isNoSurface()) {
+        syncHeadlessWorkspace(ws);
+    } else {
         ws.content_widget = split_tree.buildWidget(ws.root_node.?);
     }
     ws.focused_panel_id = panel.id;
@@ -2056,7 +2067,9 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         ws.focused_panel_id = target_id;
 
         // Rebuild widget tree.
-        if (!isNoSurface()) {
+        if (isNoSurface()) {
+            syncHeadlessWorkspace(ws);
+        } else {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2110,7 +2123,9 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         }
 
         // Rebuild widget tree in real GTK mode
-        if (!isNoSurface()) {
+        if (isNoSurface()) {
+            syncHeadlessWorkspace(ws);
+        } else {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2165,7 +2180,9 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
                 ) catch null;
             }
         }
-        if (!isNoSurface()) {
+        if (isNoSurface()) {
+            syncHeadlessWorkspace(ws);
+        } else {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2241,7 +2258,9 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
                 ) catch null;
             }
         }
-        if (!isNoSurface()) {
+        if (isNoSurface()) {
+            syncHeadlessWorkspace(ws);
+        } else {
             if (ws.root_node) |new_root| {
                 ws.content_widget = split_tree.buildWidget(new_root);
             }
@@ -2459,6 +2478,23 @@ fn handlePaneSwap(_: Allocator, params: json.Value) []const u8 {
     const pane_id = pane_found.id;
     const target_id = target_found.id;
 
+    if (isNoSurface()) {
+        for (tm.workspaces.items) |ws| {
+            var idx_a: ?usize = null;
+            var idx_b: ?usize = null;
+            for (ws.ordered_panels.items, 0..) |id, i| {
+                if (id == pane_id) idx_a = i;
+                if (id == target_id) idx_b = i;
+            }
+            if (idx_a != null and idx_b != null) {
+                std.mem.swap(u128, &ws.ordered_panels.items[idx_a.?], &ws.ordered_panels.items[idx_b.?]);
+                syncHeadlessWorkspace(ws);
+                return "{}";
+            }
+        }
+        return "{\"error\":\"panes not found in same workspace\"}";
+    }
+
     // Find both panels in any workspace and swap their leaf nodes in the split tree
     for (tm.workspaces.items) |ws| {
         if (ws.root_node) |root| {
@@ -2497,6 +2533,7 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
     // Detach the panel from the source workspace
     const panel = target.ws.detachPanel(target.id) orelse
         return "{\"error\":\"detach failed\"}";
+    syncHeadlessWorkspace(target.ws);
 
     // Create a new workspace for the broken pane, preserving current selection
     const prev_selected = tm.selected_index;
@@ -2524,9 +2561,13 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
         target.ws.attachPanel(panel) catch {};
         return "{\"error\":\"attach failed\"}";
     };
-    new_ws.root_node = split_tree.createLeaf(new_ws.alloc, panel.id, panel.widget) catch null;
-    if (new_ws.root_node) |node| {
-        new_ws.content_widget = split_tree.buildWidget(node);
+    if (isNoSurface()) {
+        syncHeadlessWorkspace(new_ws);
+    } else {
+        new_ws.root_node = split_tree.createLeaf(new_ws.alloc, panel.id, panel.widget) catch null;
+        if (new_ws.root_node) |node| {
+            new_ws.content_widget = split_tree.buildWidget(node);
+        }
     }
 
     if (window.getSidebar()) |sb| sb.refresh();
@@ -2583,7 +2624,10 @@ fn handlePaneJoin(alloc: Allocator, params: json.Value) []const u8 {
                 break;
             }
         }
+    } else {
+        syncHeadlessWorkspace(src.ws);
     }
+    syncHeadlessWorkspace(dst_ws);
 
     if (window.getSidebar()) |sb| sb.refresh();
 
@@ -2629,6 +2673,8 @@ fn handleSurfaceMove(_: Allocator, params: json.Value) []const u8 {
         src.ws.attachPanel(panel) catch {};
         return "{\"error\":\"attach failed\"}";
     };
+    syncHeadlessWorkspace(src.ws);
+    syncHeadlessWorkspace(dst_ws);
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
 }
@@ -2675,6 +2721,7 @@ fn handleSurfaceReorder(_: Allocator, params: json.Value) []const u8 {
     const adj_dst = if (src < dst) dst - 1 else dst;
     const clamped = @min(adj_dst, ws.ordered_panels.items.len);
     ws.ordered_panels.insert(ws.alloc, clamped, panel_id) catch return "{\"error\":\"reorder insert failed\"}";
+    syncHeadlessWorkspace(ws);
 
     return "{}";
 }
