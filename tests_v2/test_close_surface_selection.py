@@ -65,6 +65,7 @@ def _ensure_surfaces(client: cmux, count: int) -> None:
 
 def test_close_middle_keeps_index(client: cmux) -> TestResult:
     result = TestResult("Close Focused Middle Surface Keeps Index")
+    ws_id = None
     try:
         # Isolate from developer state: use a fresh workspace.
         ws_id = client.new_workspace()
@@ -105,11 +106,18 @@ def test_close_middle_keeps_index(client: cmux) -> TestResult:
         result.success("Focused index stayed stable (selected the surface that moved into the closed slot)")
     except Exception as e:
         result.failure(f"Exception: {e}")
+    finally:
+        if ws_id is not None:
+            try:
+                client.close_workspace(ws_id)
+            except Exception:
+                pass
     return result
 
 
 def test_close_last_selects_previous(client: cmux) -> TestResult:
     result = TestResult("Close Focused Last Surface Selects Previous")
+    ws_id = None
     try:
         ws_id = client.new_workspace()
         client.select_workspace(ws_id)
@@ -143,6 +151,12 @@ def test_close_last_selects_previous(client: cmux) -> TestResult:
         result.success("Focused moved to previous when closing the last surface")
     except Exception as e:
         result.failure(f"Exception: {e}")
+    finally:
+        if ws_id is not None:
+            try:
+                client.close_workspace(ws_id)
+            except Exception:
+                pass
     return result
 
 
