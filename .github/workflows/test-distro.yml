@@ -112,6 +112,14 @@ jobs:
           echo "Generated nix/release-artifacts.override.nix for ${TAG}"
           cat nix/release-artifacts.override.nix
 
+      - name: Configure self-hosted Nix
+        run: bash scripts/configure-self-hosted-nix.sh
+
+      - name: Verify runner Nix daemon
+        run: |
+          nix --version
+          nix store info --store daemon
+
       - name: Verify KVM access
         run: |
           echo "=== KVM device ==="
@@ -130,16 +138,16 @@ jobs:
 
       - name: Rocky 9 package test (RPM proxy)
         if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
-        run: nix build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
+        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 
 
       - name: Debian 12 package test
         if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
-        run: nix build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+        run: nix --store daemon build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
 
       - name: Ubuntu 24.04 package test
         if: inputs.distro == 'all' || inputs.distro == 'ubuntu2404' || inputs.distro == ''
-        run: nix build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+        run: nix --store daemon build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
 
       - name: Upload test logs
         if: always()

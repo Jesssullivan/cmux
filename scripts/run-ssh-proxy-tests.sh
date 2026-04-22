@@ -11,6 +11,35 @@ FILTER="${TEST_FILTER:-}"
 STDERR_LOG="/tmp/ssh-proxy-tests-stderr.log"
 TAP_FILE="/tmp/ssh-proxy-tests-results.tap"
 
+resolve_nix_interpreter() {
+  if [ -n "${NIX_LD:-}" ] && [ -e "${NIX_LD}" ]; then
+    printf '%s\n' "${NIX_LD}"
+    return 0
+  fi
+
+  if [ -n "${NIX_CC:-}" ] && [ -r "${NIX_CC}/nix-support/dynamic-linker" ]; then
+    head -n 1 "${NIX_CC}/nix-support/dynamic-linker"
+    return 0
+  fi
+
+  if command -v cc >/dev/null 2>&1; then
+    local cc_path cc_root
+    cc_path="$(command -v cc)"
+    cc_root="${cc_path%/bin/cc}"
+    if [ -r "${cc_root}/nix-support/dynamic-linker" ]; then
+      head -n 1 "${cc_root}/nix-support/dynamic-linker"
+      return 0
+    fi
+  fi
+
+  if compgen -G "/nix/store/*glibc*/lib/ld-linux-x86-64.so.2" >/dev/null; then
+    ls /nix/store/*glibc*/lib/ld-linux-x86-64.so.2 2>/dev/null | sort -V | tail -1
+    return 0
+  fi
+
+  return 1
+}
+
 cleanup() {
   [ -n "${CMUX_PID:-}" ] && kill -9 "$CMUX_PID" 2>/dev/null || true
   [ -n "${XVFB_PID:-}" ] && kill -9 "$XVFB_PID" 2>/dev/null || true
@@ -36,8 +65,8 @@ fi
 
 # Prepend ghostty lib
 export LD_LIBRARY_PATH="$REPO_ROOT/ghostty/zig-out/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-# patchelf for Nix glibc
-NIX_INTERP=$(ls /nix/store/*glibc*/lib/ld-linux-x86-64.so.2 2>/dev/null | tail -1)
+# patchelf for the active Nix shell's dynamic linker.
+NIX_INTERP="$(resolve_nix_interpreter || true)"
 if [ -n "$NIX_INTERP" ] && command -v patchelf &>/dev/null; then
   echo "Patching interpreter: $NIX_INTERP"
   patchelf --set-interpreter "$NIX_INTERP" "$BINARY" 2>/dev/null || true
