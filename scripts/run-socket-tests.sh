@@ -29,6 +29,10 @@ TESTS_DIR="$REPO_ROOT/tests_v2"
 FILTER="${TEST_FILTER:-}"
 STDERR_LOG="/tmp/socket-tests-stderr.log"
 TAP_FILE="/tmp/socket-tests-results.tap"
+XVFB_LOG="/tmp/socket-tests-xvfb.log"
+
+# shellcheck source=./xvfb.sh
+source "$REPO_ROOT/scripts/xvfb.sh"
 
 resolve_nix_interpreter() {
   if [ -n "${NIX_LD:-}" ] && [ -e "${NIX_LD}" ]; then
@@ -75,7 +79,6 @@ if [ -n "$NIX_INTERP" ] && command -v patchelf &>/dev/null; then
   echo "Patching interpreter: $NIX_INTERP"
   patchelf --set-interpreter "$NIX_INTERP" "$BINARY" 2>/dev/null || true
 fi
-export DISPLAY=:99
 export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
 export MESA_GLSL_VERSION_OVERRIDE=460
 export LIBGL_ALWAYS_SOFTWARE=1
@@ -84,9 +87,12 @@ mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 export CMUX_SOCKET="$XDG_RUNTIME_DIR/cmux.sock"
 
 # Start Xvfb
-Xvfb :99 -screen 0 1280x720x24 +extension GLX &
-XVFB_PID=$!
-sleep 1
+if ! start_xvfb "1280x720x24" "$XVFB_LOG"; then
+  echo "FAIL: Xvfb failed to become ready"
+  cat "$XVFB_LOG" 2>/dev/null || true
+  exit 1
+fi
+echo "Xvfb ready on $DISPLAY"
 
 # Start daemon in test mode (CMUX_NO_SURFACE prevents GL crash, daemon survives indefinitely)
 echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
