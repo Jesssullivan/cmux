@@ -3,6 +3,9 @@
 This document describes how `cmux` should ingest upstream changes from its
 dependency and parent forks.
 
+For the recurring check schedule and concrete command flow, see
+`docs/upstream-sync.md`.
+
 The GitHub Actions workflow automates part of this process. This document covers
 the human review steps around that automation.
 
