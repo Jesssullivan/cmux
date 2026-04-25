@@ -80,6 +80,7 @@ Upstream preparation should happen on a small, deliberate cadence:
    - rationale and expected upstream benefit
    - validation performed or still needed
    - copy-ready issue or PR text for Jess to submit manually
+   - use `docs/upstream-handoff-template.md`
 4. Keep Ghostty, Bonsplit, and Manaflow/cmux relationship discussions separate
    unless Jess explicitly chooses to combine them.
 5. Do not let upstream prep displace the Linux QA and packaging critical path.
