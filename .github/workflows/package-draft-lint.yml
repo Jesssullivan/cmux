@@ -1,0 +1,64 @@
+name: Package Draft Lint
+
+on:
+  push:
+    branches: [main, 'sid/**']
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/package-draft-lint.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/package-draft-lint.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: package-draft-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aur-pkgbuild:
+    name: AUR PKGBUILD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate PKGBUILD metadata
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/packaging/aur:/workspace:ro" \
+            archlinux:base-devel \
+            bash -lc '
+              set -euo pipefail
+              useradd -m builder
+              install -d -o builder -g builder /tmp/aur
+              cp /workspace/PKGBUILD /tmp/aur/PKGBUILD
+              chown builder:builder /tmp/aur/PKGBUILD
+              su builder -c "cd /tmp/aur && makepkg --printsrcinfo > /tmp/cmux.SRCINFO"
+              test -s /tmp/cmux.SRCINFO
+              grep -q "^pkgname = cmux$" /tmp/cmux.SRCINFO
+            '
+
+  copr-spec:
+    name: COPR spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate RPM spec expansion
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/packaging/copr:/workspace:ro" \
+            fedora:42 \
+            bash -lc '
+              set -euo pipefail
+              dnf -y install rpm-build systemd-rpm-macros >/dev/null
+              rpmspec -P /workspace/cmux.spec > /tmp/cmux.webkit.spec
+              rpmspec -P --without webkit /workspace/cmux.spec > /tmp/cmux.no-webkit.spec
+              test -s /tmp/cmux.webkit.spec
+              test -s /tmp/cmux.no-webkit.spec
+              grep -q "^Name: *cmux$" /tmp/cmux.webkit.spec
+            '
