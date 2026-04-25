@@ -17,6 +17,7 @@ Fork rebased onto upstream `main` at `3509ccf78` (`v1.3.1-457-g3509ccf78`) on Ma
 Merged upstream through `0a492fdb3` (build: add pkg-config static linking support) on April 4, 2026.
 Synced again with upstream on April 11, 2026 (through `d289f66f`).
 Synced again with upstream on April 6, 2026 (PR #11, through `ca7516bea`).
+Synced again with upstream on April 25, 2026 (PR #12, through `c47a8091f`).
 
 As of April 18, 2026:
 
@@ -26,15 +27,21 @@ As of April 18, 2026:
 
 As of April 25, 2026:
 
-- Current cmux pinned fork head: `e0f650766`
-- Current pushed fork `main`: `e0f650766`
-- Current upstream `main`: `c47a8091f`
-- Fork drift versus upstream: 61 commits ahead, 109 commits behind
-- Notable upstream-side churn since the current fork base includes Zig 0.16
-  compatibility work, libghostty cross-compilation/macOS xcframework build
-  changes, and config/key-binding cleanup
-- Ingestion risk is high enough that candidate upstream prep should stay
-  separate from the next fork-sync merge
+- Current checked-in cmux parent pin: `e0f650766`
+- Current pushed fork `main`: `9b1d5d389`
+- Current upstream `main`: `b613ffcfd`
+- Fork drift versus upstream: 64 commits ahead, 33 commits behind
+- cmux cannot move the parent pin to `9b1d5d389` yet: the ReleaseFast
+  universal GhosttyKit build exposed a missing `.manual` case in
+  `src/termio/backend.zig`.
+- The build fix is staged in `Jesssullivan/ghostty#13` at `9456e87a0`. The
+  GhosttyKit-only build passes there with the macOS 15.4 SDK shim and
+  `-Demit-macos-app=false`; the full default build still fails later in the
+  optional macOS app bundle step while resolving a Swift package revision.
+- The newest 33 upstream commits after `c47a8091f` remain intentionally outside
+  the parent-pin bump. A dry merge check against `b613ffcfd` succeeds
+  textually, but `src/Surface.zig` and `src/config/Config.zig` both changed on
+  both sides and need a semantic review before the next fork sync.
 
 Branch cleanup (April 18, 2026): deleted 15 stale local branches and 16 stale
 remote branches from the fork. Only `main` remains. All feature/sync branches
