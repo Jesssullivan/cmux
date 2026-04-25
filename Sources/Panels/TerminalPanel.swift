@@ -109,6 +109,7 @@ final class TerminalPanel: Panel, ObservableObject {
         workingDirectory: String? = nil,
         portOrdinal: Int = 0,
         initialCommand: String? = nil,
+        initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
@@ -118,6 +119,7 @@ final class TerminalPanel: Panel, ObservableObject {
             configTemplate: configTemplate,
             workingDirectory: workingDirectory,
             initialCommand: initialCommand,
+            initialInput: initialInput,
             initialEnvironmentOverrides: initialEnvironmentOverrides,
             additionalEnvironment: additionalEnvironment
         )

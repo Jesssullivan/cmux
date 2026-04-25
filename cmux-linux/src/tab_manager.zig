@@ -45,6 +45,25 @@ pub const TabManager = struct {
         self.ghostty_app = app;
     }
 
+    fn appendWorkspace(self: *TabManager, ws: *Workspace, no_surface: bool) !void {
+        try self.workspaces.append(self.alloc, ws);
+        const idx = self.workspaces.items.len - 1;
+
+        // Add tab page in AdwTabView (skip in test mode — GTK calls must be on main thread)
+        if (!no_surface) {
+            if (self.tab_view) |tv| {
+                if (ws.content_widget) |widget| {
+                    const page = c.gtk.adw_tab_view_append(tv, widget);
+                    if (page) |p| {
+                        c.gtk.adw_tab_page_set_title(p, ws.displayTitle().ptr);
+                    }
+                }
+            }
+        }
+
+        self.selected_index = idx;
+    }
+
     /// Create a new workspace with a single terminal panel.
     /// If CMUX_NO_SURFACE is set, creates an empty workspace (no terminal surface).
     pub fn createWorkspace(self: *TabManager) !*Workspace {
@@ -66,23 +85,20 @@ pub const TabManager = struct {
             ws.content_widget = split_tree.buildWidget(ws.root_node.?);
         }
 
-        // Add to workspace list
-        try self.workspaces.append(self.alloc, ws);
-        const idx = self.workspaces.items.len - 1;
+        try self.appendWorkspace(ws, no_surface);
+        return ws;
+    }
 
-        // Add tab page in AdwTabView (skip in test mode — GTK calls must be on main thread)
-        if (!no_surface) {
-            if (self.tab_view) |tv| {
-                if (ws.content_widget) |widget| {
-                    const page = c.gtk.adw_tab_view_append(tv, widget);
-                    if (page) |p| {
-                        c.gtk.adw_tab_page_set_title(p, ws.displayTitle().ptr);
-                    }
-                }
-            }
-        }
+    /// Create an empty workspace with no initial panel.
+    /// Used for headless transfer flows that move an existing panel into a
+    /// brand-new workspace without creating and destroying a temporary one.
+    pub fn createEmptyWorkspace(self: *TabManager) !*Workspace {
+        const ws = try self.alloc.create(Workspace);
+        ws.* = Workspace.init(self.alloc);
+        ws.id = generateId();
 
-        self.selected_index = idx;
+        const no_surface = std.posix.getenv("CMUX_NO_SURFACE") != null;
+        try self.appendWorkspace(ws, no_surface);
         return ws;
     }
 

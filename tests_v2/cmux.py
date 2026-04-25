@@ -33,6 +33,17 @@ class cmuxError(Exception):
     """Exception raised for cmux errors."""
 
 
+_BODY_ERROR_COMPAT_METHODS = {
+    # These Linux handlers still intentionally return structured errors in-body
+    # and existing parity tests assert on that exact response shape.
+    "surface.action",
+    "surface.send_key",
+    "surface.ports_kick",
+    "workspace.action",
+    "workspace.equalize_splits",
+}
+
+
 _APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/cmux")
 _STABLE_SOCKET_PATH = os.path.join(_APP_SUPPORT_DIR, "cmux.sock")
 _LEGACY_STABLE_SOCKET_PATH = "/tmp/cmux.sock"
@@ -261,7 +272,22 @@ class cmux:
             raise cmuxError(f"Mismatched response id: expected {req_id}, got {resp.get('id')}")
 
         if resp.get("ok") is True:
-            return resp.get("result")
+            result = resp.get("result")
+            if (
+                method not in _BODY_ERROR_COMPAT_METHODS
+                and isinstance(result, dict)
+                and "error" in result
+            ):
+                err = result.get("error")
+                if isinstance(err, dict):
+                    code = err.get("code") or "error"
+                    msg = err.get("message") or "Unknown error"
+                    data = err.get("data")
+                    if data is not None:
+                        raise cmuxError(f"{code}: {msg} ({data})")
+                    raise cmuxError(f"{code}: {msg}")
+                raise cmuxError(str(err))
+            return result
 
         err = resp.get("error") or {}
         code = err.get("code") or "error"

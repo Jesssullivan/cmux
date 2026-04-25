@@ -5,13 +5,17 @@
 # Usage: nix develop --command bash scripts/test-cjk-input.sh
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BINARY="cmux-linux/zig-out/bin/cmux"
 export LD_LIBRARY_PATH="$PWD/ghostty/zig-out/lib:${LD_LIBRARY_PATH:-}"
-export DISPLAY=:99
 export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
 export MESA_GLSL_VERSION_OVERRIDE=460
 export LIBGL_ALWAYS_SOFTWARE=1
 export XDG_RUNTIME_DIR="/tmp/xdg-cjk-test-$$"
+XVFB_LOG="/tmp/cmux-cjk-xvfb.log"
+
+# shellcheck source=./xvfb.sh
+source "$REPO_ROOT/scripts/xvfb.sh"
 
 PASS=0
 FAIL=0
@@ -75,9 +79,12 @@ if ! command -v socat &>/dev/null; then
 fi
 
 # Start Xvfb
-Xvfb :99 -screen 0 1280x720x24 +extension GLX &
-XVFB_PID=$!
-sleep 1
+if ! start_xvfb "1280x720x24" "$XVFB_LOG"; then
+  echo "  FATAL: Xvfb failed to become ready"
+  cat "$XVFB_LOG" 2>/dev/null || true
+  exit 1
+fi
+echo "  Xvfb ready on $DISPLAY"
 
 # ─── Start cmux-linux ──────────────────────────────────────
 echo ""

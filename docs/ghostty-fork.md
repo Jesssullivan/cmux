@@ -17,12 +17,53 @@ Fork rebased onto upstream `main` at `3509ccf78` (`v1.3.1-457-g3509ccf78`) on Ma
 Merged upstream through `0a492fdb3` (build: add pkg-config static linking support) on April 4, 2026.
 Synced again with upstream on April 11, 2026 (through `d289f66f`).
 Synced again with upstream on April 6, 2026 (PR #11, through `ca7516bea`).
+Synced again with upstream on April 25, 2026 (PR #12, through `c47a8091f`).
 
 As of April 18, 2026:
 
 - Current cmux pinned fork head: `e0f650766`
 - Current pushed fork `main`: `e0f650766`
 - Current upstream `main`: `ca7516bea`
+
+As of April 25, 2026:
+
+- Current checked-in cmux parent pin: `e8f62c061`
+- Current pushed fork `main`: `e8f62c061`
+- Current upstream `main`: `67b5783bd`
+- Fork drift versus upstream: 66 commits ahead, 47 commits behind
+- `Jesssullivan/ghostty#13` has landed in the owned fork's `main`. It fixes the
+  missing `.manual` case in `src/termio/backend.zig` exposed by the ReleaseFast
+  universal GhosttyKit build.
+- The GhosttyKit-only build passes at `e8f62c061` with the macOS 15.4 SDK shim
+  and `-Demit-macos-app=false`.
+- The full default build was not re-run for this parent-pin bump. The previous
+  full default build reached the optional macOS app bundle step and then failed
+  while resolving a Swift package revision.
+- The newest 47 upstream commits after `c47a8091f` remain intentionally outside
+  the parent-pin bump. `src/Surface.zig` and `src/config/Config.zig` both change
+  frequently and still need semantic review before the next fork sync.
+
+### Current ownership posture
+
+`Jesssullivan/ghostty#13` was handled as owned-fork maintenance, not as a
+planned `ghostty-org/ghostty` upstream submission.
+
+The immediate goal is to keep the `Jesssullivan/ghostty` fork buildable for the
+cmux/lmux parent pin after the April 25 upstream sync. Vouch or other upstream
+social-gating concerns should not turn this into a `ghostty-org` contribution
+lane by default.
+
+Current policy:
+
+- keep the PR #13 change in `Jesssullivan/ghostty`
+- move the cmux parent `ghostty` pointer only to commits reachable from
+  `Jesssullivan/ghostty/main`
+- do not prepare or submit this specific build fix to `ghostty-org` unless Jess
+  explicitly chooses that later
+
+Ghostty upstream candidates remain tracked in `docs/upstream-candidate-ledger.md`
+as future human handoff possibilities, not as part of the urgent parent-pin
+work.
 
 Branch cleanup (April 18, 2026): deleted 15 stale local branches and 16 stale
 remote branches from the fork. Only `main` remains. All feature/sync branches

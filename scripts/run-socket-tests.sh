@@ -29,6 +29,10 @@ TESTS_DIR="$REPO_ROOT/tests_v2"
 FILTER="${TEST_FILTER:-}"
 STDERR_LOG="/tmp/socket-tests-stderr.log"
 TAP_FILE="/tmp/socket-tests-results.tap"
+XVFB_LOG="/tmp/socket-tests-xvfb.log"
+
+# shellcheck source=./xvfb.sh
+source "$REPO_ROOT/scripts/xvfb.sh"
 
 resolve_nix_interpreter() {
   if [ -n "${NIX_LD:-}" ] && [ -e "${NIX_LD}" ]; then
@@ -75,7 +79,6 @@ if [ -n "$NIX_INTERP" ] && command -v patchelf &>/dev/null; then
   echo "Patching interpreter: $NIX_INTERP"
   patchelf --set-interpreter "$NIX_INTERP" "$BINARY" 2>/dev/null || true
 fi
-export DISPLAY=:99
 export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
 export MESA_GLSL_VERSION_OVERRIDE=460
 export LIBGL_ALWAYS_SOFTWARE=1
@@ -84,9 +87,12 @@ mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 export CMUX_SOCKET="$XDG_RUNTIME_DIR/cmux.sock"
 
 # Start Xvfb
-Xvfb :99 -screen 0 1280x720x24 +extension GLX &
-XVFB_PID=$!
-sleep 1
+if ! start_xvfb "1280x720x24" "$XVFB_LOG"; then
+  echo "FAIL: Xvfb failed to become ready"
+  cat "$XVFB_LOG" 2>/dev/null || true
+  exit 1
+fi
+echo "Xvfb ready on $DISPLAY"
 
 # Start daemon in test mode (CMUX_NO_SURFACE prevents GL crash, daemon survives indefinitely)
 echo "=== Starting cmux daemon (CMUX_NO_SURFACE=1) ==="
@@ -108,7 +114,7 @@ fi
 echo "Socket ready"
 
 # ── Baseline allowlist ──────────────────────────────────────────────
-# The 15 tests known to pass on cmux-linux today. A failure in any of
+# The 18 tests known to pass on cmux-linux today. A failure in any of
 # these fails the job.
 BASELINE=(
   test_close_surface_selection
@@ -121,6 +127,9 @@ BASELINE=(
   test_signals_auto
   test_surface_split_tree
   test_system_api
+  test_surface_action_rename
+  test_surface_action_close_variants
+  test_surface_action_new_reload_duplicate
   test_trigger_flash
   test_windows_api
   test_workspace_lifecycle
@@ -136,10 +145,7 @@ CANDIDATES_PHASE1=(
   test_browser_open_split_reuse_policy
   test_workspace_create_background_starts_terminal
   test_workspace_create_initial_env
-  # Sprint A handlers (PRs #218-#229):
-  test_surface_action_rename
-  test_surface_action_close_variants
-  test_surface_action_new_reload_duplicate
+  # Remaining Sprint A / Sprint B gaps observed on run 24743528001.
   test_workspace_action
   test_auth_login
   test_system_tree

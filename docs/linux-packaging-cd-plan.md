@@ -8,27 +8,36 @@ Use it with:
 - `docs/linux-program-plan.md`
 - `docs/linux-validation-checklist.md`
 - `docs/linux-parity-matrix.md`
+- `docs/flakehub-qa-ownership-notes.md`
 - `docs/program-status.md`
 
 ## Current State
 
-As of 2026-04-13:
+As of 2026-04-25:
 
 - hosted Linux CI is green across `Ubuntu 24.04`, `Fedora 42`, `Rocky 10`,
   `Debian 12` baseline, `Arch`, and the vendor-library lane
-- self-hosted distro package-install tests exist, but only for `Ubuntu 24.04`,
-  `Debian 12`, and `Rocky 9` as an RPM-path proxy
+- self-hosted distro package-install tests now execute real `.sandboxed` VM
+  runs for `Ubuntu 24.04`, `Debian 12`, `Fedora 42`, and `Rocky 9` as an
+  RPM-path proxy
+- the release workflow now builds a separate Rocky 10 terminal-first RPM and
+  wires it into the release-gated VM validator
 - Linux release automation builds:
   - `DEB`
   - `RPM`
   - generic Linux tarball
 - tagged Linux releases now validate the just-built `DEB`/`RPM` artifacts on
   the self-hosted KVM lane before uploading Linux assets to GitHub Releases
+- `numtide/nix-vm-test#172` merged on 2026-04-22 with `Fedora 42` and
+  `Rocky 10.1` images; the repo now pins upstream `numtide/nix-vm-test` at
+  `be5379d`
 - Flatpak is built in CI, but is not yet part of the release-upload path
 - `Jesssullivan/cmux` intentionally uses Magic Nix Cache rather than FlakeHub
   Cache
 - `tinyland-inc/lab` remains the active FlakeHub-heavy org lane and the main
   self-hosted Linux builder experiment surface
+- `Jesssullivan/nix-vm-test` exists as the previous owned contingency fork, but
+  it is no longer the pinned flake input surface
 
 ## Current Artifact Surface
 
@@ -61,13 +70,20 @@ What it proves today:
 - actual `.deb`/`.rpm` artifacts can be installed in QEMU guests
 - package manager dependency resolution runs in a real distro image
 - runtime linker checks can be performed after install
+- the current checks execute the VM runs themselves, not just the driver
+  derivations
 
 Current limits:
 - runs on trusted push/manual only, not on pull requests
 - still pinned to a checked-in release artifact manifest
-- `Fedora 42` and `Rocky 10` are not yet covered here; upstream
-  `nix-vm-test` currently exposes `Fedora 39-41` and `Rocky 8.6-9.6`
+- `Fedora 42` is now covered and upstream image support has landed, but the
+  first green CI evidence still needs to be recorded
+- `Rocky 10` is now wired through a distinct no-WebKit RPM lane, but the
+  checked-in manifest still lacks a published `rpmRocky` asset and the first
+  green CI result still needs to be recorded
 - `Rocky 9` is still a temporary RPM-path proxy
+- the remaining blocker is artifact truth and Rocky 10 packaging fit, not cache
+  account shape or VM-image availability
 
 ### 3. Linux release workflows
 
@@ -83,8 +99,9 @@ What they do today:
 - upload macOS assets separately through the fork release workflow
 
 Current limit:
-- Linux release gating still covers only the currently implemented distro VM
-  matrix: `Ubuntu 24.04`, `Debian 12`, and `Rocky 9` as an RPM-path proxy
+- Linux release gating currently covers `Ubuntu 24.04`, `Debian 12`,
+  `Fedora 42`, `Rocky 10`, and `Rocky 9` as the temporary proxy; `arm64`
+  remains outside the gated VM matrix
 
 ### 4. Flatpak
 
@@ -153,6 +170,10 @@ Current read:
 
 - the shipped Linux binary links `libwebkitgtk-6.0.so.4`, so the broad-feature
   `DEB`/`RPM` lanes should declare WebKitGTK explicitly
+- the current RPM requirement on `webkitgtk6.0` is honest for Fedora 42, but it
+  means the same RPM is not a truthful default artifact for Rocky 10
+- the branch now addresses that by producing a separate no-WebKit Rocky 10 RPM
+  instead of pretending one RPM covers both distro classes
 - the shipped Linux binary does not currently link `libsecret` or `libnotify`,
   so those should not be declared as package requirements just because helper
   libraries exist elsewhere in the tree
@@ -199,6 +220,24 @@ Rationale:
 - this repo is a personal fork and should remain healthy without forcing
   ownership changes for cache tooling
 
+### `Jesssullivan/nix-vm-test`
+
+Current posture:
+
+- personal fork of `numtide/nix-vm-test`
+- previous fallback for `Fedora 42` and `Rocky 10.1` image support
+- no open pull requests
+- issues disabled
+- superseded by upstream `numtide/nix-vm-test#172`
+- no longer the cmux pinned flake input
+
+Interpretation:
+
+- this is an owned contingency surface for future image or harness carry work
+- it is not the canonical planning surface for distro QA decisions
+- any divergence must be tracked back in `Jesssullivan/cmux` issues and Tinyland
+  Linear
+
 ### `tinyland-inc/lab`
 
 Current posture:
@@ -237,8 +276,8 @@ Expand fresh-install proof to:
 
 1. `Ubuntu 24.04` DEB
 2. `Debian 12` DEB
-3. `Fedora 42` RPM
-4. `Rocky 10` runtime/package path once the harness is ready
+3. `Fedora 42` RPM and keep it green
+4. `Rocky 10` runtime/package path with a truthful terminal-first artifact
 
 ### Phase 4: Flatpak decision
 
@@ -255,15 +294,22 @@ If it becomes first-class, it should be reflected in:
 
 ## Near-Term Priority Order
 
-1. merge `#205`
-2. fix Linux artifact truth:
+1. finish signed-package install docs:
+   - apt/rpm verification commands
+   - supported distro tier wording
+   - clear Rocky 10 terminal-first caveat
+2. finish distribution runbooks:
+   - Flathub submission handoff
+   - AUR `PKGBUILD` scaffold
+   - COPR spec scaffold
+3. fix Linux artifact truth:
    - license fields
    - package descriptions
    - parity claims
-3. expand release-gated fresh-install coverage to Fedora 42 and Rocky 10 when
-   the harness allows it
-4. audit runtime dependency declarations for the broad-feature package lanes
-5. decide whether Flatpak becomes a first-class published artifact
+4. keep Fedora 42 release-gated proof green and record the first green Rocky 10
+   constrained-distro run
+5. audit runtime dependency declarations for the broad-feature package lanes
+6. decide whether Flatpak becomes a first-class published artifact
 
 ## Success Criteria
 

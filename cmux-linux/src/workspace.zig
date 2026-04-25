@@ -3,7 +3,6 @@
 /// Each workspace owns a split tree of terminal/browser panels,
 /// plus metadata (title, color, directory, git branch, status).
 /// Maps to macOS Sources/Workspace.swift.
-
 const std = @import("std");
 const split_tree = @import("split_tree.zig");
 const c = @import("c_api.zig");
@@ -18,6 +17,9 @@ pub const PanelType = enum {
 
 pub const Panel = struct {
     id: u128,
+    /// Logical pane identifier. On Linux this is usually equal to `id`,
+    /// but headless browser reuse can attach multiple surfaces to one pane.
+    pane_id: u128,
     panel_type: PanelType,
     title: ?[]const u8 = null,
     custom_title: ?[]const u8 = null,
@@ -34,6 +36,52 @@ pub const Panel = struct {
     progress_state: c.ghostty.ghostty_action_progress_report_state_e = c.ghostty.GHOSTTY_PROGRESS_STATE_REMOVE,
     /// Progress percentage (0-100). Null if no progress has been reported yet.
     progress_value: ?u8 = null,
+    /// Headless socket-test state used when CMUX_NO_SURFACE is enabled.
+    mock_terminal: MockTerminalState = .{},
+};
+
+pub const MockTerminalState = struct {
+    transcript: std.ArrayListUnmanaged(u8) = .{},
+    working_directory: ?[]const u8 = null,
+    env_overrides: ?std.process.EnvMap = null,
+
+    pub fn deinit(self: *MockTerminalState, alloc: Allocator) void {
+        self.transcript.deinit(alloc);
+        if (self.working_directory) |cwd| alloc.free(cwd);
+        if (self.env_overrides) |*env| env.deinit();
+        self.env_overrides = null;
+    }
+
+    pub fn setWorkingDirectory(self: *MockTerminalState, alloc: Allocator, cwd: ?[]const u8) !void {
+        if (self.working_directory) |old| {
+            alloc.free(old);
+            self.working_directory = null;
+        }
+        if (cwd) |value| {
+            self.working_directory = try alloc.dupe(u8, value);
+        }
+    }
+
+    pub fn clearEnvOverrides(self: *MockTerminalState) void {
+        if (self.env_overrides) |*env| env.deinit();
+        self.env_overrides = null;
+    }
+
+    pub fn putEnvOverride(self: *MockTerminalState, alloc: Allocator, key: []const u8, value: []const u8) !void {
+        if (self.env_overrides == null) {
+            self.env_overrides = std.process.EnvMap.init(alloc);
+        }
+        try self.env_overrides.?.put(key, value);
+    }
+
+    pub fn appendTranscript(self: *MockTerminalState, alloc: Allocator, text: []const u8) !void {
+        if (text.len == 0) return;
+        try self.transcript.appendSlice(alloc, text);
+    }
+
+    pub fn transcriptText(self: *const MockTerminalState) []const u8 {
+        return self.transcript.items;
+    }
 };
 
 pub const StatusEntry = struct {
@@ -95,8 +143,7 @@ pub const Workspace = struct {
         var it = self.panels.valueIterator();
         while (it.next()) |panel_ptr| {
             const panel = panel_ptr.*;
-            if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
-            self.alloc.destroy(panel);
+            self.destroyPanel(panel);
         }
         self.panels.deinit(self.alloc);
         self.ordered_panels.deinit(self.alloc);
@@ -112,6 +159,7 @@ pub const Workspace = struct {
         const panel = try self.alloc.create(Panel);
         panel.* = .{
             .id = id,
+            .pane_id = id,
             .panel_type = .terminal,
         };
 
@@ -138,6 +186,7 @@ pub const Workspace = struct {
         const panel = try self.alloc.create(Panel);
         panel.* = .{
             .id = id,
+            .pane_id = id,
             .panel_type = .browser,
             .url = if (url) |u| self.alloc.dupe(u8, u) catch null else null,
         };
@@ -159,6 +208,7 @@ pub const Workspace = struct {
         const panel = try self.alloc.create(Panel);
         panel.* = .{
             .id = id,
+            .pane_id = id,
             .panel_type = panel_type,
         };
         try self.panels.put(self.alloc, id, panel);
@@ -170,8 +220,7 @@ pub const Workspace = struct {
     /// Remove a panel by ID from both maps.
     pub fn removePanel(self: *Workspace, panel_id: u128) void {
         if (self.panels.get(panel_id)) |panel| {
-            if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
-            self.alloc.destroy(panel);
+            self.destroyPanel(panel);
             _ = self.panels.remove(panel_id);
         }
         // Remove from ordered list
@@ -213,9 +262,81 @@ pub const Workspace = struct {
         self.focused_panel_id = panel.id;
     }
 
+    /// Rebuild a simple left-associated split tree from ordered_panels.
+    /// Headless socket tests use this to keep tree state consistent with the
+    /// authoritative ordered panel list after structural operations.
+    pub fn rebuildLinearSplitTree(self: *Workspace) !void {
+        if (self.root_node) |node| {
+            split_tree.destroy(self.alloc, node);
+            self.root_node = null;
+        }
+        self.content_widget = null;
+
+        if (self.ordered_panels.items.len == 0) {
+            self.focused_panel_id = null;
+            return;
+        }
+
+        var first_pane_id: ?u128 = null;
+        for (self.ordered_panels.items) |panel_id| {
+            const panel = self.panels.get(panel_id) orelse continue;
+            const pane_id = panel.pane_id;
+            if (first_pane_id != null) continue;
+            const anchor = self.panels.get(pane_id) orelse panel;
+            self.root_node = try split_tree.createLeaf(self.alloc, pane_id, anchor.widget);
+            first_pane_id = pane_id;
+            break;
+        }
+        if (self.root_node == null) {
+            self.focused_panel_id = null;
+            return;
+        }
+
+        for (self.ordered_panels.items, 0..) |panel_id, panel_index| {
+            const panel = self.panels.get(panel_id) orelse continue;
+            const pane_id = panel.pane_id;
+            var seen_earlier = false;
+            for (self.ordered_panels.items[0..panel_index]) |prior_id| {
+                const prior_panel = self.panels.get(prior_id) orelse continue;
+                if (prior_panel.pane_id == pane_id) {
+                    seen_earlier = true;
+                    break;
+                }
+            }
+            if (seen_earlier or pane_id == first_pane_id.?) continue;
+            const anchor = self.panels.get(pane_id) orelse panel;
+            self.root_node = try split_tree.splitPane(
+                self.alloc,
+                self.root_node.?,
+                .horizontal,
+                pane_id,
+                anchor.widget,
+            );
+        }
+
+        if (self.focused_panel_id) |focused_id| {
+            if (self.panels.get(focused_id) != null) return;
+        }
+        for (self.ordered_panels.items) |panel_id| {
+            if (self.panels.get(panel_id) != null) {
+                self.focused_panel_id = panel_id;
+                return;
+            }
+        }
+        self.focused_panel_id = null;
+    }
+
     /// Get the number of panels.
     pub fn panelCount(self: *const Workspace) usize {
         return self.panels.count();
+    }
+
+    pub fn firstPanelIdForPane(self: *const Workspace, pane_id: u128) ?u128 {
+        for (self.ordered_panels.items) |panel_id| {
+            const panel = self.panels.get(panel_id) orelse continue;
+            if (panel.pane_id == pane_id) return panel.id;
+        }
+        return null;
     }
 
     /// Get the focused panel.
@@ -233,6 +354,18 @@ pub const Workspace = struct {
     /// Get the display title (custom > process > default).
     pub fn displayTitle(self: *const Workspace) []const u8 {
         return self.custom_title orelse self.title orelse "Terminal";
+    }
+
+    fn destroyPanel(self: *Workspace, panel: *Panel) void {
+        if (panel.surface) |s| c.ghostty.ghostty_surface_free(s);
+        if (panel.title) |value| self.alloc.free(value);
+        if (panel.custom_title) |value| self.alloc.free(value);
+        if (panel.directory) |value| self.alloc.free(value);
+        if (panel.url) |value| self.alloc.free(value);
+        if (panel.git_branch) |value| self.alloc.free(value);
+        if (panel.tty_name) |value| self.alloc.free(value);
+        panel.mock_terminal.deinit(self.alloc);
+        self.alloc.destroy(panel);
     }
 };
 

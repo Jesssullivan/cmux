@@ -61,8 +61,22 @@ def _ensure_workspaces(client: cmux, count: int) -> List[str]:
     return created
 
 
+def _cleanup_new_workspaces(client: cmux, baseline_ids: List[str]) -> None:
+    baseline = set(baseline_ids)
+    current_ids = [wid for _idx, wid, _title, _sel in client.list_workspaces()]
+    for workspace_id in current_ids:
+        if workspace_id in baseline:
+            continue
+        try:
+            client.close_workspace(workspace_id)
+            time.sleep(0.05)
+        except Exception:
+            pass
+
+
 def test_close_middle_selects_next(client: cmux) -> TestResult:
     result = TestResult("Close Selected Middle Workspace Selects Next")
+    baseline_ids = [wid for _idx, wid, _title, _sel in client.list_workspaces()]
     try:
         _ensure_workspaces(client, 3)
 
@@ -100,11 +114,14 @@ def test_close_middle_selects_next(client: cmux) -> TestResult:
         result.success("Selection moved to the workspace below (same index after removal)")
     except Exception as e:
         result.failure(f"Exception: {e}")
+    finally:
+        _cleanup_new_workspaces(client, baseline_ids)
     return result
 
 
 def test_close_last_selects_previous(client: cmux) -> TestResult:
     result = TestResult("Close Selected Last Workspace Selects Previous")
+    baseline_ids = [wid for _idx, wid, _title, _sel in client.list_workspaces()]
     try:
         _ensure_workspaces(client, 3)
 
@@ -145,6 +162,8 @@ def test_close_last_selects_previous(client: cmux) -> TestResult:
         result.success("Selection moved to the previous workspace when closing the last")
     except Exception as e:
         result.failure(f"Exception: {e}")
+    finally:
+        _cleanup_new_workspaces(client, baseline_ids)
     return result
 
 
@@ -171,4 +190,3 @@ def run_tests() -> int:
 
 if __name__ == "__main__":
     sys.exit(run_tests())
-

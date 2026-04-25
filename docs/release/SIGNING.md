@@ -6,6 +6,9 @@ gated on three GitHub Actions secrets in the `Jesssullivan/cmux` repo. If
 the secrets are absent the script no-ops, so local/unsigned builds keep
 working.
 
+For end-user install and verification commands, see
+`docs/release/linux-install.md`.
+
 ## What gets signed
 
 | Artifact         | Signature              | Verification                   |

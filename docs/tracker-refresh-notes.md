@@ -50,30 +50,35 @@ Recommended refresh:
 ### `#187` Rocky 10 tracking
 
 Current problem:
-- the issue body still says Rocky 10 has not been released
+- the issue body still needs to emphasize the current artifact/proxy blocker
 
 Current repo reality:
-- Rocky 10 is GA, but `nix-vm-test` support remains the blocker
+- Rocky 10 is GA, and upstream `nix-vm-test` now has Rocky 10.1 image support
+- the current remaining work is producing/validating a truthful terminal-first
+  artifact and retiring the Rocky 9 proxy
 - Rocky is also a constrained distro for browser parity because system WebKitGTK
   is not the normal path
 
 Recommended refresh:
-- update the issue body to say Rocky 10 is available, but current automation
-  support is lagging
+- update the issue body or add a status comment for the post-`nix-vm-test#172`
+  state
 - distinguish package-install validation from browser parity
 
-### `#199` Fork landscape and upstream opportunities
+### `#199` Fork landscape and upstream preparation
 
 Current problem:
-- directionally correct, but should stay clearly non-blocking
+- the closed issue body still advertised direct upstream PRs/contributions
+- that no longer matches the fork's owned-surface policy
 
 Current repo reality:
-- still useful as a maintenance umbrella for upstreamable slices
+- still useful as a closed historical audit and maintenance reference
+- upstreamable slices should be staged only in owned docs/trackers until a
+  human explicitly performs the upstream action by hand
 
 Recommended refresh:
-- keep open
-- explicitly mark it as a parallel maintenance lane, not part of Linux critical
-  path
+- keep it closed
+- rewrite the body so it references the owned planning docs instead of direct
+  upstream action items
 - note that any upstream submission work is manual and outside agent scope
 
 ### `#201` Tailnet direct `cmuxd-remote`
@@ -123,7 +128,7 @@ Recommended refresh:
 2. `#55` Linux epic
 3. missing explicit Linux gap coverage under `#55` or new issues
 4. `#76` naming RFC
-5. `#199` fork landscape
+5. `#199` fork landscape archive note
 6. `#201` remote/Tailnet lane wording
 
 ## Rule

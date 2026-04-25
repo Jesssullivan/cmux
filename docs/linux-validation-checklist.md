@@ -208,12 +208,16 @@ Current note:
 
 ## Current Gaps
 
-- Fedora 42 is covered in container build validation, but not yet in
-  `nix/tests-distro.nix` package-install VM coverage; upstream `nix-vm-test`
-  currently tops out at Fedora 41
-- Rocky 10 is covered in container build validation, but package-install VM
-  coverage still lags because upstream `nix-vm-test` currently tops out at
-  Rocky 9.6
+- current distro package tests now resolve to real `.sandboxed` VM runs rather
+  than driver-only derivations
+- upstream `numtide/nix-vm-test#172` merged on 2026-04-22 with `Fedora 42` and
+  `Rocky 10.1` image support; the repo now pins upstream `numtide/nix-vm-test`
+- Fedora 42 package-install VM coverage is now wired in
+  `nix/tests-distro.nix`, `test-distro.yml`, and `release-linux.yml`, but it
+  still needs first green CI evidence
+- Rocky 10 now has a dedicated terminal-first RPM lane on the branch, but the
+  checked-in release manifest still lacks a published `rpmRocky` asset and the
+  first green VM proof still needs to be recorded
 - Rocky 9 is still being used as an RPM-path proxy and should be treated as
   temporary coverage, not as the target distro itself
 - Rocky 10 tracking and repo issue wording need to match current reality

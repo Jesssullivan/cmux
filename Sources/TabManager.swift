@@ -881,7 +881,6 @@ class TabManager: ObservableObject {
     private nonisolated static let initialWorkspaceGitProbeDelays: [TimeInterval] = [0, 0.5, 1.5, 3.0, 6.0, 10.0]
     private nonisolated static let backgroundPollInterval: TimeInterval = 60
     private nonisolated static let selectedPollInterval: TimeInterval = 10
-    private nonisolated static let workspacePullRequestPollTickInterval: TimeInterval = 1
     private nonisolated static let workspacePullRequestRepoCacheLifetime: TimeInterval = 15
     private nonisolated static let workspacePullRequestRepoCachePruneLifetime: TimeInterval = 60
     private nonisolated static let workspacePullRequestRepoPageSize = 100
@@ -997,6 +996,7 @@ class TabManager: ObservableObject {
     private var workspaceCycleCooldownTask: Task<Void, Never>?
     private var pendingWorkspaceUnfocusTarget: (tabId: UUID, panelId: UUID)?
     private var sidebarSelectedWorkspaceIds: Set<UUID> = []
+    private var closeConfirmationInFlight = false
     var confirmCloseHandler: ((String, String, Bool) -> Bool)?
     private struct WorkspaceCreationTabSnapshot {
         let id: UUID
@@ -1067,7 +1067,7 @@ class TabManager: ObservableObject {
         startAgentPIDSweepTimer()
         startWorkspaceGitMetadataPollTimer()
         startSelectedWorkspaceGitMetadataPollTimer()
-        startWorkspacePullRequestPollTimer()
+        updateWorkspacePullRequestPollTimer()
 #if DEBUG
         setupUITestFocusShortcutsIfNeeded()
         setupSplitCloseRightUITestIfNeeded()
@@ -1140,18 +1140,37 @@ class TabManager: ObservableObject {
         selectedWorkspaceGitMetadataPollTimer = timer
     }
 
-    private func startWorkspacePullRequestPollTimer() {
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        let interval = Self.workspacePullRequestPollTickInterval
-        timer.schedule(deadline: .now() + interval, repeating: interval)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.refreshTrackedWorkspacePullRequestsIfNeeded(reason: "timer")
-            }
+    private func updateWorkspacePullRequestPollTimer() {
+        guard workspacePullRequestRefreshTask == nil else {
+            workspacePullRequestPollTimer?.cancel()
+            workspacePullRequestPollTimer = nil
+            return
         }
-        timer.resume()
-        workspacePullRequestPollTimer = timer
+
+        guard let nextPollAt = workspacePullRequestNextPollAtByKey.values.min() else {
+            workspacePullRequestPollTimer?.cancel()
+            workspacePullRequestPollTimer = nil
+            return
+        }
+
+        if workspacePullRequestPollTimer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                DispatchQueue.main.async { [weak self] in
+                    self?.refreshTrackedWorkspacePullRequestsIfNeeded(reason: "timer")
+                }
+            }
+            timer.resume()
+            workspacePullRequestPollTimer = timer
+        }
+
+        let delay = max(0.25, nextPollAt.timeIntervalSinceNow)
+        workspacePullRequestPollTimer?.schedule(
+            deadline: .now() + delay,
+            repeating: .never,
+            leeway: .milliseconds(250)
+        )
     }
 
     private func refreshTrackedWorkspaceGitMetadata() {
@@ -1257,7 +1276,16 @@ class TabManager: ObservableObject {
         }
 
         pruneWorkspacePullRequestTracking(validKeys: validKeys)
-        guard !candidates.isEmpty, workspacePullRequestRefreshTask == nil else { return }
+        guard workspacePullRequestRefreshTask == nil else {
+            updateWorkspacePullRequestPollTimer()
+            return
+        }
+        guard !candidates.isEmpty else {
+            updateWorkspacePullRequestPollTimer()
+            return
+        }
+        workspacePullRequestPollTimer?.cancel()
+        workspacePullRequestPollTimer = nil
         for key in requestedKeys {
             workspacePullRequestProbeStateByKey[key] = .inFlight(rerunPending: false)
         }
@@ -1486,6 +1514,8 @@ class TabManager: ObservableObject {
             )
 #endif
         }
+
+        updateWorkspacePullRequestPollTimer()
     }
 
     private func scheduleNextWorkspacePullRequestPoll(
@@ -1536,6 +1566,7 @@ class TabManager: ObservableObject {
         workspacePullRequestRepoCacheBySlug = workspacePullRequestRepoCacheBySlug.filter {
             $0.value.fetchedAt >= repoCacheCutoff
         }
+        updateWorkspacePullRequestPollTimer()
     }
 
     private func clearWorkspacePullRequestTracking(for key: WorkspaceGitProbeKey) {
@@ -1543,6 +1574,7 @@ class TabManager: ObservableObject {
         workspacePullRequestProbeStateByKey.removeValue(forKey: key)
         workspacePullRequestLastTerminalStateRefreshAtByKey.removeValue(forKey: key)
         workspacePullRequestTransientFailureCountByKey.removeValue(forKey: key)
+        updateWorkspacePullRequestPollTimer()
     }
 
     private func clearWorkspacePullRequestTracking(workspaceId: UUID) {
@@ -1550,6 +1582,7 @@ class TabManager: ObservableObject {
         workspacePullRequestProbeStateByKey = workspacePullRequestProbeStateByKey.filter { $0.key.workspaceId != workspaceId }
         workspacePullRequestLastTerminalStateRefreshAtByKey = workspacePullRequestLastTerminalStateRefreshAtByKey.filter { $0.key.workspaceId != workspaceId }
         workspacePullRequestTransientFailureCountByKey = workspacePullRequestTransientFailureCountByKey.filter { $0.key.workspaceId != workspaceId }
+        updateWorkspacePullRequestPollTimer()
     }
 
     private func resetWorkspacePullRequestRefreshState() {
@@ -1561,6 +1594,7 @@ class TabManager: ObservableObject {
         workspacePullRequestTransientFailureCountByKey.removeAll()
         workspacePullRequestRepoCacheBySlug.removeAll()
         workspacePullRequestFollowUpShouldBypassRepoCache = false
+        updateWorkspacePullRequestPollTimer()
     }
 
     private var activeWorkspaceGitProbeKeys: Set<WorkspaceGitProbeKey> {
@@ -1902,6 +1936,7 @@ class TabManager: ObservableObject {
         portOrdinal: Int,
         configTemplate: CmuxSurfaceConfigTemplate?,
         initialTerminalCommand: String?,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String]
     ) -> Workspace {
         Workspace(
@@ -1910,6 +1945,7 @@ class TabManager: ObservableObject {
             portOrdinal: portOrdinal,
             configTemplate: configTemplate,
             initialTerminalCommand: initialTerminalCommand,
+            initialTerminalInput: initialTerminalInput,
             initialTerminalEnvironment: initialTerminalEnvironment
         )
     }
@@ -1961,6 +1997,7 @@ class TabManager: ObservableObject {
         title: String? = nil,
         workingDirectory overrideWorkingDirectory: String? = nil,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:],
         select: Bool = true,
         eagerLoadTerminal: Bool = false,
@@ -2008,6 +2045,7 @@ class TabManager: ObservableObject {
                 portOrdinal: ordinal,
                 configTemplate: inheritedConfig,
                 initialTerminalCommand: initialTerminalCommand,
+                initialTerminalInput: initialTerminalInput,
                 initialTerminalEnvironment: initialTerminalEnvironment
             )
             applyCreationChromeInheritance(
@@ -3626,6 +3664,11 @@ class TabManager: ObservableObject {
         tab.setCustomColor(color)
     }
 
+    func setWorkspaceTerminalScrollBarHidden(tabId: UUID, hidden: Bool) {
+        guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
+        tab.setTerminalScrollBarHidden(hidden)
+    }
+
     func togglePin(tabId: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabId }) else { return }
         let tab = tabs[index]
@@ -3919,6 +3962,7 @@ class TabManager: ObservableObject {
 #if DEBUG
         UITestRecorder.incrementInt("closePanelInvocations")
 #endif
+        guard !closeConfirmationInFlight else { return }
         guard let selectedId = selectedTabId,
               let tab = tabs.first(where: { $0.id == selectedId }) else { return }
         reconcileFocusedPanelFromFirstResponderForKeyboard()
@@ -3931,6 +3975,7 @@ class TabManager: ObservableObject {
     }
 
     func closeOtherTabsInFocusedPaneWithConfirmation() {
+        guard !closeConfirmationInFlight else { return }
         guard let plan = closeOtherTabsInFocusedPanePlan() else { return }
 
         if BatchCloseSettings.isEnabled() {
@@ -3953,6 +3998,7 @@ class TabManager: ObservableObject {
 #if DEBUG
         UITestRecorder.incrementInt("closeTabInvocations")
 #endif
+        guard !closeConfirmationInFlight else { return }
         let sidebarSelectionIds = orderedSidebarSelectedWorkspaceIds()
         if sidebarSelectionIds.count > 1 {
             closeWorkspacesWithConfirmation(sidebarSelectionIds, allowPinned: true)
@@ -4039,7 +4085,24 @@ class TabManager: ObservableObject {
     // Keep selectTab as convenience alias
     func selectTab(_ tab: Workspace) { selectWorkspace(tab) }
 
-    private func confirmClose(title: String, message: String, acceptCmdD: Bool) -> Bool {
+    var isCloseConfirmationInFlight: Bool { closeConfirmationInFlight }
+
+    func beginCloseConfirmationSession() -> Bool {
+        guard !closeConfirmationInFlight else { return false }
+        closeConfirmationInFlight = true
+        return true
+    }
+
+    func endCloseConfirmationSession() {
+        DispatchQueue.main.async { [weak self] in
+            self?.closeConfirmationInFlight = false
+        }
+    }
+
+    func confirmClose(title: String, message: String, acceptCmdD: Bool) -> Bool {
+        guard beginCloseConfirmationSession() else { return false }
+        defer { endCloseConfirmationSession() }
+
         if let confirmCloseHandler {
             return confirmCloseHandler(title, message, acceptCmdD)
         }
@@ -6807,6 +6870,7 @@ extension TabManager {
             hasher.combine(workspace.customDescription ?? "")
             hasher.combine(workspace.customColor ?? "")
             hasher.combine(workspace.isPinned)
+            hasher.combine(workspace.terminalScrollBarHidden)
             hasher.combine(workspace.panels.count)
             hasher.combine(workspace.statusEntries.count)
             hasher.combine(workspace.metadataBlocks.count)

@@ -20,6 +20,24 @@ const json = std.json;
 
 /// A resolved surface reference: panel ID + owning workspace.
 const SurfaceRef = struct { id: u128, ws: *Workspace };
+const PaneRef = struct { id: u128, ws: *Workspace };
+const Branch = enum { first, second };
+const NormalizedRect = struct {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+};
+const LeafFrame = struct {
+    pane_id: u128,
+    rect: NormalizedRect,
+};
+const BrowserPathCrumb = struct {
+    orientation: split_tree.Orientation,
+    branch: Branch,
+    sibling: *split_tree.Node,
+    sibling_rect: NormalizedRect,
+};
 
 /// Format a u128 as a zero-padded 32-char hex string.
 fn formatId(id: u128) [32]u8 {
@@ -529,6 +547,184 @@ fn findSurfaceGlobal(tm: *@import("tab_manager.zig").TabManager, id_str: []const
     return null;
 }
 
+fn paneSeenEarlier(ws: *Workspace, panel_index: usize, pane_id: u128) bool {
+    for (ws.ordered_panels.items[0..panel_index]) |prior_id| {
+        const prior_panel = ws.panels.get(prior_id) orelse continue;
+        if (prior_panel.pane_id == pane_id) return true;
+    }
+    return false;
+}
+
+fn countPaneSurfaces(ws: *Workspace, pane_id: u128) usize {
+    var count: usize = 0;
+    for (ws.ordered_panels.items) |panel_id| {
+        const panel = ws.panels.get(panel_id) orelse continue;
+        if (panel.pane_id == pane_id) count += 1;
+    }
+    return count;
+}
+
+fn findPaneInWorkspace(ws: *Workspace, id_str: []const u8) ?u128 {
+    if (parseRef(id_str)) |ref| {
+        if (ref.kind != .pane) return null;
+        var pane_index: usize = 0;
+        for (ws.ordered_panels.items, 0..) |panel_id, panel_index_in_order| {
+            const panel = ws.panels.get(panel_id) orelse continue;
+            if (paneSeenEarlier(ws, panel_index_in_order, panel.pane_id)) continue;
+            if (pane_index == ref.ordinal) return panel.pane_id;
+            pane_index += 1;
+        }
+        return null;
+    }
+
+    const target_id = parseId(id_str) orelse return null;
+    for (ws.ordered_panels.items) |panel_id| {
+        const panel = ws.panels.get(panel_id) orelse continue;
+        if (panel.pane_id == target_id) return target_id;
+    }
+    return null;
+}
+
+fn findPaneGlobal(tm: *@import("tab_manager.zig").TabManager, id_str: []const u8) ?PaneRef {
+    if (parseRef(id_str)) |ref| {
+        if (ref.kind != .pane) return null;
+        const ws = tm.selectedWorkspace() orelse return null;
+        const pane_id = findPaneInWorkspace(ws, id_str) orelse return null;
+        return .{ .id = pane_id, .ws = ws };
+    }
+
+    const target_id = parseId(id_str) orelse return null;
+    for (tm.workspaces.items) |ws| {
+        if (findPaneInWorkspace(ws, id_str)) |pane_id| {
+            return .{ .id = pane_id, .ws = ws };
+        }
+        _ = target_id;
+    }
+    return null;
+}
+
+fn currentPaneId(ws: *Workspace) ?u128 {
+    const focused_id = ws.focused_panel_id orelse return null;
+    const panel = ws.panels.get(focused_id) orelse return null;
+    return panel.pane_id;
+}
+
+fn splitRect(rect: NormalizedRect, orientation: split_tree.Orientation, ratio: f64) struct { first: NormalizedRect, second: NormalizedRect } {
+    return switch (orientation) {
+        .horizontal => .{
+            .first = .{ .x = rect.x, .y = rect.y, .width = rect.width * ratio, .height = rect.height },
+            .second = .{ .x = rect.x + (rect.width * ratio), .y = rect.y, .width = rect.width * (1.0 - ratio), .height = rect.height },
+        },
+        .vertical => .{
+            .first = .{ .x = rect.x, .y = rect.y, .width = rect.width, .height = rect.height * ratio },
+            .second = .{ .x = rect.x, .y = rect.y + (rect.height * ratio), .width = rect.width, .height = rect.height * (1.0 - ratio) },
+        },
+    };
+}
+
+fn browserPathToPane(
+    node: *split_tree.Node,
+    pane_id: u128,
+    rect: NormalizedRect,
+    alloc: Allocator,
+    crumbs: *std.ArrayList(BrowserPathCrumb),
+) !bool {
+    switch (node.*) {
+        .leaf => |leaf| return leaf.panel_id == pane_id,
+        .split => |split| {
+            const pieces = splitRect(rect, split.orientation, split.ratio);
+            if (try browserPathToPane(split.first, pane_id, pieces.first, alloc, crumbs)) {
+                try crumbs.append(alloc, .{
+                    .orientation = split.orientation,
+                    .branch = .first,
+                    .sibling = split.second,
+                    .sibling_rect = pieces.second,
+                });
+                return true;
+            }
+            if (try browserPathToPane(split.second, pane_id, pieces.second, alloc, crumbs)) {
+                try crumbs.append(alloc, .{
+                    .orientation = split.orientation,
+                    .branch = .second,
+                    .sibling = split.first,
+                    .sibling_rect = pieces.first,
+                });
+                return true;
+            }
+            return false;
+        },
+    }
+}
+
+fn collectLeafFrames(
+    node: *split_tree.Node,
+    rect: NormalizedRect,
+    alloc: Allocator,
+    out: *std.ArrayList(LeafFrame),
+) !void {
+    switch (node.*) {
+        .leaf => |leaf| try out.append(alloc, .{ .pane_id = leaf.panel_id, .rect = rect }),
+        .split => |split| {
+            const pieces = splitRect(rect, split.orientation, split.ratio);
+            try collectLeafFrames(split.first, pieces.first, alloc, out);
+            try collectLeafFrames(split.second, pieces.second, alloc, out);
+        },
+    }
+}
+
+fn preferredBrowserTargetPane(alloc: Allocator, root: *split_tree.Node, source_pane_id: u128) ?u128 {
+    var crumbs: std.ArrayList(BrowserPathCrumb) = .empty;
+    defer crumbs.deinit(alloc);
+    if (!(browserPathToPane(root, source_pane_id, .{ .x = 0, .y = 0, .width = 1, .height = 1 }, alloc, &crumbs) catch return null)) {
+        return null;
+    }
+
+    var source_frames: std.ArrayList(LeafFrame) = .empty;
+    defer source_frames.deinit(alloc);
+    collectLeafFrames(root, .{ .x = 0, .y = 0, .width = 1, .height = 1 }, alloc, &source_frames) catch return null;
+
+    var source_rect: ?NormalizedRect = null;
+    for (source_frames.items) |entry| {
+        if (entry.pane_id == source_pane_id) {
+            source_rect = entry.rect;
+            break;
+        }
+    }
+    const resolved_source_rect = source_rect orelse return null;
+    const source_center_y = resolved_source_rect.y + (resolved_source_rect.height * 0.5);
+    const source_right_x = resolved_source_rect.x + resolved_source_rect.width;
+
+    var idx = crumbs.items.len;
+    while (idx > 0) {
+        idx -= 1;
+        const crumb = crumbs.items[idx];
+        if (crumb.orientation != .horizontal or crumb.branch != .first) continue;
+
+        var candidates: std.ArrayList(LeafFrame) = .empty;
+        defer candidates.deinit(alloc);
+        collectLeafFrames(crumb.sibling, crumb.sibling_rect, alloc, &candidates) catch return null;
+        if (candidates.items.len == 0) continue;
+
+        var best: ?u128 = null;
+        var best_dy: f64 = std.math.inf(f64);
+        var best_dx: f64 = std.math.inf(f64);
+        for (candidates.items) |candidate| {
+            if (candidate.pane_id == source_pane_id) continue;
+            const candidate_center_y = candidate.rect.y + (candidate.rect.height * 0.5);
+            const dy = @abs(candidate_center_y - source_center_y);
+            const dx = @abs(candidate.rect.x - source_right_x);
+            if (best == null or dy < best_dy or (dy == best_dy and dx < best_dx)) {
+                best = candidate.pane_id;
+                best_dy = dy;
+                best_dx = dx;
+            }
+        }
+        if (best) |pane_id| return pane_id;
+    }
+
+    return null;
+}
+
 /// Resolve a window by UUID hex or "window:N" short ref.
 fn findWindowByRef(id_str: []const u8) ?*WindowEntry {
     if (parseRef(id_str)) |ref| {
@@ -545,6 +741,11 @@ fn isNoSurface() bool {
     return std.posix.getenv("CMUX_NO_SURFACE") != null;
 }
 
+fn syncHeadlessWorkspace(ws: *Workspace) void {
+    if (!isNoSurface()) return;
+    ws.rebuildLinearSplitTree() catch {};
+}
+
 fn getTerminalGhosttySurface(panel: *Panel) ?c.ghostty.ghostty_surface_t {
     if (panel.widget) |widget| {
         if (surface_mod.fromWidget(widget)) |surface| {
@@ -552,6 +753,61 @@ fn getTerminalGhosttySurface(panel: *Panel) ?c.ghostty.ghostty_surface_t {
         }
     }
     return panel.surface;
+}
+
+fn trimmedNonEmpty(value: ?[]const u8) ?[]const u8 {
+    const raw = value orelse return null;
+    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+    if (trimmed.len == 0) return null;
+    return trimmed;
+}
+
+fn configureMockTerminalFromWorkspaceCreate(alloc: Allocator, panel: *Panel, params: json.Value) !void {
+    try panel.mock_terminal.setWorkingDirectory(
+        alloc,
+        trimmedNonEmpty(getParamString(params, "working_directory") orelse getParamString(params, "cwd")),
+    );
+    panel.mock_terminal.clearEnvOverrides();
+
+    if (params != .object) return;
+    const raw_env = params.object.get("initial_env") orelse return;
+    if (raw_env != .object) return;
+
+    var it = raw_env.object.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* != .string) continue;
+        const key = std.mem.trim(u8, entry.key_ptr.*, " \t\r\n");
+        if (key.len == 0) continue;
+        try panel.mock_terminal.putEnvOverride(alloc, key, entry.value_ptr.*.string);
+    }
+}
+
+fn runMockTerminalCommand(alloc: Allocator, panel: *Panel, command: []const u8) !void {
+    const trimmed_command = std.mem.trim(u8, command, " \t\r\n");
+    if (trimmed_command.len == 0) return;
+
+    var env_map = try std.process.getEnvMap(alloc);
+    defer env_map.deinit();
+
+    if (panel.mock_terminal.env_overrides) |*overrides| {
+        var it = overrides.iterator();
+        while (it.next()) |entry| {
+            try env_map.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+    }
+
+    const result = try std.process.Child.run(.{
+        .allocator = alloc,
+        .argv = &.{ "/bin/sh", "-lc", trimmed_command },
+        .cwd = panel.mock_terminal.working_directory,
+        .env_map = &env_map,
+        .max_output_bytes = 512 * 1024,
+    });
+    defer alloc.free(result.stdout);
+    defer alloc.free(result.stderr);
+
+    try panel.mock_terminal.appendTranscript(alloc, result.stdout);
+    try panel.mock_terminal.appendTranscript(alloc, result.stderr);
 }
 
 fn trimToLastLines(text: []const u8, line_limit: usize) []const u8 {
@@ -927,7 +1183,25 @@ fn handleWorkspaceList(alloc: Allocator, params: json.Value) []const u8 {
 
 fn handleWorkspaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
+    const prev_selected = tm.selected_index;
     const ws = tm.createWorkspace() catch return "{\"error\":\"create failed\"}";
+    if (prev_selected) |selected| tm.selected_index = selected;
+
+    if (isNoSurface()) {
+        if (ws.focused_panel_id) |panel_id| {
+            if (ws.panels.get(panel_id)) |panel| {
+                configureMockTerminalFromWorkspaceCreate(ws.alloc, panel, params) catch {
+                    return "{\"error\":\"mock terminal setup failed\"}";
+                };
+                if (trimmedNonEmpty(getParamString(params, "initial_command"))) |command| {
+                    runMockTerminalCommand(ws.alloc, panel, command) catch {
+                        return "{\"error\":\"mock initial command failed\"}";
+                    };
+                }
+            }
+        }
+    }
+
     if (window.getSidebar()) |sb| sb.refresh();
 
     // Register in window model
@@ -1026,14 +1300,16 @@ fn handleSurfaceList(alloc: Allocator, params: json.Value) []const u8 {
         const panel = ws.panels.get(panel_id) orelse continue;
         if (idx > 0) writer.writeAll(",") catch {};
         const panel_hex = formatId(panel.id);
+        const pane_hex = formatId(panel.pane_id);
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
         const title = panel.custom_title orelse panel.title orelse "Terminal";
         writer.print(
-            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"surface:{d}\",\"focused\":{s},\"title\":\"{s}\",\"type\":\"{s}\"}}",
+            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"surface:{d}\",\"pane_id\":\"{s}\",\"focused\":{s},\"title\":\"{s}\",\"type\":\"{s}\"}}",
             .{
                 idx,
                 @as([]const u8, &panel_hex),
                 idx,
+                @as([]const u8, &pane_hex),
                 if (is_focused) "true" else "false",
                 title,
                 @tagName(panel.panel_type),
@@ -1069,13 +1345,38 @@ fn handleSurfaceFocus(_: Allocator, params: json.Value) []const u8 {
 
 fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
-    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+    const workspace_found = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"invalid workspace_id\"}"
+    else
+        null;
 
-    const dir_str = getParamString(params, "direction") orelse "horizontal";
-    const orientation: split_tree.Orientation = if (std.mem.eql(u8, dir_str, "vertical"))
+    const ws = if (workspace_found) |found|
+        found.ws
+    else if (getParamString(params, "surface_id")) |id_str|
+        if (findSurfaceGlobal(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid surface_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+
+    const dir_str = getParamString(params, "direction") orelse "right";
+    const orientation: split_tree.Orientation = if (std.mem.eql(u8, dir_str, "left") or std.mem.eql(u8, dir_str, "right") or std.mem.eql(u8, dir_str, "horizontal"))
+        .horizontal
+    else if (std.mem.eql(u8, dir_str, "up") or std.mem.eql(u8, dir_str, "down") or std.mem.eql(u8, dir_str, "vertical"))
         .vertical
     else
-        .horizontal;
+        return "{\"error\":\"direction must be left|right|up|down|horizontal|vertical\"}";
+    const insert_first = std.mem.eql(u8, dir_str, "left") or std.mem.eql(u8, dir_str, "up");
+
+    const source_surface_id = if (getParamString(params, "surface_id")) |id_str|
+        if (workspace_found != null)
+            findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        else if (findSurfaceGlobal(tm, id_str)) |found|
+            found.id
+        else
+            return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    const source_panel = ws.panels.get(source_surface_id) orelse return "{\"error\":\"invalid surface_id\"}";
+    const source_pane_id = source_panel.pane_id;
 
     // Create new panel (mock in test mode to avoid GL crash)
     const panel = if (isNoSurface())
@@ -1083,12 +1384,17 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     else
         ws.createTerminalPanel(tm.ghostty_app) catch return "{\"error\":\"create panel failed\"}";
 
-    // Split the focused pane (or root)
+    // Split the addressed pane (or create the first leaf).
     if (ws.root_node) |root| {
-        const focused_id = ws.focused_panel_id orelse panel.id;
-        if (split_tree.findLeaf(root, focused_id)) |_| {
-            ws.root_node = split_tree.splitPane(ws.alloc, root, orientation, panel.id, panel.widget) catch return "{\"error\":\"split failed\"}";
-        }
+        const target_leaf = split_tree.findLeafNode(root, source_pane_id) orelse return "{\"error\":\"source pane not found\"}";
+        ws.root_node = split_tree.splitPanePlaced(
+            ws.alloc,
+            target_leaf,
+            orientation,
+            panel.id,
+            panel.widget,
+            insert_first,
+        ) catch return "{\"error\":\"split failed\"}";
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
@@ -1112,10 +1418,46 @@ fn handleSurfaceClose(_: Allocator, params: json.Value) []const u8 {
         findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
     else
         ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    const target_panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
+    const pane_id = target_panel.pane_id;
+
+    var sibling_ids: [128]u128 = undefined;
+    var sibling_count: usize = 0;
+    for (ws.ordered_panels.items) |panel_id| {
+        if (panel_id == target_id) continue;
+        const panel = ws.panels.get(panel_id) orelse continue;
+        if (panel.pane_id != pane_id) continue;
+        if (sibling_count < sibling_ids.len) {
+            sibling_ids[sibling_count] = panel.id;
+            sibling_count += 1;
+        }
+    }
+
+    if (sibling_count > 0) {
+        if (ws.focused_panel_id) |fid| {
+            if (fid == target_id) ws.focused_panel_id = sibling_ids[0];
+        }
+
+        if (pane_id == target_id) {
+            const replacement_pane_id = sibling_ids[0];
+            for (ws.ordered_panels.items) |panel_id| {
+                if (panel_id == target_id) continue;
+                if (ws.panels.getPtr(panel_id)) |panel_ptr| {
+                    if (panel_ptr.*.pane_id == pane_id) panel_ptr.*.pane_id = replacement_pane_id;
+                }
+            }
+            if (ws.root_node) |root| {
+                _ = split_tree.replaceLeafPanelId(root, pane_id, replacement_pane_id);
+            }
+        }
+
+        ws.removePanel(target_id);
+        return "{}";
+    }
 
     // Remove from split tree
     if (ws.root_node) |root| {
-        ws.root_node = split_tree.closePane(ws.alloc, root, target_id);
+        ws.root_node = split_tree.closePane(ws.alloc, root, pane_id);
     }
 
     // Update focus before removal: pick next surface at same index, or previous if last
@@ -1167,26 +1509,28 @@ fn handlePaneList(alloc: Allocator, params: json.Value) []const u8 {
     else
         tm.selectedWorkspace() orelse return "{\"panes\":[]}";
 
-    // For now, each panel is its own "pane" (1:1 mapping until pane grouping is implemented)
     var buf: std.ArrayList(u8) = .empty;
     const writer = buf.writer(alloc);
     writer.writeAll("{\"panes\":[") catch return "{\"panes\":[]}";
 
-    // Use ordered_panels for deterministic indexing
-    for (ws.ordered_panels.items, 0..) |panel_id, idx| {
+    var pane_index: usize = 0;
+    for (ws.ordered_panels.items, 0..) |panel_id, panel_index_in_order| {
         const panel = ws.panels.get(panel_id) orelse continue;
-        if (idx > 0) writer.writeAll(",") catch {};
-        const panel_hex = formatId(panel.id);
-        const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
+        if (paneSeenEarlier(ws, panel_index_in_order, panel.pane_id)) continue;
+        if (pane_index > 0) writer.writeAll(",") catch {};
+        const pane_hex = formatId(panel.pane_id);
+        const is_focused = if (currentPaneId(ws)) |fid| fid == panel.pane_id else false;
         writer.print(
-            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"pane:{d}\",\"surface_count\":1,\"focused\":{s}}}",
+            "{{\"index\":{d},\"id\":\"{s}\",\"short_id\":\"pane:{d}\",\"surface_count\":{d},\"focused\":{s}}}",
             .{
-                idx,
-                @as([]const u8, &panel_hex),
-                idx,
+                pane_index,
+                @as([]const u8, &pane_hex),
+                pane_index,
+                countPaneSurfaces(ws, panel.pane_id),
                 if (is_focused) "true" else "false",
             },
         ) catch {};
+        pane_index += 1;
     }
 
     writer.writeAll("]}") catch {};
@@ -1646,8 +1990,9 @@ fn handleSurfaceSendText(alloc: Allocator, params: json.Value) []const u8 {
     const ws_hex = formatId(ws.id);
 
     if (isNoSurface()) {
-        // Test-only mode has mock panels with no live terminal surface.
-        // Treat send_text as a no-op success once the target is validated.
+        runMockTerminalCommand(ws.alloc, panel, text) catch {
+            return "{\"error\":\"mock terminal execution failed\"}";
+        };
         return std.fmt.allocPrint(
             alloc,
             "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\"}}",
@@ -1713,8 +2058,19 @@ fn handleSurfaceReadText(alloc: Allocator, params: json.Value) []const u8 {
     const panel = ws.panels.get(target_id) orelse return "{\"error\":\"invalid surface_id\"}";
     if (panel.panel_type != .terminal) return "{\"error\":\"surface is not a terminal\"}";
 
+    if (isNoSurface()) {
+        const raw_text = panel.mock_terminal.transcriptText();
+        const trimmed_text = if (line_limit) |limit| trimToLastLines(raw_text, limit) else raw_text;
+
+        var buf: std.ArrayList(u8) = .empty;
+        const writer = buf.writer(alloc);
+        writer.writeAll("{\"text\":") catch return "{\"error\":\"encode failed\"}";
+        writeJsonString(writer, trimmed_text) catch return "{\"error\":\"encode failed\"}";
+        writer.writeAll("}") catch return "{\"error\":\"encode failed\"}";
+        return buf.toOwnedSlice(alloc) catch "{\"error\":\"encode failed\"}";
+    }
+
     const surface = getTerminalGhosttySurface(panel) orelse {
-        if (isNoSurface()) return "{\"error\":\"surface.read_text unavailable in CMUX_NO_SURFACE mode\"}";
         return "{\"error\":\"terminal surface not ready\"}";
     };
 
@@ -2015,7 +2371,11 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         if (ws.root_node) |root| {
             if (split_tree.findLeaf(root, target_id)) |_| {
                 ws.root_node = split_tree.splitPane(
-                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                    ws.alloc,
+                    root,
+                    .horizontal,
+                    new_panel.id,
+                    new_panel.widget,
                 ) catch null;
             }
         }
@@ -2068,7 +2428,11 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         if (ws.root_node) |root| {
             if (split_tree.findLeaf(root, target_id)) |_| {
                 ws.root_node = split_tree.splitPane(
-                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                    ws.alloc,
+                    root,
+                    .horizontal,
+                    new_panel.id,
+                    new_panel.widget,
                 ) catch null;
             }
         }
@@ -2140,7 +2504,11 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         if (ws.root_node) |root| {
             if (split_tree.findLeaf(root, target_id)) |_| {
                 ws.root_node = split_tree.splitPane(
-                    ws.alloc, root, .horizontal, new_panel.id, new_panel.widget,
+                    ws.alloc,
+                    root,
+                    .horizontal,
+                    new_panel.id,
+                    new_panel.widget,
                 ) catch null;
             }
         }
@@ -2231,10 +2599,10 @@ fn handleSurfaceReportTty(alloc: Allocator, params: json.Value) []const u8 {
 fn handlePaneFocus(_: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const id_str = getParamString(params, "pane_id") orelse return "{\"error\":\"missing pane_id\"}";
-    const found = findSurfaceGlobal(tm, id_str) orelse return "{\"error\":\"invalid pane_id\"}";
+    const found = findPaneGlobal(tm, id_str) orelse return "{\"error\":\"invalid pane_id\"}";
 
-    // pane == panel in 1:1 mapping
-    found.ws.focused_panel_id = found.id;
+    const target_panel_id = found.ws.firstPanelIdForPane(found.id) orelse return "{\"error\":\"invalid pane_id\"}";
+    found.ws.focused_panel_id = target_panel_id;
     return "{}";
 }
 
@@ -2250,34 +2618,43 @@ fn handlePaneSurfaces(alloc: Allocator, params: json.Value) []const u8 {
     const ws = tm.selectedWorkspace() orelse return "{\"surfaces\":[]}";
 
     // Get target pane (or focused)
-    const target_id = if (getParamString(params, "pane_id")) |id_str|
-        findSurfaceInWorkspace(ws, id_str) orelse return "{\"surfaces\":[]}"
+    const target_pane_id = if (getParamString(params, "pane_id")) |id_str|
+        findPaneInWorkspace(ws, id_str) orelse return "{\"surfaces\":[]}"
     else
-        ws.focused_panel_id orelse return "{\"surfaces\":[]}";
+        currentPaneId(ws) orelse return "{\"surfaces\":[]}";
 
-    // In 1:1 mapping, each pane has exactly one surface
-    if (ws.panels.get(target_id)) |panel| {
+    var buf: std.ArrayList(u8) = .empty;
+    const writer = buf.writer(alloc);
+    writer.writeAll("{\"surfaces\":[") catch return "{\"surfaces\":[]}";
+
+    var surface_index: usize = 0;
+    for (ws.ordered_panels.items) |panel_id| {
+        const panel = ws.panels.get(panel_id) orelse continue;
+        if (panel.pane_id != target_pane_id) continue;
+        if (surface_index > 0) writer.writeAll(",") catch {};
         const panel_hex = formatId(panel.id);
         const title = panel.custom_title orelse panel.title orelse "Terminal";
         const is_focused = if (ws.focused_panel_id) |fid| fid == panel.id else false;
-        return std.fmt.allocPrint(
-            alloc,
-            "{{\"surfaces\":[{{\"index\":0,\"id\":\"{s}\",\"title\":\"{s}\",\"selected\":{s}}}]}}",
+        writer.print(
+            "{{\"index\":{d},\"id\":\"{s}\",\"title\":\"{s}\",\"selected\":{s}}}",
             .{
+                surface_index,
                 @as([]const u8, &panel_hex),
                 title,
                 if (is_focused) "true" else "false",
             },
-        ) catch "{\"surfaces\":[]}";
+        ) catch return "{\"surfaces\":[]}";
+        surface_index += 1;
     }
-    return "{\"surfaces\":[]}";
+
+    writer.writeAll("]}") catch return "{\"surfaces\":[]}";
+    return buf.toOwnedSlice(alloc) catch "{\"surfaces\":[]}";
 }
 
 fn handlePaneLast(alloc: Allocator, _: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{}";
     const ws = tm.selectedWorkspace() orelse return "{}";
-    // Return focused panel as "last" pane (simple heuristic)
-    const pid = ws.focused_panel_id orelse return "{}";
+    const pid = currentPaneId(ws) orelse return "{}";
     const panel_hex = formatId(pid);
     return std.fmt.allocPrint(alloc, "{{\"pane_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
 }
@@ -2310,18 +2687,18 @@ fn handlePaneResize(alloc: Allocator, params: json.Value) []const u8 {
     const in_first = std.mem.eql(u8, dir_str, "right") or std.mem.eql(u8, dir_str, "down");
 
     const target_id = if (getParamString(params, "pane_id")) |id_str|
-        findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid pane_id\"}"
+        findPaneInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid pane_id\"}"
     else
-        ws.focused_panel_id orelse return "{\"error\":\"no focused pane\"}";
+        currentPaneId(ws) orelse return "{\"error\":\"no focused pane\"}";
 
     const root = ws.root_node orelse return "{\"error\":\"no split tree\"}";
 
     const split = split_tree.findResizeSplit(root, target_id, orientation, in_first) orelse
         return std.fmt.allocPrint(
-        alloc,
-        "{{\"error\":\"no {s} split ancestor in direction {s}\"}}",
-        .{ @tagName(orientation), dir_str },
-    ) catch "{\"error\":\"no matching split\"}";
+            alloc,
+            "{{\"error\":\"no {s} split ancestor in direction {s}\"}}",
+            .{ @tagName(orientation), dir_str },
+        ) catch "{\"error\":\"no matching split\"}";
 
     // Each unit of `amount` adjusts the ratio by 0.05 (5%).
     const delta: f64 = @as(f64, @floatFromInt(amount)) * 0.05;
@@ -2362,6 +2739,23 @@ fn handlePaneSwap(_: Allocator, params: json.Value) []const u8 {
     const pane_id = pane_found.id;
     const target_id = target_found.id;
 
+    if (isNoSurface()) {
+        for (tm.workspaces.items) |ws| {
+            var idx_a: ?usize = null;
+            var idx_b: ?usize = null;
+            for (ws.ordered_panels.items, 0..) |id, i| {
+                if (id == pane_id) idx_a = i;
+                if (id == target_id) idx_b = i;
+            }
+            if (idx_a != null and idx_b != null) {
+                std.mem.swap(u128, &ws.ordered_panels.items[idx_a.?], &ws.ordered_panels.items[idx_b.?]);
+                syncHeadlessWorkspace(ws);
+                return "{}";
+            }
+        }
+        return "{\"error\":\"panes not found in same workspace\"}";
+    }
+
     // Find both panels in any workspace and swap their leaf nodes in the split tree
     for (tm.workspaces.items) |ws| {
         if (ws.root_node) |root| {
@@ -2400,36 +2794,49 @@ fn handlePaneBreak(alloc: Allocator, params: json.Value) []const u8 {
     // Detach the panel from the source workspace
     const panel = target.ws.detachPanel(target.id) orelse
         return "{\"error\":\"detach failed\"}";
+    syncHeadlessWorkspace(target.ws);
 
     // Create a new workspace for the broken pane, preserving current selection
     const prev_selected = tm.selected_index;
-    const new_ws = tm.createWorkspace() catch {
+    const new_ws = (if (isNoSurface()) tm.createEmptyWorkspace() else tm.createWorkspace()) catch {
         // Re-attach to source on failure to avoid leaking the panel
         target.ws.attachPanel(panel) catch {};
         return "{\"error\":\"create workspace failed\"}";
     };
     tm.selected_index = prev_selected;
 
-    // createWorkspace auto-creates a default panel — remove it so only the
-    // transferred panel remains in the new workspace.
-    if (new_ws.ordered_panels.items.len > 0) {
-        const default_id = new_ws.ordered_panels.items[0];
-        new_ws.removePanel(default_id);
-    }
-    if (new_ws.root_node) |node| {
-        split_tree.destroy(new_ws.alloc, node);
-        new_ws.root_node = null;
-        new_ws.content_widget = null;
+    if (!isNoSurface()) {
+        // createWorkspace auto-creates a default panel — remove it so only the
+        // transferred panel remains in the new workspace.
+        if (new_ws.ordered_panels.items.len > 0) {
+            const default_id = new_ws.ordered_panels.items[0];
+            new_ws.removePanel(default_id);
+        }
+        if (new_ws.root_node) |node| {
+            split_tree.destroy(new_ws.alloc, node);
+            new_ws.root_node = null;
+            new_ws.content_widget = null;
+        }
     }
 
     // Attach the transferred panel and rebuild split tree
     new_ws.attachPanel(panel) catch {
         target.ws.attachPanel(panel) catch {};
+        for (tm.workspaces.items, 0..) |ws_item, idx| {
+            if (ws_item == new_ws) {
+                tm.closeWorkspace(idx);
+                break;
+            }
+        }
         return "{\"error\":\"attach failed\"}";
     };
-    new_ws.root_node = split_tree.createLeaf(new_ws.alloc, panel.id, panel.widget) catch null;
-    if (new_ws.root_node) |node| {
-        new_ws.content_widget = split_tree.buildWidget(node);
+    if (isNoSurface()) {
+        syncHeadlessWorkspace(new_ws);
+    } else {
+        new_ws.root_node = split_tree.createLeaf(new_ws.alloc, panel.id, panel.widget) catch null;
+        if (new_ws.root_node) |node| {
+            new_ws.content_widget = split_tree.buildWidget(node);
+        }
     }
 
     if (window.getSidebar()) |sb| sb.refresh();
@@ -2486,7 +2893,10 @@ fn handlePaneJoin(alloc: Allocator, params: json.Value) []const u8 {
                 break;
             }
         }
+    } else {
+        syncHeadlessWorkspace(src.ws);
     }
+    syncHeadlessWorkspace(dst_ws);
 
     if (window.getSidebar()) |sb| sb.refresh();
 
@@ -2532,6 +2942,8 @@ fn handleSurfaceMove(_: Allocator, params: json.Value) []const u8 {
         src.ws.attachPanel(panel) catch {};
         return "{\"error\":\"attach failed\"}";
     };
+    syncHeadlessWorkspace(src.ws);
+    syncHeadlessWorkspace(dst_ws);
     if (window.getSidebar()) |sb| sb.refresh();
     return "{}";
 }
@@ -2578,6 +2990,7 @@ fn handleSurfaceReorder(_: Allocator, params: json.Value) []const u8 {
     const adj_dst = if (src < dst) dst - 1 else dst;
     const clamped = @min(adj_dst, ws.ordered_panels.items.len);
     ws.ordered_panels.insert(ws.alloc, clamped, panel_id) catch return "{\"error\":\"reorder insert failed\"}";
+    syncHeadlessWorkspace(ws);
 
     return "{}";
 }
@@ -2609,22 +3022,65 @@ fn reloadBrowserWidgetNoop(_: ?*c.GtkWidget) void {}
 
 fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
-    const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+    const workspace_found = if (getParamString(params, "workspace_id")) |id_str|
+        findWorkspaceById(tm, id_str) orelse return "{\"error\":\"invalid workspace_id\"}"
+    else
+        null;
+
+    const ws = if (workspace_found) |found|
+        found.ws
+    else if (getParamString(params, "surface_id")) |id_str|
+        if (findSurfaceGlobal(tm, id_str)) |found| found.ws else return "{\"error\":\"invalid surface_id\"}"
+    else
+        tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
     const url = getParamString(params, "url");
+
+    const source_surface_id = if (getParamString(params, "surface_id")) |id_str|
+        if (workspace_found != null)
+            findSurfaceInWorkspace(ws, id_str) orelse return "{\"error\":\"invalid surface_id\"}"
+        else if (findSurfaceGlobal(tm, id_str)) |found|
+            found.id
+        else
+            return "{\"error\":\"invalid surface_id\"}"
+    else
+        ws.focused_panel_id orelse return "{\"error\":\"no focused surface\"}";
+    const source_panel = ws.panels.get(source_surface_id) orelse return "{\"error\":\"invalid surface_id\"}";
+    const source_pane_id = source_panel.pane_id;
 
     const panel = if (isNoSurface())
         ws.createMockPanel(.browser) catch return "{\"error\":\"create mock browser failed\"}"
     else
         ws.createBrowserPanel(url) catch return "{\"error\":\"create browser failed\"}";
 
-    // Add to split tree
-    if (ws.root_node) |root| {
-        const focused_id = ws.focused_panel_id orelse panel.id;
-        if (split_tree.findLeaf(root, focused_id)) |_| {
-            ws.root_node = split_tree.splitPane(ws.alloc, root, .horizontal, panel.id, panel.widget) catch return "{\"error\":\"split failed\"}";
+    var created_split = true;
+    var target_pane_id = panel.pane_id;
+    var placement_strategy: []const u8 = "split_right";
+
+    if (isNoSurface()) {
+        if (ws.root_node) |root| {
+            if (preferredBrowserTargetPane(ws.alloc, root, source_pane_id)) |reused_pane_id| {
+                panel.pane_id = reused_pane_id;
+                target_pane_id = reused_pane_id;
+                created_split = false;
+                placement_strategy = "reuse_right_sibling";
+            }
         }
-    } else {
-        ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
+    }
+
+    if (created_split) {
+        if (ws.root_node) |root| {
+            const target_leaf = split_tree.findLeafNode(root, source_pane_id) orelse return "{\"error\":\"source pane not found\"}";
+            ws.root_node = split_tree.splitPanePlaced(
+                ws.alloc,
+                target_leaf,
+                .horizontal,
+                panel.id,
+                panel.widget,
+                false,
+            ) catch return "{\"error\":\"split failed\"}";
+        } else {
+            ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
+        }
     }
     if (!isNoSurface()) {
         ws.content_widget = split_tree.buildWidget(ws.root_node.?);
@@ -2633,7 +3089,23 @@ fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     ws.focused_panel_id = panel.id;
 
     const panel_hex = formatId(panel.id);
-    return std.fmt.allocPrint(alloc, "{{\"surface_id\":\"{s}\"}}", .{@as([]const u8, &panel_hex)}) catch "{}";
+    const source_surface_hex = formatId(source_surface_id);
+    const source_pane_hex = formatId(source_pane_id);
+    const target_pane_hex = formatId(target_pane_id);
+    const ws_hex = formatId(ws.id);
+    return std.fmt.allocPrint(
+        alloc,
+        "{{\"workspace_id\":\"{s}\",\"surface_id\":\"{s}\",\"source_surface_id\":\"{s}\",\"source_pane_id\":\"{s}\",\"target_pane_id\":\"{s}\",\"created_split\":{s},\"placement_strategy\":\"{s}\"}}",
+        .{
+            @as([]const u8, &ws_hex),
+            @as([]const u8, &panel_hex),
+            @as([]const u8, &source_surface_hex),
+            @as([]const u8, &source_pane_hex),
+            @as([]const u8, &target_pane_hex),
+            if (created_split) "true" else "false",
+            placement_strategy,
+        },
+    ) catch "{}";
 }
 
 fn handleBrowserNavigate(_: Allocator, params: json.Value) []const u8 {
@@ -3192,9 +3664,7 @@ fn handleWorkspaceEqualizeSplits(alloc: Allocator, params: json.Value) []const u
     const root = ws.root_node orelse return "{\"error\":\"no split tree\"}";
 
     const orientation_filter: ?split_tree.Orientation = if (getParamString(params, "orientation")) |o|
-        if (std.mem.eql(u8, o, "horizontal")) .horizontal
-        else if (std.mem.eql(u8, o, "vertical")) .vertical
-        else return "{\"error\":\"orientation must be horizontal or vertical\"}"
+        if (std.mem.eql(u8, o, "horizontal")) .horizontal else if (std.mem.eql(u8, o, "vertical")) .vertical else return "{\"error\":\"orientation must be horizontal or vertical\"}"
     else
         null;
 

@@ -21,12 +21,14 @@ on:
         required: false
         default: ""
       distro:
-        description: "Distro to test (rocky9 is the current RPM-path proxy for Rocky 10)"
+        description: "Distro to test (rocky10 requires a release tag with a dedicated Rocky terminal-first RPM asset)"
         required: false
         default: "all"
         type: choice
         options:
           - all
+          - fedora42
+          - rocky10
           - rocky9
           - debian12
           - ubuntu2404
@@ -71,7 +73,8 @@ jobs:
             --dir "$TMPDIR"
 
           mapfile -t DEB_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux_*.deb' | sort)
-          mapfile -t RPM_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux-*.rpm' | sort)
+          mapfile -t FEDORA_RPM_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux-*.fc42.x86_64.rpm' | sort)
+          mapfile -t ROCKY_RPM_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux-*.el10*.x86_64.rpm' | sort)
 
           if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
             echo "ERROR: expected exactly one DEB asset for $TAG, found ${#DEB_PATHS[@]}"
@@ -79,19 +82,19 @@ jobs:
             exit 1
           fi
 
-          if [ "${#RPM_PATHS[@]}" -ne 1 ]; then
-            echo "ERROR: expected exactly one RPM asset for $TAG, found ${#RPM_PATHS[@]}"
-            printf '%s\n' "${RPM_PATHS[@]}"
+          if [ "${#FEDORA_RPM_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one Fedora x86_64 RPM asset for $TAG, found ${#FEDORA_RPM_PATHS[@]}"
+            printf '%s\n' "${FEDORA_RPM_PATHS[@]}"
             exit 1
           fi
 
           DEB_PATH="${DEB_PATHS[0]}"
-          RPM_PATH="${RPM_PATHS[0]}"
+          FEDORA_RPM_PATH="${FEDORA_RPM_PATHS[0]}"
 
           DEB_NAME="$(basename "$DEB_PATH")"
-          RPM_NAME="$(basename "$RPM_PATH")"
+          FEDORA_RPM_NAME="$(basename "$FEDORA_RPM_PATH")"
           DEB_HASH="$(nix hash file --type sha256 --sri "$DEB_PATH")"
-          RPM_HASH="$(nix hash file --type sha256 --sri "$RPM_PATH")"
+          FEDORA_RPM_HASH="$(nix hash file --type sha256 --sri "$FEDORA_RPM_PATH")"
 
           cat > nix/release-artifacts.override.nix <<EOF
           {
@@ -102,9 +105,28 @@ jobs:
                 hash = "${DEB_HASH}";
               };
               rpm = {
-                name = "${RPM_NAME}";
-                hash = "${RPM_HASH}";
+                name = "${FEDORA_RPM_NAME}";
+                hash = "${FEDORA_RPM_HASH}";
               };
+              rpmFedora = {
+                name = "${FEDORA_RPM_NAME}";
+                hash = "${FEDORA_RPM_HASH}";
+              };
+          EOF
+
+          if [ "${#ROCKY_RPM_PATHS[@]}" -eq 1 ]; then
+            ROCKY_RPM_PATH="${ROCKY_RPM_PATHS[0]}"
+            ROCKY_RPM_NAME="$(basename "$ROCKY_RPM_PATH")"
+            ROCKY_RPM_HASH="$(nix hash file --type sha256 --sri "$ROCKY_RPM_PATH")"
+            cat >> nix/release-artifacts.override.nix <<EOF
+              rpmRocky = {
+                name = "${ROCKY_RPM_NAME}";
+                hash = "${ROCKY_RPM_HASH}";
+              };
+            EOF
+          fi
+
+          cat >> nix/release-artifacts.override.nix <<EOF
             };
           }
           EOF
@@ -140,6 +162,13 @@ jobs:
         if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
         run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 
+      - name: Fedora 42 package test
+        if: inputs.distro == 'all' || inputs.distro == 'fedora42' || inputs.distro == ''
+        run: nix --store daemon build .#checks.x86_64-linux.distro-fedora42 --print-build-logs -L --option sandbox relaxed
+
+      - name: Rocky 10 package test
+        if: inputs.distro == 'rocky10'
+        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky10 --print-build-logs -L --option sandbox relaxed
 
       - name: Debian 12 package test
         if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''

@@ -6,6 +6,7 @@ Actions cache, Magic Nix Cache, and FlakeHub Cache.
 Operational runbook:
 
 - `docs/ci-cache-runbook.md`
+- `docs/flakehub-qa-ownership-notes.md`
 
 The governing rule is simple:
 
@@ -32,6 +33,7 @@ upstreaming workflow.
 Examples:
 
 - `Jesssullivan/cmux`
+- `Jesssullivan/nix-vm-test`
 - adjacent personal forks used for upstream sync, carried patch work, or manual
   correspondence
 
@@ -91,11 +93,30 @@ Not allowed use:
 Mirrors are extra complexity. They should be introduced only when the queue,
 cost, or artifact-sharing benefit is large enough to justify that complexity.
 
+### 5. Tracking follows owned surfaces
+
+Personal QA and harness forks may not have a usable tracker surface of their
+own.
+
+If a carried patch decision affects distro proof or release confidence, record
+it in:
+
+- `Jesssullivan/cmux` issues
+- Tinyland Linear
+- checked-in docs in this repo
+
+Do not rely on upstream or disabled issue trackers as the only place that
+decision exists.
+
 ## Current Application
 
-As of 2026-04-13:
+As of 2026-04-25:
 
 - `Jesssullivan/cmux` should keep `FLAKEHUB_CACHE_ENABLED=false`
+- `Jesssullivan/nix-vm-test` should stay personal if it ever carries a real
+  owned patch set again; cmux now pins upstream `numtide/nix-vm-test` after
+  `numtide/nix-vm-test#172` landed the needed Fedora 42 and Rocky 10.1 image
+  support
 - `tinyland-inc` may keep `FLAKEHUB_CACHE_ENABLED=true` at the org level
 - `tinyland-inc` repos that are actually authorized for FlakeHub Cache should
   use it

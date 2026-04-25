@@ -8,6 +8,8 @@ It complements, rather than replaces:
 - `docs/fork-landscape.md`
 - `docs/cache-ownership-policy.md`
 - `docs/component-portfolio.md`
+- `docs/distro-testing-readiness-plan.md`
+- `docs/flakehub-qa-ownership-notes.md`
 - `docs/linux-program-plan.md`
 - `docs/linux-packaging-cd-plan.md`
 - `docs/linux-parity-matrix.md`
@@ -19,7 +21,7 @@ It complements, rather than replaces:
 
 ## Snapshot
 
-As of 2026-04-13:
+As of 2026-04-25:
 
 - core repo health is good: the fork is ahead of upstream, recent CI is mostly
   green, and the Linux branch is proving real distro/container coverage instead
@@ -28,8 +30,8 @@ As of 2026-04-13:
   canonical fork `main`, and the carried package graph is mostly reproducible
 - Linux implementation health is medium-good: `cmux-linux` is broad and real,
   but validation still lags implementation
-- tracker health is medium: the remaining open issues are valid, but several
-  issue bodies still describe an older phase of the project
+- tracker health is medium-good: the public issues are now much closer to repo
+  reality, but the distro-proof lane still needs steady note hygiene
 - packaging health is medium: Homebrew is slightly behind, and Linux package
   proof is still uneven across the distro matrix
 - CI runtime hygiene is medium: the Linux branch is green, but GitHub Actions
@@ -55,22 +57,28 @@ Primary references:
 - `docs/linux-program-plan.md`
 - `docs/linux-parity-matrix.md`
 - `docs/linux-validation-checklist.md`
+- `docs/distro-testing-readiness-plan.md`
 
 ### 2. Tracker hygiene
 
-The main planning risk is stale tracker language, not missing planning docs.
+The main planning risk is no longer stale umbrella issues. It is making sure the
+same QA and ownership decisions are visible on every owned surface.
 
-Open issues that still need refresh:
+Current focus:
 
-- `#55` Linux umbrella should be reframed as a program/status epic
-- `#76` naming RFC should be explicitly non-blocking
-- `#187` Rocky 10 needs updated GA/automation language
-- `#199` should stay parallel to Linux delivery
-- `#201` should stay clearly separate from distro validation
+- keep `#55`, `#187`, and `#209` aligned with the real Fedora 42 and Rocky 10
+  distro-proof state
+- keep FlakeHub and `nix-vm-test` notes on owned Jesssullivan and Tinyland
+  surfaces only
+- keep the `nix-vm-test` upstream exit visible: `numtide/nix-vm-test#172`
+  merged on 2026-04-22, and cmux now pins upstream `numtide/nix-vm-test`
+- keep `#199` parallel to Linux delivery rather than reopening ad hoc upstream
+  work
 
-Draft update text is already prepared in:
+Primary references:
 
-- `docs/tracker-refresh-drafts.md`
+- `docs/flakehub-qa-ownership-notes.md`
+- `docs/linear-qa-shard-punchlist.md`
 
 ### 3. Linux parity honesty
 
@@ -122,6 +130,9 @@ Current read:
 - the remaining CI hygiene issue is Actions runtime drift, not Linux breakage
 - cache policy is explicit: personal forks use Magic Nix Cache by default,
   while FlakeHub Cache remains an org-owned repo lane
+- `Jesssullivan/nix-vm-test` exists as the previous fallback fork, but upstream
+  now has the needed Fedora 42 and Rocky 10.1 image support and cmux pins
+  upstream `numtide/nix-vm-test`
 
 ### Distro package-test VM coverage
 
@@ -129,13 +140,33 @@ Current `test-distro` coverage includes:
 
 - `Ubuntu 24.04`
 - `Debian 12`
+- `Fedora 42`
 - `Rocky 9` as the current RPM-path proxy
+- real `.sandboxed` VM execution rather than driver-only outputs
 
 Current gap:
 
-- `Fedora 42` and `Rocky 10` VM package-install proof still lag because
-  upstream `nix-vm-test` currently exposes `Fedora 39-41` and `Rocky 8.6-9.6`,
-  not `Fedora 42` or `Rocky 10`
+- `Fedora 42` is wired into the repo-owned VM lane, but still needs first green
+  CI evidence
+- `Rocky 10` now has a dedicated terminal-first RPM lane on the branch, but it
+  still needs first green CI evidence and a published `rpmRocky` asset in the
+  checked-in manifest
+- the VM-image blocker is resolved upstream; remaining work is artifact truth
+  and first green proof
+- this remains a distro-proof and artifact-truth problem, not a FlakeHub
+  account or repo ownership problem
+
+### Linux socket-test coverage
+
+Current `scripts/run-socket-tests.sh` coverage includes:
+
+- 123 `tests_v2` test files on disk
+- 18 baseline tests that fail the Linux socket job when red
+- 11 phase-1 candidate tests that run as non-fatal observations
+
+Recent CI made the baseline contract useful but exposed one active baseline
+failure: `test_surface_action_close_variants`. That should be fixed or
+explicitly reclassified before promoting more candidate tests.
 
 ## Dependency And Package Health
 
@@ -147,7 +178,7 @@ Current gap:
 | `vendor/zig-keychain` | `green` | healthy; distro-level secret-service validation still needed |
 | `vendor/zig-crypto` | `green` | healthy, not a delivery blocker |
 | `vendor/zig-notify` | `green` | healthy; Linux notification proof still needed |
-| `homebrew-cmux` | `yellow` | behind `origin/main` by 2 commits; not a Linux blocker |
+| `homebrew-cmux` | `yellow` | behind `origin/main` by 6 commits; not a Linux blocker |
 
 For live ancestry and worktree checks:
 
@@ -157,21 +188,23 @@ For live ancestry and worktree checks:
 
 ## Open Tracker Map
 
-As of 2026-04-13, the public fork tracker is small and focused:
+As of 2026-04-21, the public fork tracker is small and focused:
 
-- `#55` `Epic: De-Attestation & Linux Porting Roadmap`
+- `#55` `Epic: Linux Delivery, Distro Proof, and Remaining Parity Gaps`
 - `#76` `RFC: Linux client naming — cmux vs lmux`
-- `#187` `ci(distro): Rocky 10 — track upstream nix-vm-test support`
-- `#199` `audit: fork landscape, novel libraries, and upstream PR opportunities`
+- `#187` `ci(distro): establish Rocky 10 fresh-install proof and retire the Rocky 9 proxy`
+- `#209` `ci(distro): establish Fedora 42 fresh-install VM proof`
+- `#216` `tests_v2: expand Linux socket-test coverage beyond the current stable baseline`
+- `#199` `audit: fork landscape and human-gated upstream preparation`
 - `#201` `feat(cmuxd-remote): add TCP listener mode for Tailnet direct connections`
 
 Interpretation:
 
-- `#55` and `#187` are the tracker items most in need of refresh
+- `#55`, `#187`, `#209`, and `#216` are the active Linux execution lane
 - `#199` and `#201` are real, but parallel
-- `#76` is intentionally non-blocking
-- the tracker still does not isolate the Linux WebAuthn, socket-parity, or
-  headless/runtime gaps as dedicated issues
+- `#76` is intentionally non-blocking unless distro distribution or product
+  clarity creates a real rename trigger
+- the main note-hygiene risk is cross-repo QA decisions drifting out of sync
 
 ## Current Non-Blockers
 
@@ -190,11 +223,14 @@ repo hygiene:
 1. Use the current Linux CI rerun as the proof base for the Debian 12 baseline
    lane and the Ubuntu/Fedora broad-feature lanes; the current branch matrix is
    green.
-2. Refresh `#187`, `#55`, and `#76` using `docs/tracker-refresh-drafts.md`.
+2. Record the wired `Fedora 42` and `Rocky 10` VM lanes on `#209` and `#187`,
+   and keep their first green runs visible.
 3. Keep Ubuntu/Fedora as the broad-feature proof target and Debian as the
    explicit baseline target.
 4. Keep Rocky 10 terminal-first until a real browser/package path exists.
-5. Replace or isolate the remaining `mlugg/setup-zig@v2` call sites as a
+5. Keep `cmux` as the working product and package name unless the rename
+   triggers in `docs/distro-testing-readiness-plan.md` become real.
+6. Replace or isolate the remaining `mlugg/setup-zig@v2` call sites as a
    separate CI hygiene follow-up.
-6. Avoid opening new architectural lanes until the existing parity matrix is
+7. Avoid opening new architectural lanes until the existing parity matrix is
    promoted with real validation.

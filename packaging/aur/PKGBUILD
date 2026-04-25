@@ -1,0 +1,80 @@
+# Maintainer: Jess Sullivan <jess@jesssullivan.dev>
+
+pkgname=cmux
+pkgver=0.75.0
+pkgrel=1
+pkgdesc='Terminal multiplexer with GTK4 split panes and workspaces'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Jesssullivan/cmux'
+license=('GPL-3.0-or-later')
+depends=(
+  'fontconfig'
+  'freetype2'
+  'gtk4'
+  'harfbuzz'
+  'libadwaita'
+  'libnotify'
+  'libpng'
+  'libsecret'
+  'mesa'
+  'oniguruma'
+  'webkitgtk-6.0'
+)
+makedepends=(
+  'gcc'
+  'git'
+  'glslang'
+  'pkgconf'
+  'wayland-protocols'
+  'zig'
+)
+source=("git+${url}.git#tag=lab-v${pkgver}")
+sha256sums=('SKIP')
+options=('!lto')
+
+prepare() {
+  cd "${srcdir}/${pkgname}"
+  git submodule update --init --recursive
+  git -C ghostty tag -l 'xcframework-*' | xargs -r git -C ghostty tag -d || true
+}
+
+build() {
+  cd "${srcdir}/${pkgname}"
+
+  (cd vendor/ctap2 && zig build -Doptimize=ReleaseFast)
+  (cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast)
+  (cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast)
+  (cd vendor/zig-notify && zig build -Doptimize=ReleaseFast)
+
+  (cd ghostty && zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast)
+  bash scripts/ghostty-compat-symlinks.sh
+
+  (cd cmux-linux && zig build -Doptimize=ReleaseFast)
+  if [[ -d cmuxd ]]; then
+    (cd cmuxd && zig build -Doptimize=ReleaseFast)
+  fi
+}
+
+package() {
+  cd "${srcdir}/${pkgname}"
+
+  install -Dm755 cmux-linux/zig-out/bin/cmux "${pkgdir}/usr/bin/cmux"
+  install -Dm755 ghostty/zig-out/lib/libghostty.so "${pkgdir}/usr/lib/cmux/libghostty.so"
+  if [[ -f cmuxd/zig-out/bin/cmuxd ]]; then
+    install -Dm755 cmuxd/zig-out/bin/cmuxd "${pkgdir}/usr/bin/cmuxd"
+  fi
+
+  install -Dm644 dist/linux/com.jesssullivan.cmux.desktop \
+    "${pkgdir}/usr/share/applications/com.jesssullivan.cmux.desktop"
+  install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml \
+    "${pkgdir}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
+  for size in 16 128 256 512; do
+    install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+  done
+  install -Dm644 dist/linux/70-u2f.rules \
+    "${pkgdir}/usr/lib/udev/rules.d/70-u2f.rules"
+
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}

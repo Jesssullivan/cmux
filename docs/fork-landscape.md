@@ -87,7 +87,9 @@ Scope:
 This lane is parallel and explicitly non-blocking for Linux delivery.
 
 Publication rule:
-- agents prepare candidates locally, but do not open upstream PRs or MRs
+- agents prepare candidates locally, but do not open upstream PRs, MRs,
+  issues, review comments, or other correspondence
+- candidate publication work should be staged in owned docs/trackers first
 - external submission and correspondence are manual
 
 Tracking ledger:

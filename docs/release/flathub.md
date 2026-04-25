@@ -83,7 +83,9 @@ until the cadence is stable.
 - [ ] Desktop file validates: `desktop-file-validate dist/linux/com.jesssullivan.cmux.desktop`
 - [ ] Icons exist at 16/128/256/512 px (already in `dist/linux/icons/`)
 - [ ] `finish-args` lists are minimal and justified (current set is OK)
-- [ ] License is correct in metainfo (currently `MIT`)
+- [ ] License fields are correct in metainfo:
+  - `metadata_license`: `MIT`
+  - `project_license`: `GPL-3.0-or-later`
 - [ ] `developer_name`, `summary`, and `description` in metainfo read well
 
 ## Reference links

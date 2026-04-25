@@ -199,6 +199,7 @@
     # ── Automated Checks ─────────────────────────────────────────────
     # Usage: nix flake check
     #        nix build .#checks.x86_64-linux.basic-version-check
+    #        nix build .#checks.x86_64-linux.distro-fedora42
     #        nix build .#checks.x86_64-linux.distro-rocky9
     #        nix build .#checks.x86_64-linux.distro-debian12
     #        nix build .#checks.x86_64-linux.distro-ubuntu2404

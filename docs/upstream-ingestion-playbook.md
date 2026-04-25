@@ -3,14 +3,19 @@
 This document describes how `cmux` should ingest upstream changes from its
 dependency and parent forks.
 
+For the recurring check schedule and concrete command flow, see
+`docs/upstream-sync.md`.
+
 The GitHub Actions workflow automates part of this process. This document covers
 the human review steps around that automation.
 
 This playbook is about ingestion, not publication.
 
 - agents may prepare upstreamable slices locally
-- agents do not open upstream PRs or MRs
-- external upstream correspondence is manual
+- agents do not open upstream PRs, MRs, issues, or review comments
+- external upstream correspondence is manual and user-gated
+- candidate upstream interactions should be staged in owned surfaces such as
+  `docs/upstream-candidate-ledger.md` or Jess-owned/Tinyland-owned trackers
 
 ## Purpose
 
@@ -27,6 +32,7 @@ Use this playbook when syncing from:
 3. classify conflicts explicitly
 4. verify carried patches after every sync, even when the merge is clean
 5. update the patch ledger or fork doc in the same change set
+6. stage upstream publication work for Jess; do not publish it directly
 
 ## File Classes
 
