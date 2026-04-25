@@ -77,18 +77,9 @@ zig build -Doptimize=ReleaseFast -Dno-webkit=true
 %endif
 popd
 
-if [ -d cmuxd ]; then
-  pushd cmuxd
-  zig build -Doptimize=ReleaseFast
-  popd
-fi
-
 %install
 install -Dm755 cmux-linux/zig-out/bin/cmux %{buildroot}%{_bindir}/cmux
 install -Dm755 ghostty/zig-out/lib/libghostty.so %{buildroot}%{_libdir}/cmux/libghostty.so
-if [ -f cmuxd/zig-out/bin/cmuxd ]; then
-  install -Dm755 cmuxd/zig-out/bin/cmuxd %{buildroot}%{_bindir}/cmuxd
-fi
 install -Dm644 dist/linux/com.jesssullivan.cmux.desktop %{buildroot}%{_datadir}/applications/com.jesssullivan.cmux.desktop
 install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml %{buildroot}%{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml
 for size in 16 128 256 512; do
@@ -112,7 +103,6 @@ install -Dm644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 %license %{_licensedir}/%{name}/LICENSE
 %doc %{_docdir}/%{name}/README.md
 %{_bindir}/cmux
-%{_bindir}/cmuxd
 %{_libdir}/cmux/libghostty.so
 %{_datadir}/applications/com.jesssullivan.cmux.desktop
 %{_datadir}/metainfo/com.jesssullivan.cmux.metainfo.xml

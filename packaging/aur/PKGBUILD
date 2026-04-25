@@ -50,9 +50,6 @@ build() {
   bash scripts/ghostty-compat-symlinks.sh
 
   (cd cmux-linux && zig build -Doptimize=ReleaseFast)
-  if [[ -d cmuxd ]]; then
-    (cd cmuxd && zig build -Doptimize=ReleaseFast)
-  fi
 }
 
 package() {
@@ -60,9 +57,6 @@ package() {
 
   install -Dm755 cmux-linux/zig-out/bin/cmux "${pkgdir}/usr/bin/cmux"
   install -Dm755 ghostty/zig-out/lib/libghostty.so "${pkgdir}/usr/lib/cmux/libghostty.so"
-  if [[ -f cmuxd/zig-out/bin/cmuxd ]]; then
-    install -Dm755 cmuxd/zig-out/bin/cmuxd "${pkgdir}/usr/bin/cmuxd"
-  fi
 
   install -Dm644 dist/linux/com.jesssullivan.cmux.desktop \
     "${pkgdir}/usr/share/applications/com.jesssullivan.cmux.desktop"
