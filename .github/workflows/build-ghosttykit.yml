@@ -35,7 +35,11 @@ jobs:
         id: check-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHOSTTY_RELEASE_TOKEN: ${{ secrets.GHOSTTY_RELEASE_TOKEN }}
         run: |
+          if [ -n "${GHOSTTY_RELEASE_TOKEN:-}" ]; then
+            export GH_TOKEN="$GHOSTTY_RELEASE_TOKEN"
+          fi
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
           if gh release view "$TAG" --repo Jesssullivan/ghostty >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -110,6 +114,10 @@ jobs:
             exit 0
           fi
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
+          if gh release view "$TAG" --repo Jesssullivan/ghostty >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping upload"
+            exit 0
+          fi
           gh release create "$TAG" \
             --repo Jesssullivan/ghostty \
             --title "GhosttyKit xcframework (${{ steps.ghostty-sha.outputs.sha }})" \
