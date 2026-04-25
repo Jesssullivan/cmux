@@ -9,10 +9,12 @@ work assignments without re-deriving scope from the codebase.
 Use it with:
 
 - [program-review-2026-04-14.md](/Users/jess/git/cmux/docs/program-review-2026-04-14.md:1)
+- [distro-testing-readiness-plan.md](/Users/jess/git/cmux/docs/distro-testing-readiness-plan.md:1)
 - [linux-work-week-2026-04-14.md](/Users/jess/git/cmux/docs/linux-work-week-2026-04-14.md:1)
 - [linux-parity-matrix.md](/Users/jess/git/cmux/docs/linux-parity-matrix.md:1)
 - [linux-validation-checklist.md](/Users/jess/git/cmux/docs/linux-validation-checklist.md:1)
 - [component-portfolio.md](/Users/jess/git/cmux/docs/component-portfolio.md:1)
+- [flakehub-qa-ownership-notes.md](/Users/jess/git/cmux/docs/flakehub-qa-ownership-notes.md:1)
 - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:1)
 
 ## Instructions For Sharding
@@ -63,8 +65,8 @@ Preferred evidence:
 
 - Type: tracker
 - Priority: `P0`
-- Goal: refresh `#187` to reflect Rocky 10 GA and the actual `nix-vm-test`
-  blocker
+- Goal: refresh `#187` to reflect Rocky 10 GA and the real
+  artifact/proxy blocker
 - References:
   - [tracker-refresh-drafts.md](/Users/jess/git/cmux/docs/tracker-refresh-drafts.md:8)
   - [nix/tests-distro.nix](/Users/jess/git/cmux/nix/tests-distro.nix:156)
@@ -77,6 +79,10 @@ Preferred evidence:
 - Priority: `P1`
 - Goal: refresh `#199` so it reflects current divergence and manual-upstream
   boundaries
+- Current state:
+  - completed on `2026-04-21`
+  - `#199` now reflects the human-gated upstream policy and no longer advertises
+    direct upstream PR/issue work
 - References:
   - [tracker-refresh-drafts.md](/Users/jess/git/cmux/docs/tracker-refresh-drafts.md:108)
   - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:31)
@@ -94,6 +100,30 @@ Preferred evidence:
   - `M6` through `M9` are no longer misleadingly open
   - `M12` remains the active distro-testing milestone
 
+### GOV-006 Record FlakeHub And `nix-vm-test` Ownership Notes
+
+- Type: tracker/infra governance
+- Priority: `P0`
+- Goal: keep FlakeHub account decisions and `nix-vm-test` fallback notes on
+  owned surfaces only
+- Current hiccups:
+  - `Jesssullivan/nix-vm-test` has issues disabled
+  - `numtide/nix-vm-test#172` has now merged with `Fedora 42` and
+    `Rocky 10.1` image support
+  - cmux now pins upstream `numtide/nix-vm-test`
+  - FlakeHub Cache is unavailable on pull requests from forks
+  - the remaining `Rocky 10` gap is an artifact-truth problem, not a reason to
+    distort repo ownership
+- References:
+  - [flakehub-qa-ownership-notes.md](/Users/jess/git/cmux/docs/flakehub-qa-ownership-notes.md:1)
+  - [cache-ownership-policy.md](/Users/jess/git/cmux/docs/cache-ownership-policy.md:1)
+  - [Issue #209](https://github.com/Jesssullivan/cmux/issues/209)
+  - [Issue #187](https://github.com/Jesssullivan/cmux/issues/187)
+- Exit criteria:
+  - one owned note set exists for FlakeHub, account, and fork-carry decisions
+  - GitHub and Linear references point at the same policy
+  - any future local `nix-vm-test` carry is tracked by exact SHA and rationale
+
 ## Lane 2: KVM And Release Artifact QA
 
 ### KVM-001 Verify Current Release-Gated VM Matrix
@@ -105,6 +135,7 @@ Preferred evidence:
 - Distros:
   - `Ubuntu 24.04`
   - `Debian 12`
+  - `Fedora 42`
   - `Rocky 9` RPM proxy
 - References:
   - [test-distro.yml](/Users/jess/git/cmux/.github/workflows/test-distro.yml:42)
@@ -118,29 +149,56 @@ Preferred evidence:
 
 ### KVM-002 Fedora 42 VM Harness Decision
 
-- Type: infra/QA design
+- Type: infra/QA execution
 - Priority: `P0`
-- Goal: decide how to get fresh-install proof for `Fedora 42`
-- Current blocker:
-  - upstream `nix-vm-test` currently tops out at Fedora 41
+- Goal: prove and keep the wired `Fedora 42` fresh-install lane green
+- Current state:
+  - upstream Fedora 42 image support landed in `numtide/nix-vm-test#172`
+  - repo-local Fedora 42 image support now exists in `nix/tests-distro.nix`
+  - the check now resolves to a real `.sandboxed` VM run
+  - cmux now pins upstream `numtide/nix-vm-test`
+  - remaining work is first green CI evidence and keeping the lane stable
 - References:
   - [nix/tests-distro.nix](/Users/jess/git/cmux/nix/tests-distro.nix:156)
   - [linux-packaging-cd-plan.md](/Users/jess/git/cmux/docs/linux-packaging-cd-plan.md:234)
 - Exit criteria:
-  - selected approach for Fedora 42 fresh-install validation
+  - first green Fedora 42 VM result is recorded
+  - any temporary owned carry strategy remains explicit until it is retired
 
 ### KVM-003 Rocky 10 VM Harness Decision
 
-- Type: infra/QA design
+- Type: infra/QA execution
 - Priority: `P0`
-- Goal: decide how to get fresh-install proof for `Rocky 10`
-- Current blocker:
-  - upstream `nix-vm-test` currently tops out at Rocky 9.6
+- Goal: prove and keep the wired `Rocky 10` terminal-first lane green
+- Current state:
+  - upstream Rocky 10.1 image support landed in `numtide/nix-vm-test#172`
+  - the branch now builds a distinct no-WebKit Rocky 10 RPM
+  - release-gated validation now targets `distro-rocky10` when `rpmRocky` is
+    present in the manifest
+  - cmux now pins upstream `numtide/nix-vm-test`
+  - remaining work is first green CI evidence and retirement of the Rocky 9
+    proxy
 - References:
   - [nix/tests-distro.nix](/Users/jess/git/cmux/nix/tests-distro.nix:156)
   - [linux-validation-checklist.md](/Users/jess/git/cmux/docs/linux-validation-checklist.md:214)
 - Exit criteria:
-  - selected approach for Rocky 10 fresh-install validation
+  - first green Rocky 10 VM result is recorded
+  - proxy retirement plan for `Rocky 9` is explicit
+
+### KVM-005 Arm64 Distro-Test Follow-Up
+
+- Type: infra/QA design
+- Priority: `P1`
+- Goal: close the gap between multi-arch release packaging and x86_64-only KVM
+  validation
+- Current blocker:
+  - no arm64 KVM runner exists in the current release-gated lane
+- References:
+  - [release-linux.yml](/Users/jess/git/cmux/.github/workflows/release-linux.yml:346)
+  - [distro-testing-readiness-plan.md](/Users/jess/git/cmux/docs/distro-testing-readiness-plan.md:1)
+- Exit criteria:
+  - one explicit arm64 validation plan exists
+  - arm64 remains clearly documented as follow-on until that plan is real
 
 ### KVM-004 Artifact Taxonomy Review
 
@@ -150,7 +208,7 @@ Preferred evidence:
 - Questions:
   - should Debian consume the broad-feature `DEB`?
   - does Debian need a baseline/no-WebKit artifact?
-  - does Rocky stay terminal-first via RPM only?
+  - does Rocky need a no-WebKit RPM or a different terminal-first artifact?
   - does Flatpak become the cross-distro broad-feature channel?
 - References:
   - [linux-packaging-cd-plan.md](/Users/jess/git/cmux/docs/linux-packaging-cd-plan.md:102)
@@ -237,6 +295,68 @@ Preferred evidence:
   - [linux-parity-matrix.md](/Users/jess/git/cmux/docs/linux-parity-matrix.md:52)
 - Exit criteria:
   - Rocky 10 has explicit terminal-first proof
+
+## Lane 3A: Community QA Intake
+
+These shards are for recruiting careful Linux QA users without overstating
+support. They should produce evidence, not broad support promises.
+
+### QA-CAD-001 Linux QA Cadence
+
+- Type: QA program
+- Priority: `P0`
+- Goal: define a predictable cadence for testers on Rocky, Arch, Mint, NixOS,
+  Ubuntu, Fedora, and Debian
+- Cadence:
+  - weekly owned status note while the distro matrix is moving
+  - one release-candidate QA window before tagged Linux releases
+  - one post-release intake window for installer/runtime regressions
+- Exit criteria:
+  - one public QA intake template exists
+  - one owned tracker or discussion surface records tester reports
+  - support tiers are visible in the intake text
+
+### QA-ARCH-001 Arch Rolling QA
+
+- Type: direct host/VM QA
+- Priority: `P1`
+- Distro: `Arch Linux`
+- Goal: validate the rolling-user story before AUR publication claims
+- Checklist:
+  - build or install from the current package scaffold
+  - launch app
+  - verify terminal/split/socket smoke
+  - record WebKitGTK/browser status explicitly
+- Exit criteria:
+  - AUR readiness has one real Arch report, or a clear blocker
+
+### QA-MINT-001 Linux Mint QA
+
+- Type: direct host/VM QA
+- Priority: `P1`
+- Distro: `Linux Mint`
+- Goal: validate the Ubuntu-family user story outside vanilla Ubuntu
+- Checklist:
+  - install the Ubuntu-family `DEB`
+  - launch app
+  - verify terminal/split/socket smoke
+  - record desktop integration, browser, and notification status
+- Exit criteria:
+  - Mint is documented as either compatible-by-evidence or unsupported pending
+    a specific blocker
+
+### QA-NIX-001 NixOS QA
+
+- Type: direct host/VM QA
+- Priority: `P1`
+- Distro: `NixOS`
+- Goal: validate the Nix user story separately from KVM package-install tests
+- Checklist:
+  - run the flake/app path
+  - verify terminal/split/socket smoke
+  - record GPU, WebKitGTK, and desktop integration constraints
+- Exit criteria:
+  - NixOS has one explicit proof note and an honest support posture
 
 ## Lane 4: Linux Parity Implementation Work
 
@@ -376,14 +496,57 @@ These are not submission tasks. They are local preparation tasks only.
 - Reference:
   - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:36)
 
-### UPL-003 Standalone Zig Library Polish
+### UPL-003 Ghostty Mode 2031 Candidate Slice
 
 - Type: candidate prep
 - Priority: `P2`
-- Goal: keep `zig-ctap2`, `zig-keychain`, and `zig-crypto` in a state where
-  packaging/docs polish can be submitted manually later
+- Goal: keep the color scheme mode 2031 reporting fix isolated and documented
 - Reference:
-  - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:40)
+  - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:1)
+
+### UPL-004 Ghostty APC Candidate Slice
+
+- Type: candidate prep
+- Priority: `P2`
+- Goal: keep TerminalStream APC handling documented for a possible manual
+  upstream submission
+- Reference:
+  - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:1)
+
+### UPL-005 Bonsplit Sync Audit
+
+- Type: candidate prep
+- Priority: `P3`
+- Goal: audit the remaining Bonsplit fork delta after bumping to upstream
+  `origin/main`; default posture is maintenance-only unless a small behavior
+  fix remains clearly isolated
+- Reference:
+  - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:1)
+
+### UPL-006 Standalone Zig Library Polish
+
+- Type: candidate prep
+- Priority: `P2`
+- Goal: keep `zig-ctap2`, `zig-keychain`, `zig-crypto`, and `zig-notify` in a
+  state where packaging/docs polish can be submitted manually later
+- Reference:
+  - [upstream-candidate-ledger.md](/Users/jess/git/cmux/docs/upstream-candidate-ledger.md:1)
+
+### UPL-007 Human Handoff Packet
+
+- Type: candidate prep
+- Priority: `P1`
+- Goal: standardize the owned handoff packet Jess uses before manually
+  submitting to Ghostty, Bonsplit, Manaflow, or other busy upstreams
+- Required contents:
+  - target repo and proposed title
+  - exact branch or commit range
+  - rationale and expected upstream benefit
+  - validation already performed and validation still needed
+  - copy-ready PR or issue text
+  - risk notes and conflict areas
+- Exit criteria:
+  - every upstream candidate has a handoff packet before any external action
 
 ## Lane 7: Reintegration / RFC Futures
 
@@ -394,9 +557,12 @@ These are not submission tasks. They are local preparation tasks only.
 - Goal: keep the naming decision visible without letting it block Linux proof
 - References:
   - [Issue #76](https://github.com/Jesssullivan/cmux/issues/76)
+  - [distro-testing-readiness-plan.md](/Users/jess/git/cmux/docs/distro-testing-readiness-plan.md:1)
   - [linux-work-week-2026-04-14.md](/Users/jess/git/cmux/docs/linux-work-week-2026-04-14.md:1)
 - Exit criteria:
-  - decision deferred until parity and distro proof are stronger
+  - current recommendation is explicit
+  - revisit triggers are documented
+  - naming remains non-blocking until those triggers become real
 
 ### FUT-002 Reintegration / Proposal Readiness
 
@@ -416,13 +582,16 @@ These are not submission tasks. They are local preparation tasks only.
 
 If the goal is a productive parallel week, start here:
 
-1. `GOV-001` merge `#205`
-2. `GOV-002` refresh `#55`
-3. `GOV-003` refresh `#187`
+1. `KVM-002` record the first green Fedora 42 VM run
+2. `KVM-003` record the first Rocky 10 terminal-first VM run
+3. `QA-CAD-001` publish the QA cadence/intake shape before recruiting users
 4. `QA-UBU-001` Ubuntu 24.04 broad-feature QA
 5. `QA-FED-001` Fedora 42 broad-feature QA
 6. `QA-DEB-001` Debian 12 baseline QA
 7. `QA-RKY-001` Rocky 10 terminal-first QA
-8. `KVM-002` Fedora 42 VM harness decision
-9. `KVM-003` Rocky 10 VM harness decision
-10. `PAR-001` and `PAR-002` as the next implementation lanes after QA results land
+8. `QA-ARCH-001`, `QA-MINT-001`, and `QA-NIX-001` as early community-target
+   reports
+9. `PAR-001` and `PAR-002` as the next implementation lanes after QA results
+   land
+10. `UPL-007` before preparing any Ghostty, Bonsplit, or Manaflow-facing
+    upstream submission

@@ -16,13 +16,16 @@ Track Rocky Linux 10 support for Linux-native `cmux`.
 
 Rocky 10 itself is available. The remaining blockers are:
 
-1. automation support in `nix-vm-test`
-2. clearly documenting Rocky as a constrained distro for browser parity
+1. replacing the current Rocky 9 RPM proxy with a real Rocky 10 lane
+2. producing a truthful terminal-first artifact instead of reusing the current
+   WebKit-coupled RPM
 
 ## Current State
 
 - Rocky 10 is GA
-- `nix-vm-test` support is still the automation gap
+- upstream `nix-vm-test` now has Rocky 10.1 image support
+- the current shipped RPM requires `webkitgtk6.0`, which Rocky 10 standard
+  repos do not provide
 - Rocky 9 is still serving as a temporary RPM-install proxy in VM tests
 - `cmux-linux` can already build in a constrained mode without WebKitGTK
 - Rocky should currently be treated as a **terminal-first** target, not a full browser-parity target
@@ -31,7 +34,7 @@ Rocky 10 itself is available. The remaining blockers are:
 
 - Rocky 10 package-install validation
 - Rocky 10 runtime validation for terminal-first workflows
-- automation support once `nix-vm-test` or an equivalent path is ready
+- artifact taxonomy and VM proof once a repo-owned Rocky 10 path is ready
 
 ## What This Issue Does Not Cover
 
@@ -49,6 +52,29 @@ Rocky 10 itself is available. The remaining blockers are:
 - Rocky 10 package/runtime path is validated
 - Rocky 10 terminal-first workflow is validated
 - Rocky’s browser limitation is explicitly documented
+```
+
+## `#209` Fedora 42
+
+Suggested update comment:
+
+```md
+Fedora 42 fresh-install coverage is now wired through upstream
+`numtide/nix-vm-test` in:
+
+- `nix/tests-distro.nix`
+- `.github/workflows/test-distro.yml`
+- `.github/workflows/release-linux.yml`
+
+Important correction: the distro checks now resolve to real `.sandboxed` VM
+runs, not just driver derivations.
+
+What remains on this issue is no longer strategy selection. It is:
+
+1. recording the first green Fedora 42 CI result
+2. keeping the lane stable
+3. keeping the former `Jesssullivan/nix-vm-test` carry reason visible as
+   historical context
 ```
 
 ## `#55` Linux Program Epic
@@ -107,10 +133,19 @@ References:
 
 ## `#199` Fork Landscape
 
-Suggested update comment:
+Suggested replacement body for the closed issue:
 
 ```md
-This issue remains useful, but it should stay explicitly parallel to Linux delivery.
+# Fork Landscape
+
+This closed issue remains useful as a historical audit of the fork graph, but
+it should no longer be read as an action list for direct upstream submissions.
+
+Current posture:
+
+- upstream-prep work is staged in owned docs, issues, and Linear only
+- any upstream PR/MR/issue/comment action is manual and human-executed
+- this lane stays parallel to Linux delivery and distro proof
 
 The current checked-in docs for this lane are:
 
@@ -124,6 +159,8 @@ Important boundary:
 - upstreamable slices are tracked and prepared locally
 - upstream PR/MR submission is manual
 - this lane should not block Linux parity or distro validation
+
+Do not use this issue body as a to-do list for opening upstream interactions.
 ```
 
 ## Proposed issue: Linux WebAuthn bridge completion

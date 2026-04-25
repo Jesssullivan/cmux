@@ -24,6 +24,18 @@ As of April 18, 2026:
 - Current pushed fork `main`: `e0f650766`
 - Current upstream `main`: `ca7516bea`
 
+As of April 25, 2026:
+
+- Current cmux pinned fork head: `e0f650766`
+- Current pushed fork `main`: `e0f650766`
+- Current upstream `main`: `c47a8091f`
+- Fork drift versus upstream: 61 commits ahead, 109 commits behind
+- Notable upstream-side churn since the current fork base includes Zig 0.16
+  compatibility work, libghostty cross-compilation/macOS xcframework build
+  changes, and config/key-binding cleanup
+- Ingestion risk is high enough that candidate upstream prep should stay
+  separate from the next fork-sync merge
+
 Branch cleanup (April 18, 2026): deleted 15 stale local branches and 16 stale
 remote branches from the fork. Only `main` remains. All feature/sync branches
 were already merged or superseded by upstream syncs.

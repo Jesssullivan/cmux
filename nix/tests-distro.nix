@@ -6,14 +6,15 @@
 # Nix-built packages. This tests what users actually install.
 #
 # Available checks:
+#   nix build .#checks.x86_64-linux.distro-fedora42
 #   nix build .#checks.x86_64-linux.distro-rocky9
-#   (Fedora/Rocky 10 blocked — nix-vm-test stale image URLs, see #187)
+#   nix build .#checks.x86_64-linux.distro-rocky10
 #   nix build .#checks.x86_64-linux.distro-debian12
 #   nix build .#checks.x86_64-linux.distro-ubuntu2404
 #
 # Note: `distro-rocky9` is currently a legacy RPM-install proxy. The actual
-# constrained RHEL-family target is Rocky 10, but nix-vm-test does not yet have
-# working Rocky 10 coverage.
+# constrained RHEL-family target is Rocky 10. A real `distro-rocky10` check is
+# only exported when the manifest defines a distinct `rpmRocky` asset.
 #
 # Requires KVM for acceptable performance (/dev/kvm).
 # Runs on honey self-hosted runner via test-distro.yml.
@@ -63,7 +64,12 @@
 
   cmuxDeb = materializeReleaseAsset releaseArtifacts.assets.deb;
 
-  cmuxRpm = materializeReleaseAsset releaseArtifacts.assets.rpm;
+  cmuxFedoraRpm = materializeReleaseAsset (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm);
+  haveRockyRpm = releaseArtifacts.assets ? rpmRocky;
+  cmuxRockyRpm =
+    if haveRockyRpm
+    then materializeReleaseAsset releaseArtifacts.assets.rpmRocky
+    else cmuxFedoraRpm;
 
   # ── Shared socket ping test snippet ──────────────────────────────
   # Used by all distro tests after package install.
@@ -79,12 +85,58 @@
     ''')
   '';
 
+  distro-fedora42 =
+    (nvt.fedora."42" {
+      sharedDirs = {
+        pkg = {
+          source = "${cmuxFedoraRpm}";
+          target = "/mnt/pkg";
+        };
+      };
+      testScript = ''
+        vm.wait_for_unit("multi-user.target")
+
+        vm.succeed("dnf makecache")
+        vm.succeed("dnf install -y /mnt/pkg/*")
+
+        # Verify binary is installed
+        vm.succeed("test -f /usr/bin/cmux")
+
+        ${socketPingTest}
+      '';
+    }).sandboxed;
+
+  distro-rocky10 =
+    (nvt.rocky."10_1" {
+      sharedDirs = {
+        pkg = {
+          source = "${cmuxRockyRpm}";
+          target = "/mnt/pkg";
+        };
+      };
+      testScript = ''
+        vm.wait_for_unit("multi-user.target")
+
+        vm.succeed("dnf install -y dnf-plugins-core")
+        vm.succeed("dnf config-manager --set-enabled crb")
+        vm.succeed("dnf makecache")
+
+        # Install the constrained Rocky 10 RPM
+        vm.succeed("dnf install -y /mnt/pkg/*")
+
+        # Verify binary is installed
+        vm.succeed("test -f /usr/bin/cmux")
+
+        ${socketPingTest}
+      '';
+    }).sandboxed;
+
   # ── Test: Rocky Linux 9 RPM install proxy ────────────────────────
   distro-rocky9 =
     (nvt.rocky."9_5" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxRpm}";
+          source = "${cmuxFedoraRpm}";
           target = "/mnt/pkg";
         };
       };
@@ -103,7 +155,7 @@
 
         ${socketPingTest}
       '';
-    }).driver;
+    }).sandboxed;
 
   # ── Test: Debian 12 DEB install ──────────────────────────────────
   distro-debian12 =
@@ -127,7 +179,7 @@
 
         ${socketPingTest}
       '';
-    }).driver;
+    }).sandboxed;
 
   # ── Test: Ubuntu 24.04 DEB install ───────────────────────────────
   distro-ubuntu2404 =
@@ -151,13 +203,12 @@
 
         ${socketPingTest}
       '';
-    }).driver;
+    }).sandboxed;
 
-  # NOTE: Fedora and Rocky 10 tests blocked:
-  # - upstream nix-vm-test main currently ships Fedora 39/40/41 images, not Fedora 42
-  # - upstream nix-vm-test main currently ships Rocky 8.6-9.6 images, not Rocky 10
-  # Track: https://github.com/Jesssullivan/cmux/issues/187
-  # Rocky 9 RPM test covers the dnf/RPM install path in the meantime.
-in {
-  inherit distro-rocky9 distro-debian12 distro-ubuntu2404;
-}
+  checks = {
+    inherit distro-fedora42 distro-rocky9 distro-debian12 distro-ubuntu2404;
+  } // lib.optionalAttrs haveRockyRpm {
+    inherit distro-rocky10;
+  };
+in
+  checks

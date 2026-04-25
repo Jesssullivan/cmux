@@ -94,13 +94,13 @@ Primary references:
 | `cmux` | repo root | primary product repo | critical | `green` | issue tracker and validation docs needed cleanup more than core architecture | keep CI green and use docs to drive Linux proof |
 | `cmux-linux` | `cmux-linux/` | in-tree product subtree | critical | `yellow` | validation and parity proof lag implementation | validate Ubuntu/Fedora broad-feature lanes first, then Debian baseline and Rocky terminal-first |
 | `cmuxd` / `cmuxd-remote` | `cmuxd/`, `daemon/remote/` | in-tree service/runtime | medium | `yellow` | Tailnet-direct transport is not implemented yet | keep as separate remote/fleet lane |
-| `ghostty` | `ghostty/` | active fork with carried patches | critical | `yellow` | highest-churn carried dependency, even though pin ancestry is now repaired | keep fork docs current and keep parent bumps on canonical fork `main` |
-| `vendor/bonsplit` | `vendor/bonsplit/` | mostly tracking upstream | medium | `green` | low merge risk compared with Ghostty | keep sync posture clean and record any remaining fork-only delta |
+| `ghostty` | `ghostty/` | active fork with carried patches | critical | `yellow` | 61 ahead / 109 behind upstream as of 2026-04-25; Zig 0.16 and xcframework churn need careful ingestion | keep fork docs current and keep parent bumps on canonical fork `main` |
+| `vendor/bonsplit` | `vendor/bonsplit/` | mostly tracking upstream | medium | `green` | low merge risk compared with Ghostty; current pin is 8 commits behind `origin/main` | keep sync posture clean and record any remaining fork-only delta |
 | `vendor/ctap2` | `vendor/ctap2/` | fork-owned standalone library | high | `green` | Linux/WebAuthn still needs distro-level proof, not repo hygiene work | validate hardware-backed broad-feature distro ceremony |
 | `vendor/zig-keychain` | `vendor/zig-keychain/` | fork-owned standalone library | high | `green` | distro-specific secret-service behavior still needs validation | validate libsecret path on Ubuntu/Fedora, then record Debian status |
 | `vendor/zig-crypto` | `vendor/zig-crypto/` | fork-owned standalone library | medium | `green` | not currently blocking product delivery | keep standalone docs and mainline healthy |
 | `vendor/zig-notify` | `vendor/zig-notify/` | fork-owned standalone library | medium | `green` | notification behavior still needs manual Linux validation | validate notification delivery during broad-feature distro smoke |
-| `homebrew-cmux` | `homebrew-cmux/` | packaging repo | low | `yellow` | submodule pin is behind `origin/main` by 2 commits | resync when doing the next release hygiene pass |
+| `homebrew-cmux` | `homebrew-cmux/` | packaging repo | low | `yellow` | submodule pin is behind `origin/main` by 6 commits | resync when doing the next release hygiene pass |
 
 ## Health Interpretation
 
