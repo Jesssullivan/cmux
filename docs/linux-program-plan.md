@@ -6,6 +6,7 @@ execution program.
 Short current-state readout:
 - `docs/program-status.md`
 - `docs/linux-packaging-cd-plan.md`
+- `docs/distro-testing-readiness-plan.md`
 - `docs/linux-work-week-2026-04-14.md`
 - `docs/linear-qa-shard-punchlist.md`
 
@@ -110,6 +111,7 @@ Core domains:
 Required output:
 - a maintained parity matrix in `docs/linux-parity-matrix.md`
 - a validation checklist in `docs/linux-validation-checklist.md`
+- a distro readiness plan in `docs/distro-testing-readiness-plan.md`
 - explicit distinction between validation gaps and still-stubbed Linux surfaces
 
 ### 3. Distro Validation
@@ -169,7 +171,15 @@ and the current distro support reality.
 Container and Nix proof are now useful, but package-install proof and explicit
 browser/WebAuthn proof still lag on the target distro matrix.
 
-### 4. Stubbed parity surfaces
+### 4. Fedora 42 proof evidence and Rocky 10 artifact gap
+
+`Fedora 42` is now wired into the repo-owned KVM lane. The next
+release-confidence step is keeping that lane green and replacing the `Rocky 9`
+proxy with a truthful `Rocky 10` terminal-first artifact path.
+
+The blocker is not FlakeHub subscription shape or repo ownership.
+
+### 5. Stubbed parity surfaces
 
 Some Linux features are still present only as scaffolding:
 
@@ -181,7 +191,7 @@ Some Linux features are still present only as scaffolding:
 These should stay visible as implementation work, not be misread as validation
 only.
 
-### 5. CI runtime upkeep
+### 6. CI runtime upkeep
 
 The branch is green, but workflow runtime hygiene still needs maintenance as
 GitHub-hosted actions deprecate older Node versions.
@@ -217,6 +227,13 @@ GitHub-hosted actions deprecate older Node versions.
 1. tighten CI coverage
 2. ensure packages match actual install paths
 3. keep release artifacts and distro tests aligned
+
+### Phase 6: Naming Review
+
+1. keep `#76` explicitly non-blocking
+2. evaluate `cmux` vs `lmux` only if distro distribution or product clarity
+   creates a real rename trigger
+3. avoid binary/package rename churn while the proof surface is still stabilizing
 
 ## Acceptance Criteria
 

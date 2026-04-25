@@ -7,6 +7,8 @@ Detailed execution belongs in owned trackers and status docs, not here.
 
 - GitHub issues in `Jesssullivan/cmux` for repo-local execution lanes
 - Tinyland Linear for cross-repo planning and status
+- `docs/distro-testing-readiness-plan.md`
+- `docs/flakehub-qa-ownership-notes.md`
 - `docs/program-status.md`
 - `docs/linux-parity-matrix.md`
 - `docs/ghostty-fork.md`
@@ -19,8 +21,8 @@ Detailed execution belongs in owned trackers and status docs, not here.
   - Resync `homebrew-cmux` during the next release-hygiene pass
 
 - [ ] Linux proof and parity
-  - `#209` Fedora 42 fresh-install VM proof
-  - `#187` Rocky 10 fresh-install proof / proxy retirement
+  - `#209` Fedora 42 fresh-install VM proof / first green CI evidence
+  - `#187` Rocky 10 terminal-first artifact / proxy retirement
   - `#206` WebAuthn bridge completion
   - `#216` Expand Linux `tests_v2` socket coverage beyond the current stable baseline
 

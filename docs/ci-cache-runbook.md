@@ -6,6 +6,7 @@ Cache in GitHub Actions.
 Use this together with:
 
 - `docs/cache-ownership-policy.md`
+- `docs/flakehub-qa-ownership-notes.md`
 - `docs/program-status.md`
 
 ## Default Posture
@@ -89,11 +90,12 @@ This avoids repeated authorization noise while preserving a shared workflow.
 
 ## Current Application
 
-As of 2026-04-13:
+As of 2026-04-21:
 
 | Repository scope | Current posture |
 |---|---|
 | `Jesssullivan/cmux` | `FLAKEHUB_CACHE_ENABLED=false`; use Magic Nix Cache |
+| `Jesssullivan/nix-vm-test` | personal contingency fork; keep Magic Nix Cache posture until it actually carries owned patches |
 | `tinyland-inc` org | `FLAKEHUB_CACHE_ENABLED=true` at org scope |
 | `tinyland-inc/lab` | FlakeHub Cache validated successfully |
 
@@ -102,3 +104,15 @@ Interpretation:
 - `tinyland-inc` is the active FlakeHub-heavy lane
 - personal forks should remain healthy without requiring FlakeHub Cache
 - repository ownership is the policy boundary, not cache-product preference
+
+## QA And Account Notes
+
+- `Jesssullivan/nix-vm-test` is the owned contingency fork for VM-image carry
+  work, but it is not an org-cache surface
+- FlakeHub Cache is unavailable on fork PRs, so distro/package proof must not
+  depend on FlakeHub hits to be considered healthy
+- validate FlakeHub App install, billing, and membership assumptions on
+  `tinyland-inc/lab` before widening any org-owned cache usage
+- keep fallback decisions and hiccup notes in `Jesssullivan/cmux` issues,
+  Tinyland Linear, and checked-in docs because `Jesssullivan/nix-vm-test` has
+  issues disabled

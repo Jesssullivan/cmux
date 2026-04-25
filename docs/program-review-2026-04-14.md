@@ -164,7 +164,7 @@ The planning surface is smaller than the open milestone list makes it look.
 - `#55` `Epic: De-Attestation & Linux Porting Roadmap`
 - `#76` `RFC: Linux client naming — cmux vs lmux`
 - `#187` `ci(distro): Rocky 10 — track upstream nix-vm-test support`
-- `#199` `audit: fork landscape, novel libraries, and upstream PR opportunities`
+- `#199` `audit: fork landscape and human-gated upstream preparation`
 - `#201` `feat(cmuxd-remote): add TCP listener mode for Tailnet direct connections`
 
 ### Tracker problems
@@ -369,6 +369,7 @@ Run these on fresh VMs or real distro hosts and record outcomes explicitly.
    - blocker is upstream `nix-vm-test`
    - Rocky 9 is current RPM-path proxy only
 3. Refresh `#199` so it reflects current divergence and manual-upstream policy
+   Completed on `2026-04-21`.
 4. Keep `#76` explicitly non-blocking
 5. Keep `#201` separate from Linux distro delivery
 6. Close, rename, or archive stale open milestones with zero open issues:

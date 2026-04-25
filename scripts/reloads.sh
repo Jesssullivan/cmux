@@ -4,6 +4,8 @@ set -euo pipefail
 APP_NAME="cmux STAGING"
 BUNDLE_ID="com.cmuxterm.app.staging"
 BASE_APP_NAME="cmux"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ZIG_BIN="$("$SCRIPT_DIR/resolve-zig.sh")"
 DERIVED_DATA=""
 NAME_SET=0
 BUNDLE_SET=0
@@ -227,7 +229,7 @@ pkill -f "${APP_NAME}.app/Contents/MacOS/${BASE_APP_NAME}" || true
 sleep 0.3
 CMUXD_SRC="$PWD/cmuxd/zig-out/bin/cmuxd"
 if [[ -d "$PWD/cmuxd" ]]; then
-  (cd "$PWD/cmuxd" && zig build -Doptimize=ReleaseFast)
+  (cd "$PWD/cmuxd" && "$ZIG_BIN" build -Doptimize=ReleaseFast)
 fi
 if [[ -x "$CMUXD_SRC" ]]; then
   BIN_DIR="$APP_PATH/Contents/Resources/bin"

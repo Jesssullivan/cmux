@@ -10,7 +10,7 @@
 
 1. Clone the repository with submodules:
    ```bash
-   git clone --recursive https://github.com/manaflow-ai/cmux.git
+   git clone --recursive https://github.com/Jesssullivan/cmux.git
    cd cmux
    ```
 
@@ -38,7 +38,7 @@
 | `./scripts/reload.sh` | Build Debug app (pass `--launch` to also open it) |
 | `./scripts/reloadp.sh` | Build and launch Release app |
 | `./scripts/reload2.sh` | Reload both Debug and Release |
-| `./scripts/rebuild.sh` | Clean rebuild |
+| `./scripts/rebuild.sh` | Deprecated compatibility shim for `./scripts/reload.sh --tag <tag>` |
 | `./scripts/report-fork-health.sh` | Report parent/submodule hygiene and pin ancestry |
 
 ## Project Maps

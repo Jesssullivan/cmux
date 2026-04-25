@@ -54,7 +54,7 @@ Scope:
 
 - refresh `#55`
 - refresh `#187`
-- refresh `#199`
+- refresh `#199` (completed on `2026-04-21`)
 - keep `#76` explicitly non-blocking
 - keep `#201` explicitly parallel
 - clean up stale open milestones `M6` through `M9`

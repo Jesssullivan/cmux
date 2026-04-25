@@ -4,6 +4,8 @@ set -euo pipefail
 APP_NAME="cmux DEV"
 BUNDLE_ID="com.cmuxterm.app.debug"
 BASE_APP_NAME="cmux DEV"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ZIG_BIN="$("$SCRIPT_DIR/resolve-zig.sh")"
 DERIVED_DATA=""
 NAME_SET=0
 BUNDLE_SET=0
@@ -24,7 +26,7 @@ should_skip_ghostty_cli_helper_zig_build() {
 
   local product_version zig_version major_version
   product_version="$(sw_vers -productVersion 2>/dev/null || true)"
-  zig_version="$(zig version 2>/dev/null || true)"
+  zig_version="$("$ZIG_BIN" version 2>/dev/null || true)"
   major_version="${product_version%%.*}"
 
   if [[ "$zig_version" == "0.15.2" ]] && [[ "$major_version" =~ ^[0-9]+$ ]] && (( major_version >= 26 )); then
@@ -281,7 +283,7 @@ if [[ -z "$TAG" ]]; then
   exit 1
 fi
 
-"$PWD/scripts/ensure-ghosttykit.sh"
+"$SCRIPT_DIR/ensure-ghosttykit.sh"
 
 if should_skip_ghostty_cli_helper_zig_build; then
   if [[ "${CMUX_SKIP_ZIG_BUILD:-}" != "1" ]]; then
@@ -325,6 +327,7 @@ fi
 if [[ "${CMUX_SKIP_ZIG_BUILD:-}" == "1" ]]; then
   XCODEBUILD_ARGS+=(CMUX_SKIP_ZIG_BUILD=1)
 fi
+XCODEBUILD_ARGS+=(CMUX_ZIG_BIN="$ZIG_BIN")
 XCODEBUILD_ARGS+=(build)
 
 XCODE_LOG="/tmp/cmux-xcodebuild-${TAG_SLUG}.log"
@@ -505,13 +508,13 @@ fi
 CMUXD_SRC="$PWD/cmuxd/zig-out/bin/cmuxd"
 GHOSTTY_HELPER_SRC="$PWD/ghostty/zig-out/bin/ghostty"
 if [[ -d "$PWD/cmuxd" ]]; then
-  (cd "$PWD/cmuxd" && zig build -Doptimize=ReleaseFast)
+  (cd "$PWD/cmuxd" && "$ZIG_BIN" build -Doptimize=ReleaseFast)
 fi
 if [[ -d "$PWD/ghostty" ]]; then
   if [[ "${CMUX_SKIP_ZIG_BUILD:-}" == "1" ]]; then
     echo "Skipping direct ghostty CLI helper zig build (CMUX_SKIP_ZIG_BUILD=1)"
   else
-    (cd "$PWD/ghostty" && zig build cli-helper -Dapp-runtime=none -Demit-macos-app=false -Demit-xcframework=false -Doptimize=ReleaseFast)
+    (cd "$PWD/ghostty" && "$ZIG_BIN" build cli-helper -Dapp-runtime=none -Demit-macos-app=false -Demit-xcframework=false -Doptimize=ReleaseFast)
   fi
 fi
 if [[ -x "$CMUXD_SRC" ]]; then
