@@ -43,6 +43,30 @@ As of April 25, 2026:
   textually, but `src/Surface.zig` and `src/config/Config.zig` both changed on
   both sides and need a semantic review before the next fork sync.
 
+### Current ownership posture
+
+`Jesssullivan/ghostty#13` is an owned-fork maintenance PR, not a planned
+`ghostty-org/ghostty` upstream submission.
+
+The immediate goal is to keep the `Jesssullivan/ghostty` fork buildable for the
+cmux/lmux parent pin after the April 25 upstream sync. Vouch or other upstream
+social-gating concerns should not turn this into a `ghostty-org` contribution
+lane by default.
+
+Current policy:
+
+- keep PR #13 in `Jesssullivan/ghostty`
+- merge it into the owned fork's canonical `main` when the owned-repo gate is
+  clear or Jess manually resolves the owned-fork gate
+- move the cmux parent `ghostty` pointer only after the chosen commit is
+  reachable from `Jesssullivan/ghostty/main`
+- do not prepare or submit this specific build fix to `ghostty-org` unless Jess
+  explicitly chooses that later
+
+Ghostty upstream candidates remain tracked in `docs/upstream-candidate-ledger.md`
+as future human handoff possibilities, not as part of the urgent parent-pin
+work.
+
 Branch cleanup (April 18, 2026): deleted 15 stale local branches and 16 stale
 remote branches from the fork. Only `main` remains. All feature/sync branches
 were already merged or superseded by upstream syncs.

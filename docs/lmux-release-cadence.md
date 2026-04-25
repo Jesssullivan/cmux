@@ -14,6 +14,19 @@ builds on `docs/upstream-sync.md` and `docs/linux-qa-intake.md`.
 | Release candidate QA | before each Linux tag | collect Tier A/B/C evidence that matches the package artifacts |
 | Upstreamable prep | at most one candidate per session | prepare a handoff packet; Jess submits non-owned PRs by hand |
 
+## Owned Forks Versus Upstream
+
+Owned-fork maintenance is not the same as upstream publication.
+
+For Ghostty, urgent cmux/lmux work should route through `Jesssullivan/ghostty`
+unless Jess explicitly chooses a manual `ghostty-org/ghostty` submission. Vouch
+or other upstream social gates are reasons to keep the work fork-owned by
+default, not reasons to block Linux delivery.
+
+For Bonsplit, the current upstream handoff is already done from the lmux/cmux
+side. The parent pointer waits for upstream merge or an explicit fork-only
+posture decision.
+
 ## Channels
 
 Use three release channels:
@@ -65,7 +78,7 @@ support-tier language without evidence.
 
 | Linear item | Lane | Current interpretation |
 |---|---|---|
-| `TIN-594` | Ghostty parent pin | blocked on owned-fork PR #13 checks/merge before parent pointer moves |
+| `TIN-594` | Ghostty parent pin | owned-fork work; blocked on `Jesssullivan/ghostty#13` reaching owned fork `main`, not on any `ghostty-org` submission |
 | `TIN-174` | Bonsplit | upstream PR #104 is open; cmux pointer waits on upstream merge or explicit fork posture |
 | `TIN-575` | relationship docs | satisfied by `docs/lmux-relationship.md` once reviewed |
 | `TIN-576` | third-party licenses | satisfied by `THIRD_PARTY_LICENSES.md` once the Zig library entries are present |

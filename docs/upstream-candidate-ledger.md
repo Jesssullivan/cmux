@@ -40,6 +40,7 @@ Upstream correspondence is manual.
 | `ghostty` | OSC 99 notification parser | `prepared` | documented in `docs/ghostty-fork.md`; protocol feature, likely needs careful parser API review |
 | `ghostty` | resize stale-frame mitigation | `identified` | useful, but conflict-prone and larger |
 | `ghostty` | Linux embedded platform variant | `identified` | relevant to Linux strategy, but high-touch; coordinate manually with upstream platform work |
+| `ghostty` | manual backend process-info build fix from `Jesssullivan/ghostty#13` | `fork-only` | owned-fork maintenance needed for the April 25 parent pin; no `ghostty-org` submission planned |
 | `ghostty` | cmux theme picker helper hooks | `fork-only` | host-app integration, not a good upstream slice |
 | `ghostty` | macos-background-from-layer config flag | `fork-only` | cmux renderer integration and visual-hosting contract |
 | `ghostty` | keyboard copy-mode selection C API re-export | `fork-only` | compatibility shim for current cmux keyboard copy mode |
@@ -91,6 +92,10 @@ Current first candidates by expected goodwill-to-risk ratio:
 2. Ghostty color scheme mode 2031 reporting
 3. Ghostty TerminalStream APC handling
 4. Ghostty OSC 99 parser
+
+These are not active submission tasks. Because Ghostty is a busy upstream with
+Vouch and a high coordination cost, all `ghostty-org/ghostty` publication stays
+paused unless Jess explicitly opens a focused manual upstreaming session.
 
 The Linux embedded platform variant is intentionally later. It is valuable, but
 it intersects with upstream platform work and should get focused human review.
