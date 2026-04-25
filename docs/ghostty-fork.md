@@ -27,26 +27,26 @@ As of April 18, 2026:
 
 As of April 25, 2026:
 
-- Current checked-in cmux parent pin: `e0f650766`
-- Current pushed fork `main`: `9b1d5d389`
-- Current upstream `main`: `b613ffcfd`
-- Fork drift versus upstream: 64 commits ahead, 33 commits behind
-- cmux cannot move the parent pin to `9b1d5d389` yet: the ReleaseFast
-  universal GhosttyKit build exposed a missing `.manual` case in
-  `src/termio/backend.zig`.
-- The build fix is staged in `Jesssullivan/ghostty#13` at `9456e87a0`. The
-  GhosttyKit-only build passes there with the macOS 15.4 SDK shim and
-  `-Demit-macos-app=false`; the full default build still fails later in the
-  optional macOS app bundle step while resolving a Swift package revision.
-- The newest 33 upstream commits after `c47a8091f` remain intentionally outside
-  the parent-pin bump. A dry merge check against `b613ffcfd` succeeds
-  textually, but `src/Surface.zig` and `src/config/Config.zig` both changed on
-  both sides and need a semantic review before the next fork sync.
+- Current checked-in cmux parent pin: `e8f62c061`
+- Current pushed fork `main`: `e8f62c061`
+- Current upstream `main`: `67b5783bd`
+- Fork drift versus upstream: 66 commits ahead, 47 commits behind
+- `Jesssullivan/ghostty#13` has landed in the owned fork's `main`. It fixes the
+  missing `.manual` case in `src/termio/backend.zig` exposed by the ReleaseFast
+  universal GhosttyKit build.
+- The GhosttyKit-only build passes at `e8f62c061` with the macOS 15.4 SDK shim
+  and `-Demit-macos-app=false`.
+- The full default build was not re-run for this parent-pin bump. The previous
+  full default build reached the optional macOS app bundle step and then failed
+  while resolving a Swift package revision.
+- The newest 47 upstream commits after `c47a8091f` remain intentionally outside
+  the parent-pin bump. `src/Surface.zig` and `src/config/Config.zig` both change
+  frequently and still need semantic review before the next fork sync.
 
 ### Current ownership posture
 
-`Jesssullivan/ghostty#13` is an owned-fork maintenance PR, not a planned
-`ghostty-org/ghostty` upstream submission.
+`Jesssullivan/ghostty#13` was handled as owned-fork maintenance, not as a
+planned `ghostty-org/ghostty` upstream submission.
 
 The immediate goal is to keep the `Jesssullivan/ghostty` fork buildable for the
 cmux/lmux parent pin after the April 25 upstream sync. Vouch or other upstream
@@ -55,11 +55,9 @@ lane by default.
 
 Current policy:
 
-- keep PR #13 in `Jesssullivan/ghostty`
-- merge it into the owned fork's canonical `main` when the owned-repo gate is
-  clear or Jess manually resolves the owned-fork gate
-- move the cmux parent `ghostty` pointer only after the chosen commit is
-  reachable from `Jesssullivan/ghostty/main`
+- keep the PR #13 change in `Jesssullivan/ghostty`
+- move the cmux parent `ghostty` pointer only to commits reachable from
+  `Jesssullivan/ghostty/main`
 - do not prepare or submit this specific build fix to `ghostty-org` unless Jess
   explicitly chooses that later
 
