@@ -72,8 +72,8 @@ Current focus:
   surfaces only
 - keep the `nix-vm-test` upstream exit visible: `numtide/nix-vm-test#172`
   merged on 2026-04-22, and cmux now pins upstream `numtide/nix-vm-test`
-- keep `#199` parallel to Linux delivery rather than reopening ad hoc upstream
-  work
+- keep the now-closed fork-landscape work from reopening ad hoc upstream work
+  while new upstream handoffs stay human-gated
 
 Primary references:
 
@@ -146,11 +146,11 @@ Current `test-distro` coverage includes:
 
 Current gap:
 
-- `Fedora 42` is wired into the repo-owned VM lane, but still needs first green
-  CI evidence
-- `Rocky 10` now has a dedicated terminal-first RPM lane on the branch, but it
-  still needs first green CI evidence and a published `rpmRocky` asset in the
-  checked-in manifest
+- `Fedora 42` is wired into the repo-owned VM lane, but still needs a recorded
+  first green CI result on the self-hosted KVM runner
+- `Rocky 10` has a terminal-first RPM path staged in the active packaging WIP,
+  but still needs first green CI evidence and a published `rpmRocky` asset in
+  the checked-in manifest
 - the VM-image blocker is resolved upstream; remaining work is artifact truth
   and first green proof
 - this remains a distro-proof and artifact-truth problem, not a FlakeHub
@@ -188,20 +188,21 @@ For live ancestry and worktree checks:
 
 ## Open Tracker Map
 
-As of 2026-04-21, the public fork tracker is small and focused:
+As of 2026-04-25, the public fork tracker is small and focused:
 
 - `#55` `Epic: Linux Delivery, Distro Proof, and Remaining Parity Gaps`
 - `#76` `RFC: Linux client naming — cmux vs lmux`
 - `#187` `ci(distro): establish Rocky 10 fresh-install proof and retire the Rocky 9 proxy`
+- `#206` `linux: complete WebAuthn bridge handling`
 - `#209` `ci(distro): establish Fedora 42 fresh-install VM proof`
 - `#216` `tests_v2: expand Linux socket-test coverage beyond the current stable baseline`
-- `#199` `audit: fork landscape and human-gated upstream preparation`
 - `#201` `feat(cmuxd-remote): add TCP listener mode for Tailnet direct connections`
 
 Interpretation:
 
 - `#55`, `#187`, `#209`, and `#216` are the active Linux execution lane
-- `#199` and `#201` are real, but parallel
+- `#206` is the active WebAuthn/FIDO2 parity lane
+- `#201` is real, but parallel
 - `#76` is intentionally non-blocking unless distro distribution or product
   clarity creates a real rename trigger
 - the main note-hygiene risk is cross-repo QA decisions drifting out of sync

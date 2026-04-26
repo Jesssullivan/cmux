@@ -78,7 +78,7 @@ support-tier language without evidence.
 
 | Linear item | Lane | Current interpretation |
 |---|---|---|
-| `TIN-594` | Ghostty parent pin | owned-fork work; blocked on `Jesssullivan/ghostty#13` reaching owned fork `main`, not on any `ghostty-org` submission |
+| `TIN-594` | Ghostty parent pin | done; `Jesssullivan/ghostty#13` landed and cmux now pins the owned fork `main` at `e8f62c061f23` |
 | `TIN-174` | Bonsplit | upstream PR #104 is open; cmux pointer waits on upstream merge or explicit fork posture |
 | `TIN-575` | relationship docs | satisfied by `docs/lmux-relationship.md` once reviewed |
 | `TIN-576` | third-party licenses | satisfied by `THIRD_PARTY_LICENSES.md` once the Zig library entries are present |
