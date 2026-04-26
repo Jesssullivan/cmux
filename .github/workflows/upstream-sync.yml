@@ -33,6 +33,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config core.commitGraph false
+
+      - name: Clear local commit graph cache
+        run: |
+          rm -f .git/objects/info/commit-graph
+          rm -rf .git/objects/info/commit-graphs
 
       - name: Add upstream remote
         run: |
@@ -173,13 +179,14 @@ jobs:
         if: steps.check.outputs.has_updates == 'true'
         id: merge
         run: |
-          if git merge upstream/main --no-edit; then
+          set -o pipefail
+          if git merge upstream/main --no-edit 2>&1 | tee /tmp/merge-output.txt; then
             echo "merge_clean=true" >> "$GITHUB_OUTPUT"
           else
             echo "merge_clean=false" >> "$GITHUB_OUTPUT"
 
             # Capture conflicted files
-            git diff --name-only --diff-filter=U > /tmp/conflicted-files.txt
+            git diff --name-only --diff-filter=U > /tmp/conflicted-files.txt || true
 
             # Classify conflicts into categories
             FORK_OWNED=""
@@ -205,7 +212,12 @@ jobs:
             {
               echo "## Merge Conflicts"
               echo ""
-              echo "The following files have conflicts that need manual resolution:"
+              if [ -s /tmp/conflicted-files.txt ]; then
+                echo "The following files have conflicts that need manual resolution:"
+              else
+                echo "The merge failed before Git wrote conflicted files. Check the merge output from the workflow run."
+                echo "(none captured)" > /tmp/conflicted-files.txt
+              fi
               echo ""
               if [ -n "$FORK_OWNED" ]; then
                 echo "### Fork-owned (keep our version unless upstream change is needed)"
@@ -225,7 +237,9 @@ jobs:
             } > /tmp/conflict-details.md
 
             # Abort the failed merge so we can create a branch from clean state
-            git merge --abort
+            if [ -f .git/MERGE_HEAD ]; then
+              git merge --abort || true
+            fi
           fi
 
       # --- Clean merge path: verify fork files, build check, push ---
