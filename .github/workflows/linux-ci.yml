@@ -25,7 +25,7 @@ concurrency:
 jobs:
   # ── Nix Flake: dev shell + checks ──────────────────────────────────
   nix-flake:
-    name: Nix flake check
+    name: Linux Nix flake check
     runs-on: ubuntu-latest
     permissions:
       id-token: write
