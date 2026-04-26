@@ -104,6 +104,6 @@ install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
 %{_udevrulesdir}/70-u2f.rules
 
 %changelog
-* Sun Apr 06 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.75.0-1
+* Mon Apr 06 2026 Jess Sullivan <jess@jesssullivan.dev> - 0.75.0-1
 - Refresh Linux package metadata for current release series
 - Expand distro package testing coverage and release packaging
