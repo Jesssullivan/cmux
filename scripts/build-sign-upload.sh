@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ZIG_BIN="$("$SCRIPT_DIR/resolve-zig.sh")"
+
 # Build, sign, notarize, create DMG, generate appcast, and upload to GitHub release.
 # Usage: ./scripts/build-sign-upload.sh <tag> [--allow-overwrite]
 # Requires: source ~/.secrets/cmuxterm.env && export SPARKLE_PRIVATE_KEY
@@ -54,7 +57,7 @@ APP_PATH="build/Build/Products/Release/cmux.app"
 # --- Pre-flight ---
 source ~/.secrets/cmuxterm.env
 export SPARKLE_PRIVATE_KEY
-for tool in zig xcodebuild create-dmg xcrun codesign ditto gh; do
+for tool in xcodebuild create-dmg xcrun codesign ditto gh; do
   command -v "$tool" >/dev/null || { echo "MISSING: $tool" >&2; exit 1; }
 done
 echo "Pre-flight checks passed"
@@ -62,7 +65,7 @@ echo "Pre-flight checks passed"
 # --- Build GhosttyKit (if needed) ---
 if [ ! -d "GhosttyKit.xcframework" ]; then
   echo "Building GhosttyKit..."
-  cd ghostty && zig build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=universal -Doptimize=ReleaseFast && cd ..
+  cd ghostty && "$ZIG_BIN" build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=universal -Doptimize=ReleaseFast && cd ..
   rm -rf GhosttyKit.xcframework
   cp -R ghostty/macos/GhosttyKit.xcframework GhosttyKit.xcframework
 else

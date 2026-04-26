@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+ZIG_BIN="$("$SCRIPT_DIR/resolve-zig.sh")"
 
 cd "$PROJECT_DIR"
 
@@ -55,12 +56,6 @@ PY
 
 if [[ ! -d "$PROJECT_DIR/ghostty" ]]; then
   echo "error: ghostty submodule is missing. Run ./scripts/setup.sh first." >&2
-  exit 1
-fi
-
-if ! command -v zig >/dev/null 2>&1; then
-  echo "Error: zig is not installed." >&2
-  echo "Install via: brew install zig" >&2
   exit 1
 fi
 
@@ -219,7 +214,7 @@ else
     echo "==> Building GhosttyKit.xcframework (this may take a few minutes)..."
     (
       cd ghostty
-      zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+      "$ZIG_BIN" build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
     )
     echo "$GHOSTTY_KEY" > "$LOCAL_KEY_STAMP"
     echo "$GHOSTTY_SHA" > "$LEGACY_LOCAL_SHA_STAMP"
