@@ -1,8 +1,8 @@
 import Foundation
 
 /// Manages trusted directories for cmux.json command execution.
-/// When a directory (or its git repo root) is trusted, `confirm: true` commands
-/// from that directory's cmux.json skip the confirmation dialog.
+/// When a directory (or its git repo root) is trusted, project actions from
+/// that directory's cmux.json skip the confirmation dialog.
 /// Global config (~/.config/cmux/cmux.json) is always trusted.
 final class CmuxDirectoryTrust {
     static let shared = CmuxDirectoryTrust()
@@ -13,7 +13,8 @@ final class CmuxDirectoryTrust {
 
     private init() {
         let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
         ).first!.appendingPathComponent("cmux")
         storePath = appSupport.appendingPathComponent("trusted-directories.json").path
 
@@ -24,7 +25,7 @@ final class CmuxDirectoryTrust {
 
         if let data = fm.contents(atPath: storePath),
            let paths = try? JSONDecoder().decode([String].self, from: data) {
-            trustedPaths = Set(paths)
+            trustedPaths = Set(paths.map(Self.canonicalPath))
         } else {
             trustedPaths = []
         }
@@ -32,64 +33,55 @@ final class CmuxDirectoryTrust {
 
     /// Check if a cmux.json path is trusted.
     /// Global config is always trusted. For local configs, check the git repo root
-    /// (or the cmux.json parent directory if not in a git repo).
+    /// or the cmux.json parent directory when not in a git repo.
     func isTrusted(configPath: String, globalConfigPath: String) -> Bool {
-        if configPath == globalConfigPath { return true }
-        let trustKey = Self.trustKey(for: configPath)
-        return trustedPaths.contains(trustKey)
+        if Self.canonicalPath(configPath) == Self.canonicalPath(globalConfigPath) {
+            return true
+        }
+        return trustedPaths.contains(Self.trustKey(for: configPath))
     }
 
     /// Trust the directory containing a cmux.json. If the cmux.json is inside a git
-    /// repo, trusts the repo root (covering all subdirectories).
+    /// repo, trust the repo root so subdirectories are covered too.
     func trust(configPath: String) {
-        let trustKey = Self.trustKey(for: configPath)
-        trustedPaths.insert(trustKey)
+        trustedPaths.insert(Self.trustKey(for: configPath))
         save()
     }
 
     /// Remove trust for a directory.
     func revokeTrust(configPath: String) {
-        let trustKey = Self.trustKey(for: configPath)
-        trustedPaths.remove(trustKey)
+        trustedPaths.remove(Self.trustKey(for: configPath))
         save()
     }
 
-    /// Remove trust by the trust key directly (as stored/displayed in settings).
+    /// Remove trust by the path directly as stored/displayed in settings.
     func revokeTrustByPath(_ path: String) {
-        trustedPaths.remove(path)
+        trustedPaths.remove(Self.canonicalPath(path))
         save()
     }
 
-    /// All currently trusted paths.
     var allTrustedPaths: [String] {
-        Array(trustedPaths).sorted()
+        trustedPaths.sorted()
     }
 
-    /// Replace all trusted paths (used by Settings textarea save).
     func replaceAll(with paths: [String]) {
-        trustedPaths = Set(paths)
+        trustedPaths = Set(paths.map(Self.canonicalPath).filter { !$0.isEmpty })
         save()
     }
 
-    /// Clear all trusted directories.
     func clearAll() {
         trustedPaths.removeAll()
         save()
     }
 
-    // MARK: - Private
-
-    /// Resolve the trust key for a cmux.json path: git repo root if inside a repo,
-    /// otherwise the cmux.json's parent directory.
-    static func trustKey(for configPath: String) -> String {
-        let configDir = (configPath as NSString).deletingLastPathComponent
+    private static func trustKey(for configPath: String) -> String {
+        let configDir = (canonicalPath(configPath) as NSString).deletingLastPathComponent
         if let gitRoot = findGitRoot(from: configDir) {
-            return gitRoot
+            return canonicalPath(gitRoot)
         }
-        return configDir
+        return canonicalPath(configDir)
     }
 
-    /// Walk up from `directory` looking for a `.git` directory or file.
     private static func findGitRoot(from directory: String) -> String? {
         let fm = FileManager.default
         var current = directory
@@ -105,9 +97,14 @@ final class CmuxDirectoryTrust {
         return nil
     }
 
+    private static func canonicalPath(_ path: String) -> String {
+        let expanded = (path as NSString).expandingTildeInPath
+        guard !expanded.isEmpty else { return "" }
+        return URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
     private func save() {
-        let sorted = trustedPaths.sorted()
-        guard let data = try? JSONEncoder().encode(sorted) else { return }
+        guard let data = try? JSONEncoder().encode(trustedPaths.sorted()) else { return }
         FileManager.default.createFile(atPath: storePath, contents: data)
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
