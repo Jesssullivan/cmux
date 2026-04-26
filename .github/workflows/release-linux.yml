@@ -348,7 +348,140 @@ jobs:
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cmux-linux-rpm-${{ matrix.arch.rpm }}
+          name: cmux-linux-rpm-fedora-${{ matrix.arch.rpm }}
+          path: |
+            cmux-*.${{ matrix.arch.rpm }}.rpm
+            cmux-*.${{ matrix.arch.rpm }}.rpm.asc
+          if-no-files-found: error
+
+  # ── Build + package on Rocky (terminal-first RPM) ────────────────
+  build-rpm-rocky:
+    name: Build RPM package (Rocky 10, ${{ matrix.arch.rpm }})
+    runs-on: ${{ matrix.arch.runner }}
+    container: rockylinux/rockylinux:10
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - { rpm: x86_64, runner: ubuntu-latest }
+          - { rpm: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y dnf-plugins-core
+          dnf config-manager --set-enabled crb
+          dnf install -y \
+            git rpm-build rpm-sign gnupg2 systemd-rpm-macros \
+            gcc gcc-c++ pkg-config \
+            gtk4-devel libadwaita-devel \
+            libsecret-devel libnotify-devel \
+            wayland-devel wayland-protocols-devel \
+            freetype-devel harfbuzz-devel fontconfig-devel \
+            libpng-devel oniguruma-devel mesa-libGL-devel \
+            glslang
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#lab-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install Zig
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
+
+      - name: Build vendor libraries
+        run: |
+          cd vendor/ctap2 && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Doptimize=ReleaseFast && cd ../..
+
+      - name: Build libghostty
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          cd ..
+          bash scripts/ghostty-compat-symlinks.sh
+
+      - name: Build cmux-linux (terminal-first)
+        run: |
+          cd cmux-linux
+          zig build -Doptimize=ReleaseFast -Dno-webkit=true
+
+      - name: Build cmuxd
+        run: |
+          if [ -d cmuxd ]; then
+            cd cmuxd && zig build -Doptimize=ReleaseFast
+          fi
+
+      - name: Assemble RPM package
+        env:
+          RPM_ARCH: ${{ matrix.arch.rpm }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          RPM_VERSION=$(echo "$VERSION" | tr '-' '~')
+          TOPDIR="$PWD/rpmbuild"
+          mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
+          BUILDROOT="$TOPDIR/BUILDROOT/cmux-${RPM_VERSION}-1.${RPM_ARCH}"
+
+          UDEVRULESDIR=$(rpm --eval '%{_udevrulesdir}')
+          LIBDIR=$(rpm --eval '%{_libdir}')
+
+          install -Dm755 cmux-linux/zig-out/bin/cmux "${BUILDROOT}/usr/bin/cmux"
+          install -Dm755 ghostty/zig-out/lib/libghostty.so "${BUILDROOT}${LIBDIR}/cmux/libghostty.so"
+          if [ -f cmuxd/zig-out/bin/cmuxd ]; then
+            install -Dm755 cmuxd/zig-out/bin/cmuxd "${BUILDROOT}/usr/bin/cmuxd"
+          fi
+          install -Dm644 dist/linux/com.jesssullivan.cmux.desktop "${BUILDROOT}/usr/share/applications/com.jesssullivan.cmux.desktop"
+          install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml "${BUILDROOT}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
+          for size in 16 128 256 512; do
+            install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${BUILDROOT}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+          install -Dm644 dist/linux/70-u2f.rules "${BUILDROOT}${UDEVRULESDIR}/70-u2f.rules"
+          install -Dm644 LICENSE "${BUILDROOT}/usr/share/licenses/cmux/LICENSE"
+          install -Dm644 README.md "${BUILDROOT}/usr/share/doc/cmux/README.md"
+
+          sed "s/^Version:.*/Version:        ${RPM_VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
+
+          rpmbuild -bb \
+            --define "_topdir $TOPDIR" \
+            --define "_builddir $PWD" \
+            --buildroot "$BUILDROOT" \
+            --short-circuit \
+            --without webkit \
+            "$TOPDIR/SPECS/cmux.spec"
+
+          RPM=$(find "$TOPDIR/RPMS" -name '*.rpm' | head -1)
+          cp "$RPM" .
+          RPM_NAME=$(basename "$RPM")
+          echo "Built: $RPM_NAME ($(du -h "$RPM_NAME" | cut -f1))"
+
+      - name: Sign RPM with GPG
+        env:
+          LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+        run: bash scripts/sign-linux-packages.sh
+
+      - name: Upload Rocky RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-linux-rpm-rocky-${{ matrix.arch.rpm }}
           path: |
             cmux-*.${{ matrix.arch.rpm }}.rpm
             cmux-*.${{ matrix.arch.rpm }}.rpm.asc
@@ -356,7 +489,7 @@ jobs:
 
   validate-distro-install:
     name: Validate Linux packages in distro VMs
-    needs: [build-deb, build-rpm]
+    needs: [build-deb, build-rpm, build-rpm-rocky]
     runs-on: [self-hosted, linux, kvm, cmux-distro-test]
     environment: distro-tests
     timeout-minutes: 45
@@ -382,7 +515,8 @@ jobs:
           # aarch64 distro tests are tracked separately (TIN-176 follow-up:
           # need an arm64 KVM runner before aarch64 distro tests can run).
           mapfile -t DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*_amd64.deb' | sort)
-          mapfile -t RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.x86_64.rpm' | sort)
+          mapfile -t FEDORA_RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.fc42.x86_64.rpm' | sort)
+          mapfile -t ROCKY_RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.el10*.x86_64.rpm' | sort)
 
           if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
             echo "ERROR: expected exactly one amd64 DEB artifact, found ${#DEB_PATHS[@]}"
@@ -390,16 +524,24 @@ jobs:
             exit 1
           fi
 
-          if [ "${#RPM_PATHS[@]}" -ne 1 ]; then
-            echo "ERROR: expected exactly one x86_64 RPM artifact, found ${#RPM_PATHS[@]}"
-            printf '%s\n' "${RPM_PATHS[@]}"
+          if [ "${#FEDORA_RPM_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one Fedora x86_64 RPM artifact, found ${#FEDORA_RPM_PATHS[@]}"
+            printf '%s\n' "${FEDORA_RPM_PATHS[@]}"
+            exit 1
+          fi
+
+          if [ "${#ROCKY_RPM_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one Rocky x86_64 RPM artifact, found ${#ROCKY_RPM_PATHS[@]}"
+            printf '%s\n' "${ROCKY_RPM_PATHS[@]}"
             exit 1
           fi
 
           DEB_PATH="$(realpath "${DEB_PATHS[0]}")"
-          RPM_PATH="$(realpath "${RPM_PATHS[0]}")"
+          FEDORA_RPM_PATH="$(realpath "${FEDORA_RPM_PATHS[0]}")"
+          ROCKY_RPM_PATH="$(realpath "${ROCKY_RPM_PATHS[0]}")"
           DEB_NAME="$(basename "$DEB_PATH")"
-          RPM_NAME="$(basename "$RPM_PATH")"
+          FEDORA_RPM_NAME="$(basename "$FEDORA_RPM_PATH")"
+          ROCKY_RPM_NAME="$(basename "$ROCKY_RPM_PATH")"
 
           cat > nix/release-artifacts.override.nix <<EOF
           {
@@ -409,8 +551,16 @@ jobs:
                 path = ${DEB_PATH};
               };
               rpm = {
-                name = "${RPM_NAME}";
-                path = ${RPM_PATH};
+                name = "${FEDORA_RPM_NAME}";
+                path = ${FEDORA_RPM_PATH};
+              };
+              rpmFedora = {
+                name = "${FEDORA_RPM_NAME}";
+                path = ${FEDORA_RPM_PATH};
+              };
+              rpmRocky = {
+                name = "${ROCKY_RPM_NAME}";
+                path = ${ROCKY_RPM_PATH};
               };
             };
           }
@@ -445,6 +595,12 @@ jobs:
       - name: Rocky 9 package test (RPM proxy)
         run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
 
+      - name: Fedora 42 package test
+        run: nix --store daemon build .#checks.x86_64-linux.distro-fedora42 --print-build-logs -L --option sandbox relaxed
+
+      - name: Rocky 10 package test
+        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky10 --print-build-logs -L --option sandbox relaxed
+
       - name: Debian 12 package test
         run: nix --store daemon build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
 
@@ -465,7 +621,7 @@ jobs:
   # ── Upload to GitHub release ─────────────────────────────────────
   release:
     name: Upload Linux packages to release
-    needs: [build-deb, build-rpm, validate-distro-install]
+    needs: [build-deb, build-rpm, build-rpm-rocky, validate-distro-install]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -12,5 +12,11 @@
       name = "cmux-0.75.0-1.fc42.x86_64.rpm";
       hash = "sha256-fApOZUcz0zQCur0Oo8XDziUg0pYfT4DRsKQNqMTQurw=";
     };
+    rpmFedora = {
+      name = "cmux-0.75.0-1.fc42.x86_64.rpm";
+      hash = "sha256-fApOZUcz0zQCur0Oo8XDziUg0pYfT4DRsKQNqMTQurw=";
+    };
+    # `rpmRocky` is intentionally absent from the checked-in manifest until a
+    # published Rocky 10 terminal-first RPM exists.
   };
 }

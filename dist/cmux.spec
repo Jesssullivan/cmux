@@ -6,6 +6,10 @@ License:        GPL-3.0-or-later
 URL:            https://github.com/Jesssullivan/cmux
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 
+# Build browser-capable RPMs by default. Rocky/RHEL-class builds can disable
+# WebKitGTK and use the same spec to produce a truthful terminal-first artifact.
+%bcond_without webkit
+
 BuildRequires:  zig >= 0.15.2
 BuildRequires:  gcc
 BuildRequires:  gcc-c++
@@ -20,10 +24,15 @@ BuildRequires:  fontconfig-devel
 BuildRequires:  libpng-devel
 BuildRequires:  oniguruma-devel
 BuildRequires:  mesa-libGL-devel
+%if %{with webkit}
+BuildRequires:  webkitgtk6.0-devel
+%endif
 
 Requires:       gtk4 >= 4.10
 Requires:       libadwaita >= 1.3
+%if %{with webkit}
 Requires:       webkitgtk6.0
+%endif
 
 %description
 cmux is a GTK4 terminal multiplexer built on libghostty, providing
@@ -36,7 +45,11 @@ Features:
 - Workspace model with sidebar navigation
 - JSON configuration with hot-reload
 - Unix socket JSON-RPC control interface
+%if %{with webkit}
 - Browser panel support on WebKitGTK-capable distros
+%else
+- Terminal-first package variant for distros without WebKitGTK
+%endif
 
 %prep
 %autosetup
@@ -53,7 +66,11 @@ bash scripts/ghostty-compat-symlinks.sh
 
 # Build cmux-linux
 cd cmux-linux
+%if %{with webkit}
 zig build -Doptimize=ReleaseFast
+%else
+zig build -Doptimize=ReleaseFast -Dno-webkit=true
+%endif
 cd ..
 
 %install
