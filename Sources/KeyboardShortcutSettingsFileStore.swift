@@ -78,6 +78,7 @@ final class CmuxSettingsFileStore {
         "automation.geminiIntegration",
         "automation.portBase",
         "automation.portRange",
+        "customCommands.trustedDirectories",
         "browser.defaultSearchEngine",
         "browser.showSearchSuggestions",
         "browser.theme",
@@ -94,12 +95,8 @@ final class CmuxSettingsFileStore {
 
     private static let releaseBundleIdentifier = "com.cmuxterm.app"
     private static let backupsDefaultsKey = "cmux.settingsFile.backups.v1"
-<<<<<<< HEAD
     fileprivate static let trustedDirectoriesBackupIdentifier = "customCommands.trustedDirectories"
-    fileprivate static let socketPassphraseBackupIdentifier = "automation.socket" + "Password"
-=======
     fileprivate static let socketPasswordBackupIdentifier = "automation.socketPassword"
->>>>>>> upstream/main
 
     static var defaultPrimaryPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -128,12 +125,8 @@ final class CmuxSettingsFileStore {
     private var primaryWatcher: ShortcutSettingsFileWatcher?
     private var fallbackWatcher: ShortcutSettingsFileWatcher?
     private var defaultsCancellable: AnyCancellable?
-<<<<<<< HEAD
     private var trustObserver: NSObjectProtocol?
-    private var socketPassphraseObserver: NSObjectProtocol?
-=======
     private var socketPasswordObserver: NSObjectProtocol?
->>>>>>> upstream/main
 
     private var shortcutsByAction: [KeyboardShortcutSettings.Action: StoredShortcut] = [:]
     private var activeManagedUserDefaults: [String: ManagedSettingsValue] = [:]
@@ -174,7 +167,6 @@ final class CmuxSettingsFileStore {
             .sink { [weak self] _ in
                 self?.reapplyManagedSettingsIfNeeded()
             }
-<<<<<<< HEAD
         trustObserver = notificationCenter.addObserver(
             forName: CmuxDirectoryTrust.didChangeNotification,
             object: nil,
@@ -182,10 +174,7 @@ final class CmuxSettingsFileStore {
         ) { [weak self] _ in
             self?.reapplyManagedSettingsIfNeeded()
         }
-        socketPassphraseObserver = notificationCenter.addObserver(
-=======
         socketPasswordObserver = notificationCenter.addObserver(
->>>>>>> upstream/main
             forName: SocketControlPasswordStore.didChangeNotification,
             object: nil,
             queue: nil
@@ -198,16 +187,11 @@ final class CmuxSettingsFileStore {
         primaryWatcher?.stop()
         fallbackWatcher?.stop()
         defaultsCancellable?.cancel()
-<<<<<<< HEAD
         if let trustObserver {
             notificationCenter.removeObserver(trustObserver)
         }
-        if let socketPassphraseObserver {
-            notificationCenter.removeObserver(socketPassphraseObserver)
-=======
         if let socketPasswordObserver {
             notificationCenter.removeObserver(socketPasswordObserver)
->>>>>>> upstream/main
         }
     }
 
@@ -385,6 +369,9 @@ final class CmuxSettingsFileStore {
         }
         if let automationSection = root["automation"] as? [String: Any] {
             parseAutomationSection(automationSection, sourcePath: sourcePath, snapshot: &snapshot)
+        }
+        if let customCommandsSection = root["customCommands"] as? [String: Any] {
+            parseCustomCommandsSection(customCommandsSection, sourcePath: sourcePath, snapshot: &snapshot)
         }
         if let browserSection = root["browser"] as? [String: Any] {
             parseBrowserSection(browserSection, sourcePath: sourcePath, snapshot: &snapshot)
@@ -715,13 +702,13 @@ final class CmuxSettingsFileStore {
                 SocketControlSettings.migrateMode(raw).rawValue
             )
         }
-        if section.keys.contains("socket" + "Password") {
-            if section["socket" + "Password"] is NSNull {
-                snapshot.managedCustomSettings.socketPassphrase = .clear
-            } else if let raw = jsonString(section["socket" + "Password"]) {
-                snapshot.managedCustomSettings.socketPassphrase = raw.isEmpty ? .clear : .set(raw)
+        if section.keys.contains("socketPassword") {
+            if section["socketPassword"] is NSNull {
+                snapshot.managedCustomSettings.socketPassword = .clear
+            } else if let raw = jsonString(section["socketPassword"]) {
+                snapshot.managedCustomSettings.socketPassword = raw.isEmpty ? .clear : .set(raw)
             } else {
-                logInvalid("automation.socketPassphrase", sourcePath: sourcePath)
+                logInvalid("automation.socketPassword", sourcePath: sourcePath)
                 return
             }
         }
@@ -750,6 +737,21 @@ final class CmuxSettingsFileStore {
                 return
             }
             snapshot.managedUserDefaults["cmuxPortRange"] = .int(value)
+        }
+    }
+
+    private func parseCustomCommandsSection(
+        _ section: [String: Any],
+        sourcePath: String,
+        snapshot: inout ResolvedSettingsSnapshot
+    ) {
+        if let values = jsonStringArray(section["trustedDirectories"]) {
+            let normalized = values
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            snapshot.managedCustomSettings.trustedDirectories = normalized
+        } else if section.keys.contains("trustedDirectories") {
+            logInvalid("customCommands.trustedDirectories", sourcePath: sourcePath)
         }
     }
 
@@ -912,19 +914,13 @@ final class CmuxSettingsFileStore {
             for (defaultsKey, value) in snapshot.managedUserDefaults where backups[defaultsKey] == nil {
                 backups[defaultsKey] = backupValueForUserDefaultsKey(defaultsKey, managedValue: value)
             }
-<<<<<<< HEAD
             if snapshot.managedCustomSettings.trustedDirectories != nil,
                backups[Self.trustedDirectoriesBackupIdentifier] == nil {
                 backups[Self.trustedDirectoriesBackupIdentifier] = .stringArray(CmuxDirectoryTrust.shared.allTrustedPaths)
             }
-            if snapshot.managedCustomSettings.socketPassphrase != nil,
-               backups[Self.socketPassphraseBackupIdentifier] == nil {
-                backups[Self.socketPassphraseBackupIdentifier] = currentSocketPasswordBackupValue()
-=======
             if snapshot.managedCustomSettings.socketPassword != nil,
                backups[Self.socketPasswordBackupIdentifier] == nil {
                 backups[Self.socketPasswordBackupIdentifier] = currentSocketPasswordBackupValue()
->>>>>>> upstream/main
             }
         }
 
@@ -945,18 +941,13 @@ final class CmuxSettingsFileStore {
     }
 
     private func applyManagedCustomSettings(_ settings: ManagedCustomSettings) {
-<<<<<<< HEAD
         if let trustedDirectories = settings.trustedDirectories,
            CmuxDirectoryTrust.shared.allTrustedPaths != trustedDirectories {
             CmuxDirectoryTrust.shared.replaceAll(with: trustedDirectories)
         }
 
-        if let socketPassphrase = settings.socketPassphrase {
-            switch socketPassphrase {
-=======
         if let socketPassword = settings.socketPassword {
             switch socketPassword {
->>>>>>> upstream/main
             case .set(let value):
                 let current = (try? SocketControlPasswordStore.loadPassword()) ?? nil
                 if current != value {
@@ -973,17 +964,13 @@ final class CmuxSettingsFileStore {
 
     private func restoreBackup(_ backup: BackupValue, for identifier: String) {
         switch identifier {
-<<<<<<< HEAD
         case Self.trustedDirectoriesBackupIdentifier:
             if case .stringArray(let values) = backup {
                 CmuxDirectoryTrust.shared.replaceAll(with: values)
             } else {
                 CmuxDirectoryTrust.shared.replaceAll(with: [])
             }
-        case Self.socketPassphraseBackupIdentifier:
-=======
         case Self.socketPasswordBackupIdentifier:
->>>>>>> upstream/main
             switch backup {
             case .string(let value):
                 try? SocketControlPasswordStore.savePassword(value)
@@ -1341,13 +1328,18 @@ final class CmuxSettingsFileStore {
             [
                 "automation": [
                     "socketControlMode": SocketControlSettings.defaultMode.rawValue,
-                    "socket" + "Password": "",
+                    "socketPassword": "",
                     "claudeCodeIntegration": ClaudeCodeIntegrationSettings.defaultHooksEnabled,
                     "claudeBinaryPath": "",
                     "cursorIntegration": CursorIntegrationSettings.defaultHooksEnabled,
                     "geminiIntegration": GeminiIntegrationSettings.defaultHooksEnabled,
                     "portBase": 9100,
                     "portRange": 10,
+                ],
+            ],
+            [
+                "customCommands": [
+                    "trustedDirectories": [String](),
                 ],
             ],
             [
@@ -1413,32 +1405,20 @@ private enum ManagedStringOverride: Equatable {
 }
 
 private struct ManagedCustomSettings: Equatable {
-<<<<<<< HEAD
     var trustedDirectories: [String]?
-    var socketPassphrase: ManagedStringOverride?
-
-    var isEmpty: Bool {
-        trustedDirectories == nil && socketPassphrase == nil
-=======
     var socketPassword: ManagedStringOverride?
 
     var isEmpty: Bool {
-        socketPassword == nil
->>>>>>> upstream/main
+        trustedDirectories == nil && socketPassword == nil
     }
 
     var managedIdentifiers: Set<String> {
         var identifiers: Set<String> = []
-<<<<<<< HEAD
         if trustedDirectories != nil {
             identifiers.insert(CmuxSettingsFileStore.trustedDirectoriesBackupIdentifier)
         }
-        if socketPassphrase != nil {
-            identifiers.insert(CmuxSettingsFileStore.socketPassphraseBackupIdentifier)
-=======
         if socketPassword != nil {
             identifiers.insert(CmuxSettingsFileStore.socketPasswordBackupIdentifier)
->>>>>>> upstream/main
         }
         return identifiers
     }

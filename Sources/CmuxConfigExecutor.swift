@@ -173,14 +173,18 @@ struct CmuxConfigExecutor {
     ) -> Bool {
         let sourcePath = configSourcePath.map(canonicalPath)
         let canonicalGlobalConfigPath = canonicalPath(globalConfigPath)
-        let isTrusted = CmuxActionTrust.shared.isTrusted(descriptor)
         let resolvedPresentingWindow = presentingWindow ?? NSApp.keyWindow ?? NSApp.mainWindow
         guard let sourcePath,
               sourcePath != canonicalGlobalConfigPath else {
             onAuthorized()
             return true
         }
-        if !confirm, isTrusted {
+        let isDirectoryTrusted = CmuxDirectoryTrust.shared.isTrusted(
+            configPath: sourcePath,
+            globalConfigPath: canonicalGlobalConfigPath
+        )
+        let isActionTrusted = CmuxActionTrust.shared.isTrusted(descriptor)
+        if isDirectoryTrusted || (!confirm && isActionTrusted) {
             onAuthorized()
             return true
         }
@@ -224,7 +228,7 @@ struct CmuxConfigExecutor {
             configPath: configPath
         )
         alert.beginSheetModal(for: presentingWindow) { response in
-            completion(handleConfirmDialogResponse(response, descriptor: descriptor))
+                completion(handleConfirmDialogResponse(response, descriptor: descriptor, configPath: configPath))
         }
     }
 
@@ -239,7 +243,7 @@ struct CmuxConfigExecutor {
             displayTitle: displayTitle,
             configPath: configPath
         )
-        return handleConfirmDialogResponse(alert.runModal(), descriptor: descriptor)
+        return handleConfirmDialogResponse(alert.runModal(), descriptor: descriptor, configPath: configPath)
     }
 
     private static func makeConfirmDialog(
@@ -282,13 +286,15 @@ struct CmuxConfigExecutor {
 
     private static func handleConfirmDialogResponse(
         _ response: NSApplication.ModalResponse,
-        descriptor: CmuxActionTrustDescriptor
+        descriptor: CmuxActionTrustDescriptor,
+        configPath: String
     ) -> Bool {
         switch response {
         case .alertFirstButtonReturn:
             return true
         case .alertSecondButtonReturn:
             CmuxActionTrust.shared.trust(descriptor)
+            CmuxDirectoryTrust.shared.trust(configPath: configPath)
             return true
         default:
             return false
@@ -360,6 +366,12 @@ struct CmuxConfigExecutor {
         }
         guard let configPath = descriptor.configPath,
               configPath != canonicalPath(globalConfigPath) else {
+            return true
+        }
+        if CmuxDirectoryTrust.shared.isTrusted(
+            configPath: configPath,
+            globalConfigPath: globalConfigPath
+        ) {
             return true
         }
         return CmuxActionTrust.shared.isTrusted(descriptor)

@@ -1983,16 +1983,19 @@ class GhosttyApp {
         let trimmed = contents.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let syntheticPath = "/__cmux_inline__/\(prefix).conf"
-        trimmed.withCString { contents in
-            syntheticPath.withCString { path in
-                ghostty_config_load_string(
-                    config,
-                    contents,
-                    UInt(trimmed.lengthOfBytes(using: .utf8)),
-                    path
-                )
+        let safePrefix = prefix
+            .map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "-" }
+            .reduce(into: "") { $0.append($1) }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-inline-\(safePrefix)-\(UUID().uuidString).conf")
+        do {
+            try trimmed.write(to: url, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: url) }
+            url.path.withCString { path in
+                ghostty_config_load_file(config, path)
             }
+        } catch {
+            NSLog("[GhosttyConfig] failed to load inline %@ config: %@", prefix, String(describing: error))
         }
     }
 

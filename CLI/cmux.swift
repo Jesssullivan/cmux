@@ -10929,12 +10929,8 @@ struct CMUXCLI {
         }
     }
 
-<<<<<<< HEAD
     private static let omoPluginName = "oh-my-openagent"
-=======
-    private static let omoPluginName = "oh-my-opencode"
     private static let openCodeSessionPluginConfigSpec = "cmux-session"
->>>>>>> upstream/main
 
     private func resolveExecutableInPath(_ name: String) -> String? {
         let entries = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":").map(String.init) ?? []
@@ -11144,18 +11140,15 @@ struct CMUXCLI {
             config = [:]
         }
 
-<<<<<<< HEAD
-        var plugins = (config["plugin"] as? [String]) ?? []
-        // Remove legacy oh-my-opencode entries to avoid duplicate plugin registration
-        plugins.removeAll { $0 == "oh-my-opencode" || $0.hasPrefix("oh-my-opencode@") }
-        let alreadyPresent = plugins.contains {
-            $0 == Self.omoPluginName || $0.hasPrefix("\(Self.omoPluginName)@")
-        }
-        if !alreadyPresent {
-=======
         var plugins = Self.openCodePluginListRemovingSessionPlugin((config["plugin"] as? [Any]) ?? [])
+        // Remove legacy oh-my-opencode entries to avoid duplicate plugin registration.
+        plugins.removeAll { entry in
+            guard let value = (entry as? String) ?? ((entry as? [Any])?.first as? String) else {
+                return false
+            }
+            return value == "oh-my-opencode" || value.hasPrefix("oh-my-opencode@")
+        }
         if !Self.openCodePluginListContains(plugins, spec: Self.omoPluginName, allowVersionSuffix: true) {
->>>>>>> upstream/main
             plugins.append(Self.omoPluginName)
         }
         config["plugin"] = plugins
@@ -11177,7 +11170,8 @@ struct CMUXCLI {
             try? fm.removeItem(at: shadowBunLockURL)
         }
 
-<<<<<<< HEAD
+        try writeOpenCodeSessionPlugin(in: shadowDir)
+
         // Copy oh-my-openagent plugin config if the user has one (fall back to legacy oh-my-opencode name)
         for ext in ["json", "jsonc"] {
             let newName = "oh-my-openagent.\(ext)"
@@ -11187,15 +11181,6 @@ struct CMUXCLI {
             let userFile = userDir.appendingPathComponent(newName)
             let legacyFile = userDir.appendingPathComponent(legacyName)
             if fm.fileExists(atPath: userFile.path) {
-=======
-        try writeOpenCodeSessionPlugin(in: shadowDir)
-
-        // Copy oh-my-opencode plugin config (jsonc) if the user has one
-        for filename in ["oh-my-opencode.json", "oh-my-opencode.jsonc"] {
-            let userFile = userDir.appendingPathComponent(filename)
-            let shadowFile = shadowDir.appendingPathComponent(filename)
-            if fm.fileExists(atPath: userFile.path) && !fm.fileExists(atPath: shadowFile.path) {
->>>>>>> upstream/main
                 try fm.createSymbolicLink(at: shadowFile, withDestinationURL: userFile)
             } else if fm.fileExists(atPath: legacyFile.path) {
                 try fm.createSymbolicLink(at: shadowFile, withDestinationURL: legacyFile)
