@@ -17,7 +17,6 @@ Detailed execution belongs in owned trackers and status docs, not here.
   - Sync `Jesssullivan/cmux` with the remaining `manaflow-ai/cmux` delta in controlled batches
   - Reconcile `vendor/bonsplit` tracking posture and decide whether the Jess fork or upstream `main` is the canonical pin source
   - Resync `homebrew-cmux` during the next release-hygiene pass
-  - `TIN-619` require green checks before merging owned-fork PRs
 
 - [ ] Linux proof and parity
   - `TIN-614` record first signed DEB/RPM artifact proof

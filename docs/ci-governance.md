@@ -11,6 +11,8 @@ Normal PR merges into `main` should wait for the hosted required checks below
 to pass. Self-hosted proof lanes remain advisory until runner availability is
 steady enough that they can be required without blocking unrelated work.
 
+As of 2026-04-26, this rule is active on `main` in `Jesssullivan/cmux`.
+
 Do not use auto-merge as a substitute for branch protection. Auto-merge is only
 safe after GitHub itself knows which checks are required.
 
@@ -55,16 +57,19 @@ If a path-filtered workflow should become required, first add a stable sentinel
 job that always reports success or failure for every PR. Then update this file
 and the branch-protection rule together.
 
-## Branch Protection Setup
+## Branch Protection State
 
-For `main`, configure either a GitHub ruleset or classic branch protection with:
+`main` uses classic branch protection with:
 
 - pull requests required before merge
 - required status checks enabled
 - the required hosted checks listed above
-- stale approvals dismissed when new commits are pushed, if practical
-- admins included only if Jess wants the fork to prevent accidental manual
-  bypasses
+- stale approvals dismissed when new commits are pushed
+- `required_approving_review_count` set to `0`
+- force-pushes and branch deletion disabled
+
+Admins are not currently included in enforcement. Do not use that bypass for
+normal PR flow.
 
 Leave self-hosted proof lanes advisory until `TIN-184` has repeated green runs
 and runner availability is no longer the dominant failure mode.
