@@ -36,8 +36,8 @@ As of 2026-04-25:
   proof is still uneven across the distro matrix
 - CI runtime hygiene is medium: the Linux branch is green, but GitHub Actions
   runtime upkeep still needs steady attention as hosted actions deprecate older
-  Node versions, and `main` branch protection still needs to be enforced after
-  the required check set is finalized
+  Node versions; `main` branch protection now enforces the hosted required
+  check set in `docs/ci-governance.md`
 
 ## Current Critical Path
 
@@ -174,9 +174,10 @@ explicitly reclassified before promoting more candidate tests.
 `docs/ci-governance.md` defines the required hosted checks and advisory
 self-hosted lanes for `Jesssullivan/cmux`.
 
-Current gap:
+Current rule:
 
-- `main` branch protection/rulesets still need to be enabled in GitHub
+- `main` branch protection requires PRs and the hosted CI check set before
+  normal merges
 - self-hosted KVM package-install proof remains advisory until `honey-cmux`
   availability is stable enough to act as a normal merge gate
 
@@ -245,7 +246,6 @@ repo hygiene:
    triggers in `docs/distro-testing-readiness-plan.md` become real.
 6. Replace or isolate the remaining `mlugg/setup-zig@v2` call sites as a
    separate CI hygiene follow-up.
-7. Enable `main` branch protection with the hosted required-check set in
-   `docs/ci-governance.md`.
+7. Keep `docs/ci-governance.md` aligned with workflow check-name changes.
 8. Avoid opening new architectural lanes until the existing parity matrix is
    promoted with real validation.
