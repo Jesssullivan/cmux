@@ -1,18 +1,25 @@
-#!/bin/bash
-# Rebuild and restart cmux app
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-cd "$(dirname "$0")/.."
+cd "$REPO_ROOT"
 
-# Kill existing app if running
-pkill -9 -f "cmux" 2>/dev/null || true
+TAG="rebuild"
 
-# Build
-swift build
+if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
+  TAG="$1"
+  shift
+fi
 
-# Copy to app bundle
-cp .build/debug/cmux .build/debug/cmux.app/Contents/MacOS/
+echo "warning: ./scripts/rebuild.sh is deprecated." >&2
+echo "warning: using tagged reload flow instead of the removed SwiftPM app path." >&2
 
-# Open the app
-open .build/debug/cmux.app
+for arg in "$@"; do
+  if [[ "$arg" == "--tag" ]]; then
+    exec "$SCRIPT_DIR/reload.sh" "$@"
+  fi
+done
+
+exec "$SCRIPT_DIR/reload.sh" --tag "$TAG" "$@"
