@@ -69,7 +69,7 @@ jobs:
             build
 
   nix-check:
-    name: Nix flake check
+    name: Fork Nix flake check
     runs-on: ubuntu-latest
     permissions:
       id-token: write

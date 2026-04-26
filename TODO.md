@@ -16,7 +16,6 @@ Detailed execution belongs in owned trackers and status docs, not here.
 - [ ] Upstream ingestion
   - Sync `Jesssullivan/cmux` with the remaining `manaflow-ai/cmux` delta in controlled batches
   - Reconcile `vendor/bonsplit` tracking posture and decide whether the Jess fork or upstream `main` is the canonical pin source
-  - `TIN-621` bump cmux Zig vendor pins to productionized releases
   - Resync `homebrew-cmux` during the next release-hygiene pass
   - `TIN-619` require green checks before merging owned-fork PRs
 
