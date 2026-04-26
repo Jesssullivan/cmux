@@ -470,6 +470,7 @@ jobs:
             --define "_build_id_links none" \
             --define "debug_package %{nil}" \
             --define "_enable_debug_packages 0" \
+            --noclean \
             --buildroot "$BUILDROOT" \
             --short-circuit \
             --without webkit \
