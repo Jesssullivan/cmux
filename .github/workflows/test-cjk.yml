@@ -24,8 +24,8 @@ concurrency:
 
 jobs:
   cjk-input:
-    name: CJK input validation (cmux-nix)
-    runs-on: cmux-nix
+    name: CJK input validation (honey)
+    runs-on: [self-hosted, linux, gpu, cmux-test]
     environment: gpu-tests
     timeout-minutes: 30
     steps:
