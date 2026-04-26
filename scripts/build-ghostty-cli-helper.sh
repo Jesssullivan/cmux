@@ -16,6 +16,7 @@ EOF
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 GHOSTTY_DIR="$REPO_ROOT/ghostty"
+ZIG_BIN="$("$SCRIPT_DIR/resolve-zig.sh")"
 
 OUTPUT_PATH=""
 TARGET_TRIPLE=""
@@ -83,16 +84,11 @@ if [[ -n "$TARGET_TRIPLE" ]]; then
   # so zig uses native compilation. This avoids cross-linker issues on newer
   # SDKs (e.g., macOS Tahoe + zig 0.15.x). Note: zig may run under Rosetta,
   # so we detect native output arch from the zig binary itself, not uname -m.
-  ZIG_ARCH="$(file "$(command -v zig)" 2>/dev/null | grep -oE '(arm64|x86_64)' | head -1)"
+  ZIG_ARCH="$(file "$ZIG_BIN" 2>/dev/null | grep -oE '(arm64|x86_64)' | head -1)"
   case "$TARGET_TRIPLE" in
     aarch64-macos) [[ "$ZIG_ARCH" == "arm64" ]] && TARGET_TRIPLE="" ;;
     x86_64-macos)  [[ "$ZIG_ARCH" == "x86_64" ]] && TARGET_TRIPLE="" ;;
   esac
-fi
-
-if ! command -v zig >/dev/null 2>&1; then
-  echo "error: zig is required to build the Ghostty CLI helper" >&2
-  exit 1
 fi
 
 if [[ ! -f "$GHOSTTY_DIR/build.zig" ]]; then
@@ -104,7 +100,7 @@ build_helper() {
   local prefix="$1"
   local target="${2:-}"
   local args=(
-    zig build
+    "$ZIG_BIN" build
     cli-helper
     -Dapp-runtime=none
     -Demit-macos-app=false
@@ -132,7 +128,7 @@ mkdir -p "$(dirname "$OUTPUT_PATH")"
 if [[ "$UNIVERSAL" == "true" ]]; then
   ARM64_PREFIX="$TMP_DIR/arm64"
   X86_PREFIX="$TMP_DIR/x86_64"
-  ZIG_ARCH="$(file "$(command -v zig)" 2>/dev/null | grep -oE '(arm64|x86_64)' | head -1)"
+  ZIG_ARCH="$(file "$ZIG_BIN" 2>/dev/null | grep -oE '(arm64|x86_64)' | head -1)"
   # Use native compilation for the matching arch to avoid cross-linker issues
   if [[ "$ZIG_ARCH" == "arm64" ]]; then
     build_helper "$ARM64_PREFIX" ""
