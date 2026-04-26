@@ -27,8 +27,8 @@ concurrency:
 
 jobs:
   socket-tests:
-    name: Socket tests (cmux-nix)
-    runs-on: cmux-nix
+    name: Socket tests (honey)
+    runs-on: [self-hosted, linux, gpu, cmux-test]
     environment: gpu-tests
     timeout-minutes: 30
     steps:

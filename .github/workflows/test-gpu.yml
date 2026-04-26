@@ -27,8 +27,8 @@ concurrency:
 
 jobs:
   gpu-smoke:
-    name: GPU smoke test (cmux-nix)
-    runs-on: cmux-nix
+    name: GPU smoke test (honey)
+    runs-on: [self-hosted, linux, gpu, cmux-test]
     # Require approval via GitHub Environment protection rules.
     environment: gpu-tests
     timeout-minutes: 30
