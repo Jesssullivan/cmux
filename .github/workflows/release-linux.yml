@@ -468,6 +468,8 @@ jobs:
             --define "_topdir $TOPDIR" \
             --define "_builddir $PWD" \
             --define "_build_id_links none" \
+            --define "debug_package %{nil}" \
+            --define "_enable_debug_packages 0" \
             --buildroot "$BUILDROOT" \
             --short-circuit \
             --without webkit \
