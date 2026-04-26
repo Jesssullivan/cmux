@@ -8,7 +8,8 @@
 #   LINUX_GPG_KEY_ID               key fingerprint or short ID (used as default-key)
 #
 # If LINUX_GPG_PRIVATE_KEY_BASE64 is empty or unset, the script no-ops with a
-# warning so that local builds (without secrets) continue to work.
+# warning so that local builds (without secrets) continue to work. Set
+# REQUIRE_LINUX_GPG=1 in release CI to fail instead.
 #
 # Signs every matching artifact in $1 (default: current directory):
 #   *.deb     → detached *.asc next to the file
@@ -24,8 +25,13 @@
 set -euo pipefail
 
 ARTIFACT_DIR="${1:-.}"
+REQUIRE_LINUX_GPG="${REQUIRE_LINUX_GPG:-0}"
 
 if [ -z "${LINUX_GPG_PRIVATE_KEY_BASE64:-}" ]; then
+  if [ "$REQUIRE_LINUX_GPG" = "1" ]; then
+    echo "sign-linux-packages: ERROR — LINUX_GPG_PRIVATE_KEY_BASE64 not set and REQUIRE_LINUX_GPG=1" >&2
+    exit 1
+  fi
   echo "sign-linux-packages: LINUX_GPG_PRIVATE_KEY_BASE64 not set — skipping (no-op for local/unsigned builds)"
   exit 0
 fi

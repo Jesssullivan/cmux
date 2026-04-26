@@ -4,7 +4,8 @@ This document covers GPG signing for the Linux release pipeline (DEB, RPM,
 tarball). Signing is performed in CI via `scripts/sign-linux-packages.sh`,
 gated on three GitHub Actions secrets in the `Jesssullivan/cmux` repo. If
 the secrets are absent the script no-ops, so local/unsigned builds keep
-working.
+working. Release CI sets `REQUIRE_LINUX_GPG=1`, so missing signing secrets
+fail the workflow instead of uploading unsigned artifacts.
 
 For end-user install and verification commands, see
 `docs/release/linux-install.md`.
@@ -28,12 +29,14 @@ audit scripts).
 build-deb (matrix: amd64 + arm64)
   └─ assemble .deb + .tar.gz
   └─ Sign DEB and tarball with GPG  ← scripts/sign-linux-packages.sh
+  └─ assert detached signatures     ← scripts/assert-linux-package-signatures.sh
   └─ upload-artifact: *.deb + *.deb.asc
   └─ upload-artifact: *.tar.gz + *.tar.gz.asc
 
 build-rpm (matrix: amd64 + arm64)
   └─ assemble .rpm
   └─ Sign RPM with GPG              ← scripts/sign-linux-packages.sh
+  └─ assert detached signatures     ← scripts/assert-linux-package-signatures.sh
   └─ upload-artifact: *.rpm + *.rpm.asc
 
 release
@@ -53,7 +56,8 @@ The signing script is **idempotent**:
 Set these on the **`Jesssullivan/cmux`** repo (Settings → Secrets and
 variables → Actions). All three must be present for signing to run; if
 `LINUX_GPG_PRIVATE_KEY_BASE64` is missing the script exits 0 with a
-warning and the release continues unsigned.
+warning by default. Release CI sets `REQUIRE_LINUX_GPG=1`, so missing
+secrets fail the workflow before artifacts are uploaded.
 
 | Secret                            | Format                                | Notes                              |
 |-----------------------------------|---------------------------------------|------------------------------------|
@@ -137,6 +141,9 @@ vars are present, and uses an ephemeral `GNUPGHOME`:
 # No-op path (no secrets in env): exits 0 with a warning
 bash scripts/sign-linux-packages.sh /tmp/some-empty-dir
 
+# Required-signing path (used by release CI): fails if secrets are absent
+REQUIRE_LINUX_GPG=1 bash scripts/sign-linux-packages.sh /tmp/some-empty-dir
+
 # Real signing locally (e.g. against a test key in your own keyring)
 LINUX_GPG_PRIVATE_KEY_BASE64="$(gpg --export-secret-keys --armor TESTKEYID | base64 -w0)" \
 LINUX_GPG_PASSPHRASE='your-test-passphrase' \
@@ -159,9 +166,9 @@ To rotate the signing key:
 
 ## Troubleshooting
 
-- **CI logs show "LINUX_GPG_PRIVATE_KEY_BASE64 not set — skipping"**:
-  the secret is missing on this fork. Set it (see above) and re-run
-  the release workflow.
+- **CI logs show "LINUX_GPG_PRIVATE_KEY_BASE64 not set"**: the secret is
+  missing on this fork. Release CI should fail loudly; set it (see above)
+  and re-run the release workflow.
 - **rpmsign quoting issues with passphrase**: the script reads the
   passphrase via `--passphrase-file` (file lives inside the ephemeral
   `GNUPGHOME`), so passphrase contents are not subject to shell quoting
@@ -173,5 +180,5 @@ To rotate the signing key:
   `gpg --list-secret-keys --keyid-format=long`.
 - **Detached `.asc` missing from release**: check the matrix-leg
   artifact (`cmux-linux-deb-amd64`, etc.) actually contains the
-  `.asc`. The `if-no-files-found: error` upload setting should fail
-  the job loudly if it doesn't.
+  `.asc`. `scripts/assert-linux-package-signatures.sh` should fail the
+  job before upload if any package lacks a detached signature.

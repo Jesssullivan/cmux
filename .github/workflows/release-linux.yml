@@ -195,10 +195,13 @@ jobs:
 
       - name: Sign DEB and tarball with GPG
         env:
+          REQUIRE_LINUX_GPG: "1"
           LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
           LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
           LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
-        run: bash scripts/sign-linux-packages.sh
+        run: |
+          bash scripts/sign-linux-packages.sh
+          bash scripts/assert-linux-package-signatures.sh
 
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
@@ -340,10 +343,13 @@ jobs:
 
       - name: Sign RPM with GPG
         env:
+          REQUIRE_LINUX_GPG: "1"
           LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
           LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
           LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
-        run: bash scripts/sign-linux-packages.sh
+        run: |
+          bash scripts/sign-linux-packages.sh
+          bash scripts/assert-linux-package-signatures.sh
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
@@ -461,6 +467,7 @@ jobs:
           rpmbuild -bb \
             --define "_topdir $TOPDIR" \
             --define "_builddir $PWD" \
+            --define "_build_id_links none" \
             --buildroot "$BUILDROOT" \
             --short-circuit \
             --without webkit \
@@ -473,10 +480,13 @@ jobs:
 
       - name: Sign RPM with GPG
         env:
+          REQUIRE_LINUX_GPG: "1"
           LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
           LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
           LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
-        run: bash scripts/sign-linux-packages.sh
+        run: |
+          bash scripts/sign-linux-packages.sh
+          bash scripts/assert-linux-package-signatures.sh
 
       - name: Upload Rocky RPM artifact
         uses: actions/upload-artifact@v4
