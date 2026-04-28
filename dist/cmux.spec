@@ -9,6 +9,7 @@ Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 # Build browser-capable RPMs by default. Rocky/RHEL-class builds can disable
 # WebKitGTK and use the same spec to produce a truthful terminal-first artifact.
 %bcond_without webkit
+%bcond_with prebuilt
 
 BuildRequires:  zig >= 0.15.2
 BuildRequires:  gcc
@@ -52,9 +53,12 @@ Features:
 %endif
 
 %prep
+%if %{without prebuilt}
 %autosetup
+%endif
 
 %build
+%if %{without prebuilt}
 # Build libghostty
 cd ghostty
 zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
@@ -72,8 +76,12 @@ zig build -Doptimize=ReleaseFast
 zig build -Doptimize=ReleaseFast -Dno-webkit=true
 %endif
 cd ..
+%endif
 
 %install
+%if %{with prebuilt}
+cp -a %{_sourcedir}/payload/. %{buildroot}/
+%else
 install -Dm755 cmux-linux/zig-out/bin/cmux %{buildroot}%{_bindir}/cmux
 install -Dm755 ghostty/zig-out/lib/libghostty.so %{buildroot}%{_libdir}/cmux/libghostty.so
 install -Dm644 dist/linux/com.jesssullivan.cmux.desktop %{buildroot}%{_datadir}/applications/com.jesssullivan.cmux.desktop
@@ -83,6 +91,9 @@ install -Dm644 dist/linux/icons/com.jesssullivan.cmux_128x128.png %{buildroot}%{
 install -Dm644 dist/linux/icons/com.jesssullivan.cmux_256x256.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/com.jesssullivan.cmux.png
 install -Dm644 dist/linux/icons/com.jesssullivan.cmux_512x512.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/com.jesssullivan.cmux.png
 install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
+install -Dm644 LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
+install -Dm644 README.md %{buildroot}%{_datadir}/doc/%{name}/README.md
+%endif
 
 %post
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
@@ -94,8 +105,8 @@ install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
 /usr/bin/udevadm control --reload-rules 2>/dev/null || :
 
 %files
-%license LICENSE
-%doc README.md
+%license %{_datadir}/licenses/%{name}/LICENSE
+%doc %{_datadir}/doc/%{name}/README.md
 %{_bindir}/cmux
 %{_libdir}/cmux/libghostty.so
 %{_datadir}/applications/com.jesssullivan.cmux.desktop
