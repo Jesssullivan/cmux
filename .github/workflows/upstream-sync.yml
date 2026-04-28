@@ -347,7 +347,37 @@ jobs:
           && steps.merge.outputs.merge_clean == 'true'
           && steps.verify.outputs.files_ok == 'true'
           && steps.build.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
+          WORKFLOW_CHANGES="$(git diff --name-only HEAD^1..HEAD -- .github/workflows || true)"
+          if [ -n "$WORKFLOW_CHANGES" ]; then
+            SUMMARY=$(cat /tmp/sync-summary.md)
+            {
+              echo "$SUMMARY"
+              echo ""
+              echo "---"
+              echo ""
+              echo "The upstream merge was clean and the build passed, but it changes GitHub workflow files:"
+              echo ""
+              echo '```'
+              echo "$WORKFLOW_CHANGES"
+              echo '```'
+              echo ""
+              echo "GitHub refuses pushes from the workflow GITHUB_TOKEN that create or update workflow files."
+              echo "A human or a PAT-backed workflow must merge this upstream batch manually."
+              echo ""
+              echo "Upstream SHA: \`${{ steps.check.outputs.upstream_sha }}\`"
+            } > /tmp/workflow-change-issue.md
+
+            gh issue create \
+              --title "Upstream sync blocked: workflow file changes ($(date +%Y-%m-%d))" \
+              --body-file /tmp/workflow-change-issue.md || true
+            exit 0
+          fi
+
           git push origin main
 
       - name: Post success summary
@@ -381,7 +411,10 @@ jobs:
 
           BRANCH="upstream-sync/build-failure-$(date +%Y%m%d)"
           git checkout -b "$BRANCH"
-          git push origin "$BRANCH"
+          PUSH_OK=true
+          if ! git push origin "$BRANCH"; then
+            PUSH_OK=false
+          fi
 
           SUMMARY=$(cat /tmp/sync-summary.md)
 
@@ -417,12 +450,28 @@ jobs:
           **Action required:** Fix build errors and merge manually.
           Upstream SHA: \`${{ steps.check.outputs.upstream_sha }}\`"
 
-          gh pr create \
-            --title "Upstream sync: build failure ($(date +%Y-%m-%d))" \
-            --body "$PR_BODY" \
-            --label "upstream-sync,needs-triage" \
-            --base main \
-            --head "$BRANCH" || true
+          if [ "$PUSH_OK" = "true" ]; then
+            gh pr create \
+              --title "Upstream sync: build failure ($(date +%Y-%m-%d))" \
+              --body "$PR_BODY" \
+              --label "upstream-sync,needs-triage" \
+              --base main \
+              --head "$BRANCH" || true
+          else
+            {
+              echo "$PR_BODY"
+              echo ""
+              echo "---"
+              echo ""
+              echo "The workflow could not push \`${BRANCH}\`. This usually means the upstream batch changes GitHub workflow files, which the workflow GITHUB_TOKEN cannot create or update."
+              echo ""
+              echo "Retry manually from a token with workflow scope, or merge the upstream batch locally."
+            } > /tmp/build-failure-issue.md
+
+            gh issue create \
+              --title "Upstream sync build failure: branch push blocked ($(date +%Y-%m-%d))" \
+              --body-file /tmp/build-failure-issue.md || true
+          fi
 
       # --- Triage PR path: merge conflicts ---
 
@@ -443,7 +492,10 @@ jobs:
           git add -A
           git commit -m "upstream-sync: merge with conflicts from upstream/main" || true
 
-          git push origin "$BRANCH"
+          PUSH_OK=true
+          if ! git push origin "$BRANCH"; then
+            PUSH_OK=false
+          fi
 
           SUMMARY=$(cat /tmp/sync-summary.md)
           CONFLICT_DETAILS=$(cat /tmp/conflict-details.md)
@@ -473,12 +525,28 @@ jobs:
           **Action required:** Resolve conflicts, verify fork-specific files, and ensure build passes before merging.
           Upstream SHA: \`${{ steps.check.outputs.upstream_sha }}\`"
 
-          gh pr create \
-            --title "Upstream sync: ${CONFLICT_COUNT} conflict(s) ($(date +%Y-%m-%d))" \
-            --body "$PR_BODY" \
-            --label "upstream-sync,needs-triage" \
-            --base main \
-            --head "$BRANCH" || true
+          if [ "$PUSH_OK" = "true" ]; then
+            gh pr create \
+              --title "Upstream sync: ${CONFLICT_COUNT} conflict(s) ($(date +%Y-%m-%d))" \
+              --body "$PR_BODY" \
+              --label "upstream-sync,needs-triage" \
+              --base main \
+              --head "$BRANCH" || true
+          else
+            {
+              echo "$PR_BODY"
+              echo ""
+              echo "---"
+              echo ""
+              echo "The workflow could not push \`${BRANCH}\`. This upstream batch includes workflow file changes, and GitHub refuses workflow-file writes from the workflow GITHUB_TOKEN."
+              echo ""
+              echo "The conflict summary above is still valid. Resolve manually from a token with workflow scope, or merge locally and push from an authorized user token."
+            } > /tmp/conflict-issue.md
+
+            gh issue create \
+              --title "Upstream sync: ${CONFLICT_COUNT} conflict(s), branch push blocked ($(date +%Y-%m-%d))" \
+              --body-file /tmp/conflict-issue.md || true
+          fi
 
       - name: Post conflict summary
         if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'false'
