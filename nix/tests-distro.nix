@@ -12,9 +12,9 @@
 #   nix build .#checks.x86_64-linux.distro-debian12
 #   nix build .#checks.x86_64-linux.distro-ubuntu2404
 #
-# Note: `distro-rocky9` is currently a legacy RPM-install proxy. The actual
-# constrained RHEL-family target is Rocky 10. A real `distro-rocky10` check is
-# only exported when the manifest defines a distinct `rpmRocky` asset.
+# Note: `distro-rocky9` is a legacy manual RPM-install proxy. It is not part of
+# the default/release gate. The actual constrained RHEL-family target is Rocky
+# 10, exported only when the manifest defines a distinct `rpmRocky` asset.
 #
 # Requires KVM for acceptable performance (/dev/kvm).
 # Runs on honey self-hosted runner via test-distro.yml.

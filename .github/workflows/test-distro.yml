@@ -159,7 +159,7 @@ jobs:
           fi
 
       - name: Rocky 9 package test (RPM proxy)
-        if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
+        if: inputs.distro == 'rocky9'
         run: bash scripts/run-distro-package-check.sh distro-rocky9
 
       - name: Fedora 42 package test

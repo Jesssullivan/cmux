@@ -605,9 +605,6 @@ jobs:
             echo "WARNING: no QEMU binary found in PATH (Nix provides it at build time)"
           fi
 
-      - name: Rocky 9 package test (RPM proxy)
-        run: bash scripts/run-distro-package-check.sh distro-rocky9
-
       - name: Fedora 42 package test
         run: bash scripts/run-distro-package-check.sh distro-fedora42
 
