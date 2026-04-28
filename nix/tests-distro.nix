@@ -157,6 +157,23 @@
     vm.succeed("ip route show && cat /etc/resolv.conf")
   '';
 
+  packageManagerSucceed = command: ''
+    vm.succeed("""
+      status=0
+      for attempt in 1 2 3; do
+        if ${command}; then
+          exit 0
+        fi
+        status=$?
+        echo "attempt $attempt/3 failed for ${lib.escapeShellArg command} (exit $status)" >&2
+        if [ "$attempt" -lt 3 ]; then
+          sleep 20
+        fi
+      done
+      exit "$status"
+    """)
+  '';
+
   distro-fedora42 =
     (nvt.fedora."42" {
       sharedDirs = {
@@ -168,8 +185,8 @@
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("timeout 300 dnf makecache")
-        vm.succeed("timeout 300 dnf install -y /mnt/pkg/*")
+        ${packageManagerSucceed "timeout 300 dnf makecache"}
+        ${packageManagerSucceed "timeout 300 dnf install -y /mnt/pkg/*"}
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -184,12 +201,12 @@
 
         ${rockyNetworkBootstrap}
 
-        vm.succeed("timeout 300 dnf install -y dnf-plugins-core")
+        ${packageManagerSucceed "timeout 300 dnf install -y dnf-plugins-core"}
         vm.succeed("dnf config-manager --set-enabled crb")
-        vm.succeed("timeout 300 dnf makecache")
+        ${packageManagerSucceed "timeout 300 dnf makecache"}
 
         # Install the constrained Rocky 10 RPM
-        vm.succeed("timeout 300 dnf install -y /opt/*.rpm")
+        ${packageManagerSucceed "timeout 300 dnf install -y /opt/*.rpm"}
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -205,11 +222,11 @@
         ${rockyNetworkBootstrap}
 
         # Enable EPEL for GTK4/libadwaita on Rocky 9
-        vm.succeed("timeout 300 dnf install -y epel-release")
-        vm.succeed("timeout 300 dnf makecache")
+        ${packageManagerSucceed "timeout 300 dnf install -y epel-release"}
+        ${packageManagerSucceed "timeout 300 dnf makecache"}
 
         # Install the RPM
-        vm.succeed("rpm -ivh /opt/*.rpm || timeout 300 dnf install -y /opt/*.rpm")
+        ${packageManagerSucceed "rpm -ivh /opt/*.rpm || timeout 300 dnf install -y /opt/*.rpm"}
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -229,10 +246,10 @@
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("timeout 300 apt-get update")
+        ${packageManagerSucceed "timeout 300 apt-get update"}
 
         # Install the DEB and resolve dependencies
-        vm.succeed("dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y")
+        ${packageManagerSucceed "dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y"}
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -253,10 +270,10 @@
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("timeout 300 apt-get update")
+        ${packageManagerSucceed "timeout 300 apt-get update"}
 
         # Install the DEB and resolve dependencies
-        vm.succeed("dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y")
+        ${packageManagerSucceed "dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y"}
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
