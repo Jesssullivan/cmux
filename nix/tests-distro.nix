@@ -62,14 +62,26 @@
         hash = asset.hash;
       };
 
-  cmuxDeb = materializeReleaseAsset releaseArtifacts.assets.deb;
+  materializeReleaseAssetDir = label: asset: let
+    artifact = materializeReleaseAsset asset;
+    name =
+      if asset ? name
+      then asset.name
+      else builtins.baseNameOf (toString artifact);
+  in
+    pkgs.runCommand "${label}-artifact-dir" {} ''
+      mkdir -p "$out"
+      cp ${artifact} "$out/${name}"
+    '';
 
-  cmuxFedoraRpm = materializeReleaseAsset (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm);
+  cmuxDebDir = materializeReleaseAssetDir "cmux-deb" releaseArtifacts.assets.deb;
+
+  cmuxFedoraRpmDir = materializeReleaseAssetDir "cmux-fedora-rpm" (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm);
   haveRockyRpm = releaseArtifacts.assets ? rpmRocky;
-  cmuxRockyRpm =
+  cmuxRockyRpmDir =
     if haveRockyRpm
-    then materializeReleaseAsset releaseArtifacts.assets.rpmRocky
-    else cmuxFedoraRpm;
+    then materializeReleaseAssetDir "cmux-rocky-rpm" releaseArtifacts.assets.rpmRocky
+    else cmuxFedoraRpmDir;
 
   # ── Shared socket ping test snippet ──────────────────────────────
   # Used by all distro tests after package install.
@@ -78,18 +90,18 @@
     vm.succeed("cmux --version 2>&1 || cmux --help 2>&1 || echo 'binary runs'")
 
     # Verify runtime library deps resolve cleanly after package install
-    vm.succeed('''
+    vm.succeed("""
       ldd_out="$(ldd /usr/bin/cmux 2>&1)"
       echo "$ldd_out" | head -20
       ! echo "$ldd_out" | grep -q "not found"
-    ''')
+    """)
   '';
 
   distro-fedora42 =
     (nvt.fedora."42" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxFedoraRpm}";
+          source = "${cmuxFedoraRpmDir}";
           target = "/mnt/pkg";
         };
       };
@@ -110,7 +122,7 @@
     (nvt.rocky."10_1" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxRockyRpm}";
+          source = "${cmuxRockyRpmDir}";
           target = "/mnt/pkg";
         };
       };
@@ -136,7 +148,7 @@
     (nvt.rocky."9_5" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxFedoraRpm}";
+          source = "${cmuxFedoraRpmDir}";
           target = "/mnt/pkg";
         };
       };
@@ -162,7 +174,7 @@
     (nvt.debian."12" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxDeb}";
+          source = "${cmuxDebDir}";
           target = "/mnt/pkg";
         };
       };
@@ -186,7 +198,7 @@
     (nvt.ubuntu."24_04" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxDeb}";
+          source = "${cmuxDebDir}";
           target = "/mnt/pkg";
         };
       };
