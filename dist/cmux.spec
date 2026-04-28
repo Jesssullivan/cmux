@@ -14,6 +14,7 @@ Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 BuildRequires:  zig >= 0.15.2
 BuildRequires:  gcc
 BuildRequires:  gcc-c++
+BuildRequires:  patchelf
 BuildRequires:  pkg-config
 BuildRequires:  gtk4-devel >= 4.10
 BuildRequires:  libadwaita-devel >= 1.3
@@ -94,6 +95,8 @@ install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
 install -Dm644 LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
 install -Dm644 README.md %{buildroot}%{_datadir}/doc/%{name}/README.md
 %endif
+
+patchelf --set-rpath %{_libdir}/cmux %{buildroot}%{_bindir}/cmux
 
 %post
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :

@@ -65,7 +65,7 @@ jobs:
             libwebkitgtk-6.0-dev \
             libfreetype-dev libharfbuzz-dev libfontconfig-dev \
             libpng-dev libonig-dev libgl-dev \
-            glslang-tools spirv-cross
+            glslang-tools spirv-cross patchelf
 
       - name: Build vendor libraries
         run: |
@@ -129,6 +129,7 @@ jobs:
           # Binary + shared library
           install -Dm755 cmux-linux/zig-out/bin/cmux "${PKG}/usr/bin/cmux"
           install -Dm755 ghostty/zig-out/lib/libghostty.so "${PKG}/usr/lib/cmux/libghostty.so"
+          bash scripts/set-linux-package-rpath.sh "${PKG}/usr/bin/cmux" "/usr/lib/cmux"
 
           # cmuxd
           if [ -f cmuxd/zig-out/bin/cmuxd ]; then
@@ -157,10 +158,11 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           STAGING="cmux-${VERSION}-linux-${TAR_ARCH}"
-          mkdir -p "${STAGING}"/{bin,lib,share/{applications,metainfo,icons/hicolor/{16x16,128x128,256x256,512x512}/apps},lib/udev/rules.d}
+          mkdir -p "${STAGING}"/{bin,lib/cmux,share/{applications,metainfo,icons/hicolor/{16x16,128x128,256x256,512x512}/apps},lib/udev/rules.d}
 
           cp cmux-linux/zig-out/bin/cmux "${STAGING}/bin/"
-          cp ghostty/zig-out/lib/libghostty.so "${STAGING}/lib/"
+          cp ghostty/zig-out/lib/libghostty.so "${STAGING}/lib/cmux/"
+          bash scripts/set-linux-package-rpath.sh "${STAGING}/bin/cmux" '$ORIGIN/../lib/cmux'
           if [ -f cmuxd/zig-out/bin/cmuxd ]; then
             cp cmuxd/zig-out/bin/cmuxd "${STAGING}/bin/"
           fi
@@ -177,7 +179,7 @@ jobs:
           set -e
           PREFIX="${1:-/usr/local}"
           install -Dm755 bin/cmux "$PREFIX/bin/cmux"
-          install -Dm755 lib/libghostty.so "$PREFIX/lib/cmux/libghostty.so"
+          install -Dm755 lib/cmux/libghostty.so "$PREFIX/lib/cmux/libghostty.so"
           [ -f bin/cmuxd ] && install -Dm755 bin/cmuxd "$PREFIX/bin/cmuxd"
           install -Dm644 share/applications/com.jesssullivan.cmux.desktop "$PREFIX/share/applications/com.jesssullivan.cmux.desktop"
           install -Dm644 share/metainfo/com.jesssullivan.cmux.metainfo.xml "$PREFIX/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
@@ -244,7 +246,8 @@ jobs:
             libsecret-devel libnotify-devel \
             wayland-devel wayland-protocols-devel \
             freetype-devel harfbuzz-devel fontconfig-devel \
-            libpng-devel oniguruma-devel mesa-libGL-devel
+            libpng-devel oniguruma-devel mesa-libGL-devel \
+            patchelf
 
       - uses: actions/checkout@v5
         with:
@@ -311,6 +314,7 @@ jobs:
           # Install files into buildroot (must match %files in spec)
           install -Dm755 cmux-linux/zig-out/bin/cmux "${BUILDROOT}/usr/bin/cmux"
           install -Dm755 ghostty/zig-out/lib/libghostty.so "${BUILDROOT}${LIBDIR}/cmux/libghostty.so"
+          bash scripts/set-linux-package-rpath.sh "${BUILDROOT}/usr/bin/cmux" "${LIBDIR}/cmux"
           if [ -f cmuxd/zig-out/bin/cmuxd ]; then
             install -Dm755 cmuxd/zig-out/bin/cmuxd "${BUILDROOT}/usr/bin/cmuxd"
           fi
@@ -389,7 +393,8 @@ jobs:
             wayland-devel wayland-protocols-devel \
             freetype-devel harfbuzz-devel fontconfig-devel \
             libpng-devel oniguruma-devel mesa-libGL-devel \
-            glslang
+            glslang \
+            patchelf
 
       - uses: actions/checkout@v5
         with:
@@ -453,6 +458,7 @@ jobs:
 
           install -Dm755 cmux-linux/zig-out/bin/cmux "${BUILDROOT}/usr/bin/cmux"
           install -Dm755 ghostty/zig-out/lib/libghostty.so "${BUILDROOT}${LIBDIR}/cmux/libghostty.so"
+          bash scripts/set-linux-package-rpath.sh "${BUILDROOT}/usr/bin/cmux" "${LIBDIR}/cmux"
           if [ -f cmuxd/zig-out/bin/cmuxd ]; then
             install -Dm755 cmuxd/zig-out/bin/cmuxd "${BUILDROOT}/usr/bin/cmuxd"
           fi

@@ -17,6 +17,7 @@ BuildRequires:  gcc
 BuildRequires:  gcc-c++
 BuildRequires:  git
 BuildRequires:  glslang
+BuildRequires:  patchelf
 BuildRequires:  pkg-config
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  zig >= 0.15.2
@@ -89,6 +90,7 @@ done
 install -Dm644 dist/linux/70-u2f.rules %{buildroot}%{_udevrulesdir}/70-u2f.rules
 install -Dm644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dm644 README.md %{buildroot}%{_docdir}/%{name}/README.md
+patchelf --set-rpath %{_libdir}/cmux %{buildroot}%{_bindir}/cmux
 
 %post
 /usr/bin/gtk-update-icon-cache -q %{_datadir}/icons/hicolor 2>/dev/null || :
