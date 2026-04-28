@@ -606,19 +606,19 @@ jobs:
           fi
 
       - name: Rocky 9 package test (RPM proxy)
-        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-rocky9
 
       - name: Fedora 42 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-fedora42 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-fedora42
 
       - name: Rocky 10 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky10 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-rocky10
 
       - name: Debian 12 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-debian12
 
       - name: Ubuntu 24.04 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-ubuntu2404
 
       - name: Upload distro validation logs
         if: always()
