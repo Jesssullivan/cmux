@@ -34,8 +34,13 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
 
-      - name: Setup GloriousFlywheel
-        uses: tinyland-inc/GloriousFlywheel/.github/actions/setup-flywheel@main
+      - name: Add Nix to PATH
+        run: |
+          for nixbin in /nix/var/nix/profiles/default/bin "$HOME/.nix-profile/bin"; do
+            if [ -d "$nixbin" ]; then
+              echo "$nixbin" >> "$GITHUB_PATH"
+            fi
+          done
 
       - name: Configure self-hosted Nix
         run: bash scripts/configure-self-hosted-nix.sh
