@@ -144,6 +144,7 @@
     # Rocky images can boot under QEMU user networking without a populated
     # resolver config. 10.0.2.3 is QEMU's built-in DNS endpoint.
     vm.succeed("printf 'nameserver 10.0.2.3\\noptions timeout:1 attempts:3\\n' > /etc/resolv.conf")
+    vm.succeed("ip route show && cat /etc/resolv.conf")
   '';
 
   distro-fedora42 =
@@ -157,8 +158,8 @@
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("dnf makecache")
-        vm.succeed("dnf install -y /mnt/pkg/*")
+        vm.succeed("timeout 300 dnf makecache")
+        vm.succeed("timeout 300 dnf install -y /mnt/pkg/*")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -173,12 +174,12 @@
 
         ${rockyNetworkBootstrap}
 
-        vm.succeed("dnf install -y dnf-plugins-core")
+        vm.succeed("timeout 300 dnf install -y dnf-plugins-core")
         vm.succeed("dnf config-manager --set-enabled crb")
-        vm.succeed("dnf makecache")
+        vm.succeed("timeout 300 dnf makecache")
 
         # Install the constrained Rocky 10 RPM
-        vm.succeed("dnf install -y /opt/*.rpm")
+        vm.succeed("timeout 300 dnf install -y /opt/*.rpm")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -194,11 +195,11 @@
         ${rockyNetworkBootstrap}
 
         # Enable EPEL for GTK4/libadwaita on Rocky 9
-        vm.succeed("dnf install -y epel-release")
-        vm.succeed("dnf makecache")
+        vm.succeed("timeout 300 dnf install -y epel-release")
+        vm.succeed("timeout 300 dnf makecache")
 
         # Install the RPM
-        vm.succeed("rpm -ivh /opt/*.rpm || dnf install -y /opt/*.rpm")
+        vm.succeed("rpm -ivh /opt/*.rpm || timeout 300 dnf install -y /opt/*.rpm")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -218,10 +219,10 @@
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("apt-get update")
+        vm.succeed("timeout 300 apt-get update")
 
         # Install the DEB and resolve dependencies
-        vm.succeed("dpkg -i /mnt/pkg/* || apt-get install -f -y")
+        vm.succeed("dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -242,10 +243,10 @@
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("apt-get update")
+        vm.succeed("timeout 300 apt-get update")
 
         # Install the DEB and resolve dependencies
-        vm.succeed("dpkg -i /mnt/pkg/* || apt-get install -f -y")
+        vm.succeed("dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
