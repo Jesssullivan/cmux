@@ -140,7 +140,7 @@
   # Used by all distro tests after package install.
   socketPingTest = ''
     # Verify binary runs
-    vm.succeed("cmux --version 2>&1 || cmux --help 2>&1 || echo 'binary runs'")
+    vm.succeed("cmux --version 2>&1 || cmux --help 2>&1")
 
     # Verify runtime library deps resolve cleanly after package install
     vm.succeed("""
@@ -160,7 +160,7 @@
       if [ "''${VERSION_ID:-}" = "10.1" ]; then
         for repo in /etc/yum.repos.d/*.repo; do
           [ -f "$repo" ] || continue
-          sed -i -E 's|(https?://(dl|download)\\.rockylinux\\.org)/vault/rocky/|\\1/pub/rocky/|g' "$repo"
+          sed -i -E 's#(https?://(dl|download)\\.rockylinux\\.org)/vault/rocky/#\\1/pub/rocky/#g' "$repo"
         done
         dnf clean all
         grep -R "rocky/.*/BaseOS" /etc/yum.repos.d || true
