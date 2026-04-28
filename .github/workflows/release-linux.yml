@@ -76,9 +76,10 @@ jobs:
 
       - name: Build libghostty
         run: |
-          cd ghostty
-          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
-          cd ..
+          bash scripts/retry-zig-build.sh \
+            --label "libghostty" \
+            --working-directory ghostty \
+            -- zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
           bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux
@@ -280,9 +281,10 @@ jobs:
 
       - name: Build libghostty
         run: |
-          cd ghostty
-          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
-          cd ..
+          bash scripts/retry-zig-build.sh \
+            --label "libghostty" \
+            --working-directory ghostty \
+            -- zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
           bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux
@@ -427,9 +429,10 @@ jobs:
 
       - name: Build libghostty
         run: |
-          cd ghostty
-          zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
-          cd ..
+          bash scripts/retry-zig-build.sh \
+            --label "libghostty" \
+            --working-directory ghostty \
+            -- zig build -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
           bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (terminal-first)
