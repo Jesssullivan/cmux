@@ -155,16 +155,29 @@
     # resolver config. 10.0.2.3 is QEMU's built-in DNS endpoint.
     vm.succeed("printf 'nameserver 10.0.2.3\\noptions timeout:1 attempts:3\\n' > /etc/resolv.conf")
     vm.succeed("ip route show && cat /etc/resolv.conf")
+    vm.succeed("""
+      . /etc/os-release
+      if [ "''${VERSION_ID:-}" = "10.1" ]; then
+        for repo in /etc/yum.repos.d/*.repo; do
+          [ -f "$repo" ] || continue
+          sed -i -E 's|(https?://(dl|download)\\.rockylinux\\.org)/vault/rocky/|\\1/pub/rocky/|g' "$repo"
+        done
+        dnf clean all
+        grep -R "rocky/.*/BaseOS" /etc/yum.repos.d || true
+      fi
+    """)
   '';
 
   packageManagerSucceed = command: ''
     vm.succeed("""
+      set +e
       status=0
       for attempt in 1 2 3; do
-        if ${command}; then
+        ${command}
+        status=$?
+        if [ "$status" -eq 0 ]; then
           exit 0
         fi
-        status=$?
         echo "attempt $attempt/3 failed for ${lib.escapeShellArg command} (exit $status)" >&2
         if [ "$attempt" -lt 3 ]; then
           sleep 20
