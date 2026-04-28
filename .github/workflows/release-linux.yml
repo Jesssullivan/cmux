@@ -24,8 +24,8 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          - { deb: amd64, tar: amd64, runner: ubuntu-latest, zig: x86_64-linux-gnu }
-          - { deb: arm64, tar: arm64, runner: ubuntu-24.04-arm, zig: aarch64-linux-gnu }
+          - { deb: amd64, tar: amd64, runner: ubuntu-latest }
+          - { deb: arm64, tar: arm64, runner: ubuntu-24.04-arm }
     outputs:
       # Both matrix legs compute the same value, so this is safe — GHA
       # picks an arbitrary leg's value, and downstream jobs only care that
@@ -69,28 +69,28 @@ jobs:
 
       - name: Build vendor libraries
         run: |
-          cd vendor/ctap2 && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-crypto && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-keychain && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-notify && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
+          cd vendor/ctap2 && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
 
       - name: Build libghostty
         run: |
           bash scripts/retry-zig-build.sh \
             --label "libghostty" \
             --working-directory ghostty \
-            -- zig build -Dtarget=${{ matrix.arch.zig }} -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+            -- zig build -Dcpu=baseline -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
           bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux
         run: |
           cd cmux-linux
-          zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast
 
       - name: Build cmuxd
         run: |
           if [ -d cmuxd ]; then
-            cd cmuxd && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast
+            cd cmuxd && zig build -Dcpu=baseline -Doptimize=ReleaseFast
           fi
 
       - name: Assemble DEB package
@@ -234,8 +234,8 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          - { rpm: x86_64, runner: ubuntu-latest, zig: x86_64-linux-gnu }
-          - { rpm: aarch64, runner: ubuntu-24.04-arm, zig: aarch64-linux-gnu }
+          - { rpm: x86_64, runner: ubuntu-latest }
+          - { rpm: aarch64, runner: ubuntu-24.04-arm }
     steps:
       - name: Install build dependencies
         run: |
@@ -274,28 +274,28 @@ jobs:
 
       - name: Build vendor libraries
         run: |
-          cd vendor/ctap2 && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-crypto && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-keychain && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-notify && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
+          cd vendor/ctap2 && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
 
       - name: Build libghostty
         run: |
           bash scripts/retry-zig-build.sh \
             --label "libghostty" \
             --working-directory ghostty \
-            -- zig build -Dtarget=${{ matrix.arch.zig }} -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+            -- zig build -Dcpu=baseline -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
           bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux
         run: |
           cd cmux-linux
-          zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast
 
       - name: Build cmuxd
         run: |
           if [ -d cmuxd ]; then
-            cd cmuxd && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast
+            cd cmuxd && zig build -Dcpu=baseline -Doptimize=ReleaseFast
           fi
 
       - name: Assemble RPM package
@@ -380,8 +380,8 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          - { rpm: x86_64, runner: ubuntu-latest, zig: x86_64-linux-gnu }
-          - { rpm: aarch64, runner: ubuntu-24.04-arm, zig: aarch64-linux-gnu }
+          - { rpm: x86_64, runner: ubuntu-latest }
+          - { rpm: aarch64, runner: ubuntu-24.04-arm }
     steps:
       - name: Install build dependencies
         run: |
@@ -422,28 +422,28 @@ jobs:
 
       - name: Build vendor libraries
         run: |
-          cd vendor/ctap2 && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-crypto && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-keychain && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
-          cd vendor/zig-notify && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast && cd ../..
+          cd vendor/ctap2 && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
 
       - name: Build libghostty
         run: |
           bash scripts/retry-zig-build.sh \
             --label "libghostty" \
             --working-directory ghostty \
-            -- zig build -Dtarget=${{ matrix.arch.zig }} -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+            -- zig build -Dcpu=baseline -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
           bash scripts/ghostty-compat-symlinks.sh
 
       - name: Build cmux-linux (terminal-first)
         run: |
           cd cmux-linux
-          zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast -Dno-webkit=true
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast -Dno-webkit=true
 
       - name: Build cmuxd
         run: |
           if [ -d cmuxd ]; then
-            cd cmuxd && zig build -Dtarget=${{ matrix.arch.zig }} -Doptimize=ReleaseFast
+            cd cmuxd && zig build -Dcpu=baseline -Doptimize=ReleaseFast
           fi
 
       - name: Assemble RPM package
