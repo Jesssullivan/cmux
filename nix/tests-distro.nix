@@ -140,6 +140,12 @@
     """)
   '';
 
+  rockyNetworkBootstrap = ''
+    # Rocky images can boot under QEMU user networking without a populated
+    # resolver config. 10.0.2.3 is QEMU's built-in DNS endpoint.
+    vm.succeed("printf 'nameserver 10.0.2.3\\noptions timeout:1 attempts:3\\n' > /etc/resolv.conf")
+  '';
+
   distro-fedora42 =
     (nvt.fedora."42" {
       sharedDirs = {
@@ -165,6 +171,8 @@
     makeRockyPackageTest "10_1" (releaseArtifacts.assets.rpmRocky or releaseArtifacts.assets.rpm) ''
         vm.wait_for_unit("multi-user.target")
 
+        ${rockyNetworkBootstrap}
+
         vm.succeed("dnf install -y dnf-plugins-core")
         vm.succeed("dnf config-manager --set-enabled crb")
         vm.succeed("dnf makecache")
@@ -182,6 +190,8 @@
   distro-rocky9 =
     makeRockyPackageTest "9_5" (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm) ''
         vm.wait_for_unit("multi-user.target")
+
+        ${rockyNetworkBootstrap}
 
         # Enable EPEL for GTK4/libadwaita on Rocky 9
         vm.succeed("dnf install -y epel-release")
