@@ -32,6 +32,9 @@
   };
 
   nvt = nix-vm-test.lib.${system};
+  nvtGeneric = pkgs.callPackage "${nix-vm-test.outPath}/generic" {
+    inherit nixpkgs;
+  };
 
   # ── Fetch release artifacts from GitHub ──────────────────────────
   # Default to the checked-in release manifest. A local override manifest can be
@@ -73,6 +76,46 @@
       mkdir -p "$out"
       cp ${artifact} "$out/${name}"
     '';
+
+  releaseAssetName = asset:
+    if asset ? name
+    then asset.name
+    else builtins.baseNameOf (toString (materializeReleaseAsset asset));
+
+  injectReleaseAssetIntoImage = label: image: asset: let
+    artifact = materializeReleaseAsset asset;
+    name = releaseAssetName asset;
+  in
+    pkgs.runCommand "${label}-image-with-asset" {} ''
+      install -m 0600 ${image} image.qcow2
+      mkdir -p pkg
+      cp ${artifact} "pkg/${name}"
+      chmod 0644 "pkg/${name}"
+      ${pkgs.guestfs-tools}/bin/virt-customize \
+        -a image.qcow2 \
+        --smp 2 \
+        --memsize 256 \
+        --no-network \
+        --copy-in "pkg/${name}:/opt"
+      cp image.qcow2 "$out"
+    '';
+
+  # RHEL-family cloud images used by nix-vm-test do not expose 9p in the
+  # guest kernel, so sharedDirs cannot carry package artifacts into Rocky.
+  makeRockyPackageTest = imageId: rpmAsset: testScript: let
+    baseImage = nvt.rocky.prepareRockyImage {
+      hostPkgs = pkgs;
+      originalImage = nvt.rocky.images.${imageId};
+      diskSize = null;
+      extraPathsToRegister = [];
+    };
+    image = injectReleaseAssetIntoImage "rocky-${imageId}-cmux-package" baseImage rpmAsset;
+  in
+    (nvtGeneric.makeVmTest {
+      name = "vm-test-rocky_${imageId}_cmux";
+      inherit system image testScript;
+      sharedDirs = {};
+    }).sandboxed;
 
   cmuxDebDir = materializeReleaseAssetDir "cmux-deb" releaseArtifacts.assets.deb;
 
@@ -119,14 +162,7 @@
     }).sandboxed;
 
   distro-rocky10 =
-    (nvt.rocky."10_1" {
-      sharedDirs = {
-        pkg = {
-          source = "${cmuxRockyRpmDir}";
-          target = "/mnt/pkg";
-        };
-      };
-      testScript = ''
+    makeRockyPackageTest "10_1" (releaseArtifacts.assets.rpmRocky or releaseArtifacts.assets.rpm) ''
         vm.wait_for_unit("multi-user.target")
 
         vm.succeed("dnf install -y dnf-plugins-core")
@@ -134,25 +170,17 @@
         vm.succeed("dnf makecache")
 
         # Install the constrained Rocky 10 RPM
-        vm.succeed("dnf install -y /mnt/pkg/*")
+        vm.succeed("dnf install -y /opt/*.rpm")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
 
         ${socketPingTest}
       '';
-    }).sandboxed;
 
   # ── Test: Rocky Linux 9 RPM install proxy ────────────────────────
   distro-rocky9 =
-    (nvt.rocky."9_5" {
-      sharedDirs = {
-        pkg = {
-          source = "${cmuxFedoraRpmDir}";
-          target = "/mnt/pkg";
-        };
-      };
-      testScript = ''
+    makeRockyPackageTest "9_5" (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm) ''
         vm.wait_for_unit("multi-user.target")
 
         # Enable EPEL for GTK4/libadwaita on Rocky 9
@@ -160,14 +188,13 @@
         vm.succeed("dnf makecache")
 
         # Install the RPM
-        vm.succeed("rpm -ivh /mnt/pkg/* || dnf install -y /mnt/pkg/*")
+        vm.succeed("rpm -ivh /opt/*.rpm || dnf install -y /opt/*.rpm")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
 
         ${socketPingTest}
       '';
-    }).sandboxed;
 
   # ── Test: Debian 12 DEB install ──────────────────────────────────
   distro-debian12 =
