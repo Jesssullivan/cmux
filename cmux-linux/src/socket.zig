@@ -525,7 +525,9 @@ fn findSurfaceInWorkspace(ws: *Workspace, id_str: []const u8) ?u128 {
         }
         return null;
     }
-    return parseId(id_str);
+    const target_id = parseId(id_str) orelse return null;
+    if (ws.panels.get(target_id) != null) return target_id;
+    return null;
 }
 
 /// Resolve a surface by UUID hex or "surface:N" ref, searching all workspaces.
@@ -1387,7 +1389,7 @@ fn handleSurfaceSplit(alloc: Allocator, params: json.Value) []const u8 {
     // Split the addressed pane (or create the first leaf).
     if (ws.root_node) |root| {
         const target_leaf = split_tree.findLeafNode(root, source_pane_id) orelse return "{\"error\":\"source pane not found\"}";
-        ws.root_node = split_tree.splitPanePlaced(
+        _ = split_tree.splitPanePlaced(
             ws.alloc,
             target_leaf,
             orientation,
@@ -1925,6 +1927,11 @@ fn handleWindowFocus(_: Allocator, _: json.Value) []const u8 {
 fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
     const tm = getTabManager() orelse return "{\"error\":\"no tab manager\"}";
     const ws = tm.selectedWorkspace() orelse return "{\"error\":\"no workspace\"}";
+    const focused_before = ws.focused_panel_id;
+    const source_pane_id = if (focused_before) |focused_id| blk: {
+        const focused_panel = ws.panels.get(focused_id) orelse break :blk null;
+        break :blk focused_panel.pane_id;
+    } else null;
     const panel = if (isNoSurface())
         ws.createMockPanel(.terminal) catch return "{\"error\":\"create mock panel failed\"}"
     else
@@ -1932,11 +1939,18 @@ fn handleSurfaceCreate(alloc: Allocator, params: json.Value) []const u8 {
 
     // Add to split tree
     if (ws.root_node) |root| {
-        const focused_id = ws.focused_panel_id orelse panel.id;
         _ = params;
-        if (split_tree.findLeaf(root, focused_id)) |_| {
-            ws.root_node = split_tree.splitPane(ws.alloc, root, .horizontal, panel.id, panel.widget) catch return "{\"error\":\"split failed\"}";
-        }
+        const pane_id = source_pane_id orelse panel.pane_id;
+        const target_leaf = split_tree.findLeafNode(root, pane_id) orelse {
+            ws.removePanel(panel.id);
+            ws.focused_panel_id = focused_before;
+            return "{\"error\":\"source pane not found\"}";
+        };
+        _ = split_tree.splitPane(ws.alloc, target_leaf, .horizontal, panel.id, panel.widget) catch {
+            ws.removePanel(panel.id);
+            ws.focused_panel_id = focused_before;
+            return "{\"error\":\"split failed\"}";
+        };
     } else {
         ws.root_node = split_tree.createLeaf(ws.alloc, panel.id, panel.widget) catch return "{\"error\":\"create leaf failed\"}";
     }
@@ -2317,8 +2331,12 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
         // Remove collected panels (split tree + panel map).
         for (to_close.items) |id| {
-            if (ws.root_node) |root| {
-                ws.root_node = split_tree.closePane(ws.alloc, root, id);
+            if (ws.panels.get(id)) |closing_panel| {
+                if (ws.root_node) |root| {
+                    if (split_tree.closePane(ws.alloc, root, closing_panel.pane_id)) |new_root| {
+                        ws.root_node = new_root;
+                    }
+                }
             }
             ws.removePanel(id);
         }
@@ -2369,10 +2387,10 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
 
         // Add to split tree
         if (ws.root_node) |root| {
-            if (split_tree.findLeaf(root, target_id)) |_| {
-                ws.root_node = split_tree.splitPane(
+            if (split_tree.findLeafNode(root, panel.pane_id)) |target_leaf| {
+                _ = split_tree.splitPane(
                     ws.alloc,
-                    root,
+                    target_leaf,
                     .horizontal,
                     new_panel.id,
                     new_panel.widget,
@@ -2426,10 +2444,10 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         };
 
         if (ws.root_node) |root| {
-            if (split_tree.findLeaf(root, target_id)) |_| {
-                ws.root_node = split_tree.splitPane(
+            if (split_tree.findLeafNode(root, panel.pane_id)) |target_leaf| {
+                _ = split_tree.splitPane(
                     ws.alloc,
-                    root,
+                    target_leaf,
                     .horizontal,
                     new_panel.id,
                     new_panel.widget,
@@ -2502,10 +2520,10 @@ fn handleSurfaceAction(alloc: Allocator, params: json.Value) []const u8 {
         };
 
         if (ws.root_node) |root| {
-            if (split_tree.findLeaf(root, target_id)) |_| {
-                ws.root_node = split_tree.splitPane(
+            if (split_tree.findLeafNode(root, panel.pane_id)) |target_leaf| {
+                _ = split_tree.splitPane(
                     ws.alloc,
-                    root,
+                    target_leaf,
                     .horizontal,
                     new_panel.id,
                     new_panel.widget,
@@ -3070,7 +3088,7 @@ fn handleBrowserOpenSplit(alloc: Allocator, params: json.Value) []const u8 {
     if (created_split) {
         if (ws.root_node) |root| {
             const target_leaf = split_tree.findLeafNode(root, source_pane_id) orelse return "{\"error\":\"source pane not found\"}";
-            ws.root_node = split_tree.splitPanePlaced(
+            _ = split_tree.splitPanePlaced(
                 ws.alloc,
                 target_leaf,
                 .horizontal,

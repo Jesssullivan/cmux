@@ -126,9 +126,11 @@ fn closePaneInner(alloc: Allocator, node: *Node, _: ?*Node, panel_id: u128) ?*No
                 return node;
             }
 
-            // Recurse into children
-            if (closePaneInner(alloc, split.first, node, panel_id)) |r| return r;
-            if (closePaneInner(alloc, split.second, node, panel_id)) |r| return r;
+            // Recurse into children. When a nested child handles the close it
+            // mutates that child in-place, so this split remains the subtree
+            // root that callers must keep.
+            if (closePaneInner(alloc, split.first, node, panel_id) != null) return node;
+            if (closePaneInner(alloc, split.second, node, panel_id) != null) return node;
 
             return null;
         },
