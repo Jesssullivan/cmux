@@ -336,6 +336,7 @@ jobs:
           rpmbuild -bb \
             --define "_topdir $TOPDIR" \
             --define "_builddir $PWD" \
+            --nodeps \
             --with prebuilt \
             "$TOPDIR/SPECS/cmux.spec"
 
@@ -478,6 +479,7 @@ jobs:
             --define "debug_package %{nil}" \
             --define "_enable_debug_packages 0" \
             --noclean \
+            --nodeps \
             --with prebuilt \
             --without webkit \
             "$TOPDIR/SPECS/cmux.spec"
