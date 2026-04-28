@@ -39,9 +39,31 @@ As of April 25, 2026:
 - The full default build was not re-run for this parent-pin bump. The previous
   full default build reached the optional macOS app bundle step and then failed
   while resolving a Swift package revision.
-- The newest 47 upstream commits after `c47a8091f` remain intentionally outside
+- The newest 47 upstream commits after `c47a8091f` remained intentionally outside
   the parent-pin bump. `src/Surface.zig` and `src/config/Config.zig` both change
-  frequently and still need semantic review before the next fork sync.
+  frequently and still needed semantic review before the next fork sync.
+
+As of April 27, 2026:
+
+- Current checked-in cmux parent pin: `e8f62c061`
+- Current pushed fork `main`: `e8f62c061`
+- Current upstream `main`: `659019666`
+- Fork drift versus upstream: 66 commits ahead, 76 commits behind
+- The fork remains owned-fork maintenance by default. Do not route urgent cmux
+  or lmux work through `ghostty-org/ghostty` unless Jess explicitly chooses a
+  human upstream handoff.
+- Newly missing upstream work includes VOUCHED updates, UI-test configuration
+  isolation, Linux high-resolution scrolling fixes, terminfo cleanup, temp-path
+  refactors, Flatpak/Nix packaging churn, and C API/input changes.
+- High-review files touched upstream include `include/ghostty.h`,
+  `src/Surface.zig`, `src/apprt/embedded.zig`, `src/config/Config.zig`,
+  `src/renderer/generic.zig`, `src/terminal/osc.zig`,
+  `src/terminal/osc/parsers.zig`, `src/termio/backend.zig`, and
+  `src/termio/stream_handler.zig`.
+- The next sync should be planned as a semantic merge, not a blind submodule
+  bump. Re-check the Linux embedded platform variant, selection/hyperlink C API
+  exports, OSC 99 parser, APC handling, mode 2031 reporting, and cmux theme
+  picker hooks against the new upstream C API and terminal-stream changes.
 
 ### Current ownership posture
 
