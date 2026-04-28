@@ -9,15 +9,24 @@ fi
 
 check_name="$1"
 out_link="result-${check_name}-driver"
+driver_timeout="${CMUX_DISTRO_DRIVER_TIMEOUT_SECONDS:-900}"
 
 # Build the nix-vm-test driver with Nix, then run it outside the Nix build
 # sandbox. The distro install tests intentionally use guest package managers,
 # which need normal runner networking.
+echo "::group::Build ${check_name} VM test driver"
 nix --store daemon build \
   ".#checks.x86_64-linux.${check_name}.passthru.targets.driver" \
   --out-link "$out_link" \
   --print-build-logs \
   -L \
   --option sandbox relaxed
+echo "::endgroup::"
 
-"./${out_link}/bin/test-driver"
+echo "::group::Run ${check_name} VM test driver"
+if command -v timeout >/dev/null 2>&1; then
+  timeout --foreground "$driver_timeout" "./${out_link}/bin/test-driver"
+else
+  "./${out_link}/bin/test-driver"
+fi
+echo "::endgroup::"
