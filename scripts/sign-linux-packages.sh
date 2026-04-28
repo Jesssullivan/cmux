@@ -88,6 +88,11 @@ if ! gpg --list-secret-keys "$LINUX_GPG_KEY_ID" >/dev/null 2>&1; then
   exit 1
 fi
 
+PUBLIC_KEY_FILE="$GNUPGHOME/public.asc"
+gpg --batch --armor --export "$LINUX_GPG_KEY_ID" > "$PUBLIC_KEY_FILE"
+RPM_DBPATH="$GNUPGHOME/rpmdb"
+mkdir -p "$RPM_DBPATH"
+
 # Write the passphrase to a file inside the ephemeral GNUPGHOME so it
 # gets cleaned up by `trap cleanup EXIT`. Using --passphrase-file avoids
 # embedding shell-specific syntax (here-strings) in %__gpg_sign_cmd —
@@ -134,8 +139,13 @@ sign_rpm() {
   rpmsign --addsign "$file"
   # Verify the in-package signature was actually applied.
   echo "sign-linux-packages: verifying in-package RPM signature for $file"
-  rpm -K "$file" 2>&1 | sed 's/^/  rpm: /'
-  if ! rpm -K "$file" | grep -q 'signatures OK'; then
+  if command -v rpmkeys >/dev/null 2>&1; then
+    rpmkeys --dbpath "$RPM_DBPATH" --import "$PUBLIC_KEY_FILE"
+  else
+    rpm --dbpath "$RPM_DBPATH" --import "$PUBLIC_KEY_FILE"
+  fi
+  rpm --dbpath "$RPM_DBPATH" -K "$file" 2>&1 | sed 's/^/  rpm: /'
+  if ! rpm --dbpath "$RPM_DBPATH" -K "$file" | grep -q 'signatures OK'; then
     echo "sign-linux-packages: ERROR — RPM signature verification failed for $file" >&2
     exit 1
   fi
