@@ -348,7 +348,7 @@ jobs:
           && steps.verify.outputs.files_ok == 'true'
           && steps.build.conclusion == 'success'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -372,9 +372,20 @@ jobs:
               echo "Upstream SHA: \`${{ steps.check.outputs.upstream_sha }}\`"
             } > /tmp/workflow-change-issue.md
 
-            gh issue create \
+            if ISSUE_URL=$(gh issue create \
               --title "Upstream sync blocked: workflow file changes ($(date +%Y-%m-%d))" \
-              --body-file /tmp/workflow-change-issue.md || true
+              --body-file /tmp/workflow-change-issue.md); then
+              echo "Created fallback issue: ${ISSUE_URL}" >> "$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "## Upstream sync blocked"
+                echo ""
+                echo "The workflow could not push workflow-file changes and could not create a fallback issue."
+                echo "Configure \`UPSTREAM_SYNC_TOKEN\` with repo/workflow/issue write access, or create an owned issue manually."
+                echo ""
+                cat /tmp/workflow-change-issue.md
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
             exit 0
           fi
 
@@ -405,7 +416,7 @@ jobs:
           && steps.merge.outputs.merge_clean == 'true'
           && (steps.verify.outputs.files_ok == 'false' || steps.build.conclusion == 'failure')
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -468,9 +479,20 @@ jobs:
               echo "Retry manually from a token with workflow scope, or merge the upstream batch locally."
             } > /tmp/build-failure-issue.md
 
-            gh issue create \
+            if ISSUE_URL=$(gh issue create \
               --title "Upstream sync build failure: branch push blocked ($(date +%Y-%m-%d))" \
-              --body-file /tmp/build-failure-issue.md || true
+              --body-file /tmp/build-failure-issue.md); then
+              echo "Created fallback issue: ${ISSUE_URL}" >> "$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "## Upstream sync build failure"
+                echo ""
+                echo "The workflow could not push the triage branch and could not create a fallback issue."
+                echo "Configure \`UPSTREAM_SYNC_TOKEN\` with repo/workflow/issue write access, or create an owned issue manually."
+                echo ""
+                cat /tmp/build-failure-issue.md
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
       # --- Triage PR path: merge conflicts ---
@@ -478,7 +500,7 @@ jobs:
       - name: Create triage PR (merge conflicts)
         if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_clean == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -543,9 +565,20 @@ jobs:
               echo "The conflict summary above is still valid. Resolve manually from a token with workflow scope, or merge locally and push from an authorized user token."
             } > /tmp/conflict-issue.md
 
-            gh issue create \
+            if ISSUE_URL=$(gh issue create \
               --title "Upstream sync: ${CONFLICT_COUNT} conflict(s), branch push blocked ($(date +%Y-%m-%d))" \
-              --body-file /tmp/conflict-issue.md || true
+              --body-file /tmp/conflict-issue.md); then
+              echo "Created fallback issue: ${ISSUE_URL}" >> "$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "## Upstream sync: branch push blocked"
+                echo ""
+                echo "The workflow could not push the conflict branch and could not create a fallback issue."
+                echo "Configure \`UPSTREAM_SYNC_TOKEN\` with repo/workflow/issue write access, or create an owned issue manually."
+                echo ""
+                cat /tmp/conflict-issue.md
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
       - name: Post conflict summary
