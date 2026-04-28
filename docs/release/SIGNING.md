@@ -65,6 +65,21 @@ secrets fail the workflow before artifacts are uploaded.
 | `LINUX_GPG_PASSPHRASE`            | UTF-8 plaintext                        | Treat as high-sensitivity         |
 | `LINUX_GPG_KEY_ID`                | fingerprint or short ID                | Used as `--local-user`/`%_gpg_name` |
 
+The encrypted source of truth for the current release-signing material is
+`secrets/linux-release-signing.sops.yaml`. To sync the SOPS values into
+GitHub Actions after a rotation:
+
+```bash
+scripts/sync-linux-signing-secrets.sh
+```
+
+To inspect non-secret metadata without exposing the key material:
+
+```bash
+sops --decrypt --extract '["linux_release_signing"]["fingerprint"]' \
+  secrets/linux-release-signing.sops.yaml
+```
+
 ## Generate the key (one-time)
 
 Generate a dedicated release-signing key (do not reuse a personal key).

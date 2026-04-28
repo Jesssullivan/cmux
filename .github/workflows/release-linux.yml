@@ -325,15 +325,18 @@ jobs:
           install -Dm644 LICENSE "${BUILDROOT}/usr/share/licenses/cmux/LICENSE"
           install -Dm644 README.md "${BUILDROOT}/usr/share/doc/cmux/README.md"
 
+          PAYLOAD="$TOPDIR/SOURCES/payload"
+          mkdir -p "$PAYLOAD"
+          cp -a "$BUILDROOT"/. "$PAYLOAD"/
+
           # Generate spec from template with correct version
           sed "s/^Version:.*/Version:        ${RPM_VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
 
-          # Build binary RPM from pre-populated buildroot (skip %prep and %build)
+          # Build binary RPM from prebuilt payload without --short-circuit
           rpmbuild -bb \
             --define "_topdir $TOPDIR" \
             --define "_builddir $PWD" \
-            --buildroot "$BUILDROOT" \
-            --short-circuit \
+            --with prebuilt \
             "$TOPDIR/SPECS/cmux.spec"
 
           RPM=$(find "$TOPDIR/RPMS" -name '*.rpm' | head -1)
@@ -462,6 +465,10 @@ jobs:
           install -Dm644 LICENSE "${BUILDROOT}/usr/share/licenses/cmux/LICENSE"
           install -Dm644 README.md "${BUILDROOT}/usr/share/doc/cmux/README.md"
 
+          PAYLOAD="$TOPDIR/SOURCES/payload"
+          mkdir -p "$PAYLOAD"
+          cp -a "$BUILDROOT"/. "$PAYLOAD"/
+
           sed "s/^Version:.*/Version:        ${RPM_VERSION}/" dist/cmux.spec > "$TOPDIR/SPECS/cmux.spec"
 
           rpmbuild -bb \
@@ -471,8 +478,7 @@ jobs:
             --define "debug_package %{nil}" \
             --define "_enable_debug_packages 0" \
             --noclean \
-            --buildroot "$BUILDROOT" \
-            --short-circuit \
+            --with prebuilt \
             --without webkit \
             "$TOPDIR/SPECS/cmux.spec"
 
@@ -605,20 +611,17 @@ jobs:
             echo "WARNING: no QEMU binary found in PATH (Nix provides it at build time)"
           fi
 
-      - name: Rocky 9 package test (RPM proxy)
-        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
-
       - name: Fedora 42 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-fedora42 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-fedora42
 
       - name: Rocky 10 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky10 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-rocky10
 
       - name: Debian 12 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-debian12
 
       - name: Ubuntu 24.04 package test
-        run: nix --store daemon build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-ubuntu2404
 
       - name: Upload distro validation logs
         if: always()

@@ -159,24 +159,24 @@ jobs:
           fi
 
       - name: Rocky 9 package test (RPM proxy)
-        if: inputs.distro == 'all' || inputs.distro == 'rocky9' || inputs.distro == ''
-        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky9 --print-build-logs -L --option sandbox relaxed
+        if: inputs.distro == 'rocky9'
+        run: bash scripts/run-distro-package-check.sh distro-rocky9
 
       - name: Fedora 42 package test
         if: inputs.distro == 'all' || inputs.distro == 'fedora42' || inputs.distro == ''
-        run: nix --store daemon build .#checks.x86_64-linux.distro-fedora42 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-fedora42
 
       - name: Rocky 10 package test
         if: inputs.distro == 'rocky10'
-        run: nix --store daemon build .#checks.x86_64-linux.distro-rocky10 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-rocky10
 
       - name: Debian 12 package test
         if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
-        run: nix --store daemon build .#checks.x86_64-linux.distro-debian12 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-debian12
 
       - name: Ubuntu 24.04 package test
         if: inputs.distro == 'all' || inputs.distro == 'ubuntu2404' || inputs.distro == ''
-        run: nix --store daemon build .#checks.x86_64-linux.distro-ubuntu2404 --print-build-logs -L --option sandbox relaxed
+        run: bash scripts/run-distro-package-check.sh distro-ubuntu2404
 
       - name: Upload test logs
         if: always()

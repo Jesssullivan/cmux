@@ -12,9 +12,9 @@
 #   nix build .#checks.x86_64-linux.distro-debian12
 #   nix build .#checks.x86_64-linux.distro-ubuntu2404
 #
-# Note: `distro-rocky9` is currently a legacy RPM-install proxy. The actual
-# constrained RHEL-family target is Rocky 10. A real `distro-rocky10` check is
-# only exported when the manifest defines a distinct `rpmRocky` asset.
+# Note: `distro-rocky9` is a legacy manual RPM-install proxy. It is not part of
+# the default/release gate. The actual constrained RHEL-family target is Rocky
+# 10, exported only when the manifest defines a distinct `rpmRocky` asset.
 #
 # Requires KVM for acceptable performance (/dev/kvm).
 # Runs on honey self-hosted runner via test-distro.yml.
@@ -32,6 +32,9 @@
   };
 
   nvt = nix-vm-test.lib.${system};
+  nvtGeneric = pkgs.callPackage "${nix-vm-test.outPath}/generic" {
+    inherit nixpkgs;
+  };
 
   # ── Fetch release artifacts from GitHub ──────────────────────────
   # Default to the checked-in release manifest. A local override manifest can be
@@ -62,14 +65,66 @@
         hash = asset.hash;
       };
 
-  cmuxDeb = materializeReleaseAsset releaseArtifacts.assets.deb;
+  materializeReleaseAssetDir = label: asset: let
+    artifact = materializeReleaseAsset asset;
+    name =
+      if asset ? name
+      then asset.name
+      else builtins.baseNameOf (toString artifact);
+  in
+    pkgs.runCommand "${label}-artifact-dir" {} ''
+      mkdir -p "$out"
+      cp ${artifact} "$out/${name}"
+    '';
 
-  cmuxFedoraRpm = materializeReleaseAsset (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm);
+  releaseAssetName = asset:
+    if asset ? name
+    then asset.name
+    else builtins.baseNameOf (toString (materializeReleaseAsset asset));
+
+  injectReleaseAssetIntoImage = label: image: asset: let
+    artifact = materializeReleaseAsset asset;
+    name = releaseAssetName asset;
+  in
+    pkgs.runCommand "${label}-image-with-asset" {} ''
+      install -m 0600 ${image} image.qcow2
+      mkdir -p pkg
+      cp ${artifact} "pkg/${name}"
+      chmod 0644 "pkg/${name}"
+      ${pkgs.guestfs-tools}/bin/virt-customize \
+        -a image.qcow2 \
+        --smp 2 \
+        --memsize 256 \
+        --no-network \
+        --copy-in "pkg/${name}:/opt"
+      cp image.qcow2 "$out"
+    '';
+
+  # RHEL-family cloud images used by nix-vm-test do not expose 9p in the
+  # guest kernel, so sharedDirs cannot carry package artifacts into Rocky.
+  makeRockyPackageTest = imageId: rpmAsset: testScript: let
+    baseImage = nvt.rocky.prepareRockyImage {
+      hostPkgs = pkgs;
+      originalImage = nvt.rocky.images.${imageId};
+      diskSize = null;
+      extraPathsToRegister = [];
+    };
+    image = injectReleaseAssetIntoImage "rocky-${imageId}-cmux-package" baseImage rpmAsset;
+  in
+    (nvtGeneric.makeVmTest {
+      name = "vm-test-rocky_${imageId}_cmux";
+      inherit system image testScript;
+      sharedDirs = {};
+    }).sandboxed;
+
+  cmuxDebDir = materializeReleaseAssetDir "cmux-deb" releaseArtifacts.assets.deb;
+
+  cmuxFedoraRpmDir = materializeReleaseAssetDir "cmux-fedora-rpm" (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm);
   haveRockyRpm = releaseArtifacts.assets ? rpmRocky;
-  cmuxRockyRpm =
+  cmuxRockyRpmDir =
     if haveRockyRpm
-    then materializeReleaseAsset releaseArtifacts.assets.rpmRocky
-    else cmuxFedoraRpm;
+    then materializeReleaseAssetDir "cmux-rocky-rpm" releaseArtifacts.assets.rpmRocky
+    else cmuxFedoraRpmDir;
 
   # ── Shared socket ping test snippet ──────────────────────────────
   # Used by all distro tests after package install.
@@ -78,26 +133,33 @@
     vm.succeed("cmux --version 2>&1 || cmux --help 2>&1 || echo 'binary runs'")
 
     # Verify runtime library deps resolve cleanly after package install
-    vm.succeed('''
+    vm.succeed("""
       ldd_out="$(ldd /usr/bin/cmux 2>&1)"
       echo "$ldd_out" | head -20
       ! echo "$ldd_out" | grep -q "not found"
-    ''')
+    """)
+  '';
+
+  rockyNetworkBootstrap = ''
+    # Rocky images can boot under QEMU user networking without a populated
+    # resolver config. 10.0.2.3 is QEMU's built-in DNS endpoint.
+    vm.succeed("printf 'nameserver 10.0.2.3\\noptions timeout:1 attempts:3\\n' > /etc/resolv.conf")
+    vm.succeed("ip route show && cat /etc/resolv.conf")
   '';
 
   distro-fedora42 =
     (nvt.fedora."42" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxFedoraRpm}";
+          source = "${cmuxFedoraRpmDir}";
           target = "/mnt/pkg";
         };
       };
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("dnf makecache")
-        vm.succeed("dnf install -y /mnt/pkg/*")
+        vm.succeed("timeout 300 dnf makecache")
+        vm.succeed("timeout 300 dnf install -y /mnt/pkg/*")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -107,72 +169,60 @@
     }).sandboxed;
 
   distro-rocky10 =
-    (nvt.rocky."10_1" {
-      sharedDirs = {
-        pkg = {
-          source = "${cmuxRockyRpm}";
-          target = "/mnt/pkg";
-        };
-      };
-      testScript = ''
+    makeRockyPackageTest "10_1" (releaseArtifacts.assets.rpmRocky or releaseArtifacts.assets.rpm) ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("dnf install -y dnf-plugins-core")
+        ${rockyNetworkBootstrap}
+
+        vm.succeed("timeout 300 dnf install -y dnf-plugins-core")
         vm.succeed("dnf config-manager --set-enabled crb")
-        vm.succeed("dnf makecache")
+        vm.succeed("timeout 300 dnf makecache")
 
         # Install the constrained Rocky 10 RPM
-        vm.succeed("dnf install -y /mnt/pkg/*")
+        vm.succeed("timeout 300 dnf install -y /opt/*.rpm")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
 
         ${socketPingTest}
       '';
-    }).sandboxed;
 
   # ── Test: Rocky Linux 9 RPM install proxy ────────────────────────
   distro-rocky9 =
-    (nvt.rocky."9_5" {
-      sharedDirs = {
-        pkg = {
-          source = "${cmuxFedoraRpm}";
-          target = "/mnt/pkg";
-        };
-      };
-      testScript = ''
+    makeRockyPackageTest "9_5" (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm) ''
         vm.wait_for_unit("multi-user.target")
 
+        ${rockyNetworkBootstrap}
+
         # Enable EPEL for GTK4/libadwaita on Rocky 9
-        vm.succeed("dnf install -y epel-release")
-        vm.succeed("dnf makecache")
+        vm.succeed("timeout 300 dnf install -y epel-release")
+        vm.succeed("timeout 300 dnf makecache")
 
         # Install the RPM
-        vm.succeed("rpm -ivh /mnt/pkg/* || dnf install -y /mnt/pkg/*")
+        vm.succeed("rpm -ivh /opt/*.rpm || timeout 300 dnf install -y /opt/*.rpm")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
 
         ${socketPingTest}
       '';
-    }).sandboxed;
 
   # ── Test: Debian 12 DEB install ──────────────────────────────────
   distro-debian12 =
     (nvt.debian."12" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxDeb}";
+          source = "${cmuxDebDir}";
           target = "/mnt/pkg";
         };
       };
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("apt-get update")
+        vm.succeed("timeout 300 apt-get update")
 
         # Install the DEB and resolve dependencies
-        vm.succeed("dpkg -i /mnt/pkg/* || apt-get install -f -y")
+        vm.succeed("dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
@@ -186,17 +236,17 @@
     (nvt.ubuntu."24_04" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxDeb}";
+          source = "${cmuxDebDir}";
           target = "/mnt/pkg";
         };
       };
       testScript = ''
         vm.wait_for_unit("multi-user.target")
 
-        vm.succeed("apt-get update")
+        vm.succeed("timeout 300 apt-get update")
 
         # Install the DEB and resolve dependencies
-        vm.succeed("dpkg -i /mnt/pkg/* || apt-get install -f -y")
+        vm.succeed("dpkg -i /mnt/pkg/* || timeout 300 apt-get install -f -y")
 
         # Verify binary is installed
         vm.succeed("test -f /usr/bin/cmux")
