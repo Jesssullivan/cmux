@@ -383,7 +383,7 @@ jobs:
     steps:
       - name: Install build dependencies
         run: |
-          dnf install -y dnf-plugins-core
+          dnf install -y dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
           dnf install -y \
             git rpm-build rpm-sign gnupg2 systemd-rpm-macros \
