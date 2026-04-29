@@ -86,8 +86,19 @@ fn tickCallback(_: ?*anyopaque) callconv(.c) c.gtk.gboolean {
     return c.gtk.G_SOURCE_REMOVE;
 }
 
-fn printUsage(writer: anytype) !void {
-    try writer.print(
+fn printVersion() !void {
+    var stdout_buf: [128]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_writer.interface;
+    try stdout.print("cmux {s}\n", .{build_options.version});
+    try stdout.flush();
+}
+
+fn printUsage() !void {
+    var stdout_buf: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_writer.interface;
+    try stdout.print(
         \\cmux {s}
         \\
         \\Usage:
@@ -99,6 +110,7 @@ fn printUsage(writer: anytype) !void {
         \\  -V, --version    Print the cmux version.
         \\
     , .{build_options.version});
+    try stdout.flush();
 }
 
 fn handleEarlyCliArgs() !bool {
@@ -107,12 +119,12 @@ fn handleEarlyCliArgs() !bool {
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-V")) {
-            try std.io.getStdOut().writer().print("cmux {s}\n", .{build_options.version});
+            try printVersion();
             return true;
         }
 
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printUsage(std.io.getStdOut().writer());
+            try printUsage();
             return true;
         }
     }
