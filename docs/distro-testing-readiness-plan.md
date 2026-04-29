@@ -34,6 +34,9 @@ As of 2026-04-29:
   Fedora 42 and Rocky 10 in KVM, then exposed an Ubuntu 24.04 cloud-image disk
   headroom blocker before release upload; PR `#278` adds Ubuntu VM disk
   expansion for that broad-feature `DEB` validation
+- release run `25090142397` built and signed all Linux artifacts, passed the
+  release-gated Fedora 42, Rocky 10, and Ubuntu 24.04 exact-artifact KVM tests,
+  and uploaded the Linux assets to `lab-v0.75.0`
 - `numtide/nix-vm-test#172` merged on 2026-04-22 with `Fedora 42` and
   `Rocky 10.1` image support, so upstream image availability is no longer the
   blocker
@@ -47,9 +50,9 @@ As of 2026-04-29:
 | Target | Current build proof | Current KVM / QEMU proof | Current release gating | Current direct QA | Target posture |
 |---|---|---|---|---|---|
 | `Ubuntu 24.04` | hosted CI green | yes | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
-| `Fedora 42` | hosted CI green, RPM builds on Fedora 42 | yes; first exact-artifact proof recorded in run `25087301829` | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
+| `Fedora 42` | hosted CI green, RPM builds on Fedora 42 | yes; exact-artifact proof recorded in run `25090142397` | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
 | `Debian 12` | hosted CI green with baseline `-Dno-webkit` lane | baseline automation exists; broad-feature release `DEB` is diagnostic until artifact taxonomy is fixed | diagnostic only | still needs one explicit browser/WebAuthn status record | Tier B baseline |
-| `Rocky 10` | hosted CI green, constrained build posture is real | yes; first exact-artifact terminal-first proof recorded in run `25087301829` | yes, when `rpmRocky` exists | still needs one direct terminal-first report | Tier C constrained |
+| `Rocky 10` | hosted CI green, constrained build posture is real | yes; exact-artifact terminal-first proof recorded in run `25090142397` | yes, when `rpmRocky` exists | still needs one direct terminal-first report | Tier C constrained |
 | `arm64` Linux artifacts | multi-arch release builds exist | not yet | not yet | none | follow-on after x86_64 proof |
 
 ## Automation Surfaces
@@ -310,12 +313,10 @@ Until then:
 
 ## Ordered Next Actions
 
-1. rerun release-gated proof after the Ubuntu VM disk-headroom change so
-   Ubuntu/Fedora/Rocky exact-artifact gates can upload signed assets
-2. record one direct QA pass for `Ubuntu 24.04`, `Fedora 42`, `Debian 12`, and
+1. record one direct QA pass for `Ubuntu 24.04`, `Fedora 42`, `Debian 12`, and
    `Rocky 10`
-3. decide whether Debian 12 gets a separate no-WebKit `DEB` or a documented
+2. decide whether Debian 12 gets a separate no-WebKit `DEB` or a documented
    backports-based install path
-4. promote Linux socket-test candidates into baseline only after green proof
-5. keep `WebAuthn`, socket parity, and browser claims honest in the matrix
-6. defer `lmux` renaming work unless the revisit triggers become real
+3. promote Linux socket-test candidates into baseline only after green proof
+4. keep `WebAuthn`, socket parity, and browser claims honest in the matrix
+5. defer `lmux` renaming work unless the revisit triggers become real
