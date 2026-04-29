@@ -5,7 +5,6 @@
 ///
 /// Build with: zig build -Dheadless=true
 /// Binary: cmux-term
-
 const std = @import("std");
 const config = @import("config.zig");
 
@@ -25,8 +24,11 @@ pub fn main() !void {
     // TODO: Create PTY and run default shell
     // TODO: Forward stdin/stdout to the PTY
 
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [512]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_writer.interface;
     try stdout.print("cmux-term: headless terminal mode\n", .{});
     try stdout.print("Socket control: $XDG_RUNTIME_DIR/cmux.sock\n", .{});
     try stdout.print("Config: ~/.config/cmux/cmux.json\n", .{});
+    try stdout.flush();
 }

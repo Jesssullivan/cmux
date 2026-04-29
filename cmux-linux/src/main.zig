@@ -4,6 +4,7 @@
 /// libghostty, and runs the main event loop.
 const std = @import("std");
 const posix = std.posix;
+const build_options = @import("build_options");
 const c = @import("c_api.zig");
 const app_mod = @import("app.zig");
 const window = @import("window.zig");
@@ -85,7 +86,55 @@ fn tickCallback(_: ?*anyopaque) callconv(.c) c.gtk.gboolean {
     return c.gtk.G_SOURCE_REMOVE;
 }
 
+fn printVersion() !void {
+    var stdout_buf: [128]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_writer.interface;
+    try stdout.print("cmux {s}\n", .{build_options.version});
+    try stdout.flush();
+}
+
+fn printUsage() !void {
+    var stdout_buf: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_writer.interface;
+    try stdout.print(
+        \\cmux {s}
+        \\
+        \\Usage:
+        \\  cmux [--version]
+        \\  cmux [--help]
+        \\
+        \\Options:
+        \\  -h, --help       Show this help.
+        \\  -V, --version    Print the cmux version.
+        \\
+    , .{build_options.version});
+    try stdout.flush();
+}
+
+fn handleEarlyCliArgs() !bool {
+    var args = std.process.args();
+    _ = args.next();
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-V")) {
+            try printVersion();
+            return true;
+        }
+
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try printUsage();
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn main() !void {
+    if (try handleEarlyCliArgs()) return;
+
     // Initialize libghostty
     _ = c.ghostty.ghostty_init(0, null);
 
