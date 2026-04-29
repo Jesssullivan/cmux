@@ -85,7 +85,7 @@ jobs:
       - name: Build cmux-linux
         run: |
           cd cmux-linux
-          zig build -Dcpu=baseline -Doptimize=ReleaseFast
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast -Dversion="${{ steps.version.outputs.version }}"
 
       - name: Build cmuxd
         run: |
@@ -290,7 +290,7 @@ jobs:
       - name: Build cmux-linux
         run: |
           cd cmux-linux
-          zig build -Dcpu=baseline -Doptimize=ReleaseFast
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast -Dversion="${{ steps.version.outputs.version }}"
 
       - name: Build cmuxd
         run: |
@@ -438,7 +438,7 @@ jobs:
       - name: Build cmux-linux (terminal-first)
         run: |
           cd cmux-linux
-          zig build -Dcpu=baseline -Doptimize=ReleaseFast -Dno-webkit=true
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast -Dno-webkit=true -Dversion="${{ steps.version.outputs.version }}"
 
       - name: Build cmuxd
         run: |

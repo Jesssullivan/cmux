@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const headless = b.option(bool, "headless", "Build terminal-only mode (no GTK4/GUI)") orelse false;
     const no_webkit = b.option(bool, "no-webkit", "Build without WebKitGTK (no browser panel). Use on RHEL/Rocky where WebKitGTK is unavailable.") orelse false;
+    const version = b.option([]const u8, "version", "cmux version string for --version output") orelse "dev";
 
     const root_source = if (headless)
         b.path("src/main_headless.zig")
@@ -17,6 +18,7 @@ pub fn build(b: *std.Build) void {
     // Build options for conditional compilation (WebKitGTK availability)
     const build_options = b.addOptions();
     build_options.addOption(bool, "enable_webkit", enable_webkit);
+    build_options.addOption([]const u8, "version", version);
 
     const root_module = b.createModule(.{
         .root_source_file = root_source,
