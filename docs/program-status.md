@@ -162,12 +162,12 @@ Current gap:
 Current `scripts/run-socket-tests.sh` coverage includes:
 
 - 123 `tests_v2` test files on disk
-- 18 baseline tests that fail the Linux socket job when red
-- 11 phase-1 candidate tests that run as non-fatal observations
+- 28 baseline tests that fail the Linux socket job when red
+- 1 phase-1 candidate test that runs as a non-fatal observation
 
-Recent CI made the baseline contract useful but exposed one active baseline
-failure: `test_surface_action_close_variants`. That should be fixed or
-explicitly reclassified before promoting more candidate tests.
+Recent CI made the baseline contract useful enough to promote the repeated-green
+phase-1 candidates. `test_sprint_b_core_parity` remains observational because
+it still represents the known Linux remote-workspace parity gap.
 
 ### Merge governance
 
