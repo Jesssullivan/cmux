@@ -114,17 +114,21 @@ fi
 echo "Socket ready"
 
 # ── Baseline allowlist ──────────────────────────────────────────────
-# The 18 tests known to pass on cmux-linux today. A failure in any of
+# The 28 tests known to pass on cmux-linux today. A failure in any of
 # these fails the job.
 BASELINE=(
+  test_browser_open_split_reuse_policy
   test_close_surface_selection
   test_close_workspace_selection
   test_focus_notification_dismiss
   test_nested_split_no_detach_during_update
   test_notification_socket_api
+  test_notification_create_for_target
+  test_pane_resize
   test_pane_break_swap_preserve_focus
   test_pane_operations
   test_signals_auto
+  test_surface_report_tty
   test_surface_split_tree
   test_system_api
   test_surface_action_rename
@@ -135,6 +139,12 @@ BASELINE=(
   test_workspace_lifecycle
   test_workspace_navigation
   test_workspace_reorder
+  test_workspace_create_background_starts_terminal
+  test_workspace_create_initial_env
+  test_workspace_action
+  test_auth_login
+  test_system_tree
+  test_app_simulate_active
 )
 
 # ── Phase 1 candidate allowlist (gated) ─────────────────────────────
@@ -142,18 +152,8 @@ BASELINE=(
 # when CMUX_TEST_PHASE1=1. Candidate failures are reported but do not
 # fail the job — see header comment for promotion workflow.
 CANDIDATES_PHASE1=(
-  test_browser_open_split_reuse_policy
-  test_workspace_create_background_starts_terminal
-  test_workspace_create_initial_env
-  # Remaining Sprint A / Sprint B gaps observed on run 24743528001.
-  test_workspace_action
-  test_auth_login
-  test_system_tree
-  test_notification_create_for_target
-  test_app_simulate_active
-  test_surface_report_tty
-  test_pane_resize
-  # Sprint B handlers (PR #230):
+  # Known Linux remote-workspace parity gap. Keep observational until the
+  # remote workspace semantics exist on cmux-linux.
   test_sprint_b_core_parity
 )
 
