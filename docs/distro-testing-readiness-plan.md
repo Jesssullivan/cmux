@@ -29,8 +29,11 @@ As of 2026-04-29:
   Ubuntu-family `DEB` is diagnostic there until a separate Debian baseline
   artifact or backports policy is chosen
 - release run `25087301829` proved the exact signed Fedora 42 RPM and Rocky 10
-  terminal-first RPM in KVM; the upload was blocked by the Debian diagnostic
-  mismatch before Ubuntu could run
+  terminal-first RPM in KVM
+- release run `25088831284` built and signed all Linux artifacts, re-proved
+  Fedora 42 and Rocky 10 in KVM, then exposed an Ubuntu 24.04 cloud-image disk
+  headroom blocker before release upload; PR `#278` adds Ubuntu VM disk
+  expansion for that broad-feature `DEB` validation
 - `numtide/nix-vm-test#172` merged on 2026-04-22 with `Fedora 42` and
   `Rocky 10.1` image support, so upstream image availability is no longer the
   blocker
@@ -307,7 +310,7 @@ Until then:
 
 ## Ordered Next Actions
 
-1. rerun release-gated proof after the Debian diagnostic posture change so
+1. rerun release-gated proof after the Ubuntu VM disk-headroom change so
    Ubuntu/Fedora/Rocky exact-artifact gates can upload signed assets
 2. record one direct QA pass for `Ubuntu 24.04`, `Fedora 42`, `Debian 12`, and
    `Rocky 10`

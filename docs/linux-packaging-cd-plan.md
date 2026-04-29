@@ -23,8 +23,11 @@ As of 2026-04-29:
 - the release workflow now builds a separate Rocky 10 terminal-first RPM and
   wires it into the release-gated VM validator
 - release run `25087301829` proved the exact signed Fedora 42 and Rocky 10 RPMs
-  in KVM; release upload was blocked by the Debian 12 broad-feature `DEB`
-  diagnostic mismatch before Ubuntu could run
+  in KVM
+- release run `25088831284` built and signed all Linux artifacts, re-proved
+  Fedora 42 and Rocky 10 in KVM, then failed before upload because the Ubuntu
+  24.04 cloud image ran out of disk while unpacking the broad-feature `DEB`
+  dependency closure; PR `#278` adds Ubuntu VM disk expansion for that gate
 - Linux release automation builds:
   - `DEB`
   - `RPM`
