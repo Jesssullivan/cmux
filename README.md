@@ -21,6 +21,52 @@
   <img src="./docs/assets/main-first-image.png" alt="cmux screenshot" width="900" />
 </p>
 
+## Jesssullivan fork status: Linux and lmux work
+
+This fork carries early Linux-native `cmux` work. It is a friendly downstream of
+Manaflow's upstream [`cmux`](https://github.com/manaflow-ai/cmux) project, not an
+official Manaflow Linux release.
+
+The current Linux lane is focused on signed `DEB`/`RPM` artifacts, distro QA,
+GTK4/libghostty integration, and portable Zig libraries that replace
+macOS-only or attestation-coupled plumbing where Linux needs a different path.
+The `lmux` name is being held as a possible Linux-focused derivative/distribution
+name, but the repo still builds and tracks `cmux` unless the naming RFC changes.
+
+Portable Zig library work used by this fork:
+
+- [`zig-ctap2`](https://github.com/Jesssullivan/zig-ctap2) for CTAP2/FIDO2 USB
+  HID and WebAuthn plumbing
+- [`zig-crypto`](https://github.com/Jesssullivan/zig-crypto) for small crypto
+  primitives needed by the portable authentication path
+- [`zig-keychain`](https://github.com/Jesssullivan/zig-keychain) for macOS
+  Keychain and Linux Secret Service integration
+- [`zig-notify`](https://github.com/Jesssullivan/zig-notify) for desktop
+  notifications on macOS and Linux
+
+Linux support is currently evidence-driven:
+
+- Ubuntu 24.04 and Fedora 42 are the first broad-feature QA targets.
+- Debian 12 is tracked as a baseline package/runtime target while the
+  no-WebKit artifact policy is finalized.
+- Rocky 10 is terminal-first until a browser-capable path is proven.
+- Arch, Linux Mint, and NixOS reports are welcome as early compatibility
+  reports, not broad support claims yet.
+
+Interested in QAing Linux `cmux`/`lmux`? Please test the release artifact for
+your distro and report results in
+[`Jesssullivan/cmux` issues](https://github.com/Jesssullivan/cmux/issues), using
+[`docs/linux-qa-intake.md`](docs/linux-qa-intake.md) and
+[`docs/release/linux-install.md`](docs/release/linux-install.md) as the current
+reporting and install surfaces. Early reports should stay in this fork first;
+Jess will decide when a finding belongs upstream.
+
+Manaflow is warmly invited to adopt, redirect, or coordinate any part of this
+Linux work that is useful to upstream `cmux`. The goal is to grow careful Linux
+QA and packaging without creating support confusion for Manaflow, Ghostty,
+Bonsplit, distro maintainers, or package registries. For relationship or
+coordination questions, email Jess at <jess@sulliwood.org>.
+
 <p align="center">
   <a href="https://www.youtube.com/watch?v=i-WxO5YUTOs">▶ Demo video</a> · <a href="https://cmux.com/blog/zen-of-cmux">The Zen of cmux</a>
 </p>

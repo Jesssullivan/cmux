@@ -21,6 +21,8 @@ Preferred wording:
   packaging, and WebAuthn/FIDO2 integration work in a separate fork."
 - "`lmux` prepares small upstreamable fixes as handoff packets; Jess submits and
   discusses non-owned upstream PRs by hand."
+- "Manaflow is invited to adopt, redirect, or coordinate any Linux work from
+  this fork that is useful to upstream `cmux`."
 
 Avoid wording that implies:
 
@@ -91,6 +93,8 @@ interact with your repos directly.
 
 I would like lmux to be a friendly downstream that can grow the pool of Linux
 users and produce careful fixes where they make sense upstream.
+
+If you want to coordinate directly, I am reachable at jess@sulliwood.org.
 ```
 
 ## Operating Rule
