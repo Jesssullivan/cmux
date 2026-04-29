@@ -13,15 +13,18 @@ Use it with:
 
 ## Current State
 
-As of 2026-04-25:
+As of 2026-04-29:
 
 - hosted Linux CI is green across `Ubuntu 24.04`, `Fedora 42`, `Rocky 10`,
   `Debian 12` baseline, `Arch`, and the vendor-library lane
 - self-hosted distro package-install tests now execute real `.sandboxed` VM
-  runs for `Ubuntu 24.04`, `Debian 12`, `Fedora 42`, and `Rocky 9` as an
-  RPM-path proxy
+  runs for `Ubuntu 24.04`, `Fedora 42`, and dedicated `Rocky 10`
+  terminal-first release artifacts
 - the release workflow now builds a separate Rocky 10 terminal-first RPM and
   wires it into the release-gated VM validator
+- release run `25087301829` proved the exact signed Fedora 42 and Rocky 10 RPMs
+  in KVM; release upload was blocked by the Debian 12 broad-feature `DEB`
+  diagnostic mismatch before Ubuntu could run
 - Linux release automation builds:
   - `DEB`
   - `RPM`
@@ -98,10 +101,11 @@ What they do today:
 - upload Linux assets to the matching GitHub Release
 - upload macOS assets separately through the fork release workflow
 
-Current limit:
-- Linux release gating currently covers `Ubuntu 24.04`, `Debian 12`,
-  `Fedora 42`, `Rocky 10`, and `Rocky 9` as the temporary proxy; `arm64`
-  remains outside the gated VM matrix
+Current limits:
+- Linux release gating currently covers `Ubuntu 24.04`, `Fedora 42`, and
+  `Rocky 10`; `arm64` remains outside the gated VM matrix
+- `Debian 12` is diagnostic in release workflows until a Debian baseline
+  no-WebKit artifact or explicit backports policy exists
 
 ### 4. Flatpak
 
@@ -135,7 +139,14 @@ desktops:
 This is the artifact lane that proves package/runtime viability without implying
 full browser parity:
 
-- Debian 12 `DEB` install validation
+- Debian 12 no-WebKit `DEB` install validation
+
+Current interpretation:
+- the hosted Debian 12 build lane already proves the source can build
+  `-Dno-webkit=true`
+- the current release `DEB` is a broad-feature Ubuntu-family artifact and
+  should not be treated as Debian baseline proof until dependency policy is
+  resolved
 
 ### Constrained artifact
 
@@ -177,9 +188,9 @@ Current read:
 - the shipped Linux binary does not currently link `libsecret` or `libnotify`,
   so those should not be declared as package requirements just because helper
   libraries exist elsewhere in the tree
-- this creates a real Debian 12 tension: a truthful broad-feature `DEB` may no
-  longer fit the current Debian baseline install lane without either backports
-  or a separate no-WebKit artifact
+- this creates a real Debian 12 tension: the truthful broad-feature `DEB` does
+  not currently fit the Debian baseline install lane without either backports or
+  a separate no-WebKit artifact
 
 ### 3. Release tests are pinned to a checked-in artifact manifest
 

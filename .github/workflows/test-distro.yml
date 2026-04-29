@@ -170,13 +170,14 @@ jobs:
         if: inputs.distro == 'rocky10'
         run: bash scripts/run-distro-package-check.sh distro-rocky10
 
-      - name: Debian 12 package test
-        if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
-        run: bash scripts/run-distro-package-check.sh distro-debian12
-
       - name: Ubuntu 24.04 package test
         if: inputs.distro == 'all' || inputs.distro == 'ubuntu2404' || inputs.distro == ''
         run: bash scripts/run-distro-package-check.sh distro-ubuntu2404
+
+      - name: Debian 12 package test (baseline diagnostic)
+        if: inputs.distro == 'all' || inputs.distro == 'debian12' || inputs.distro == ''
+        continue-on-error: ${{ inputs.distro != 'debian12' }}
+        run: bash scripts/run-distro-package-check.sh distro-debian12
 
       - name: Upload test logs
         if: always()

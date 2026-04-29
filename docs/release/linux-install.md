@@ -18,7 +18,7 @@ promise.
 |---|---|---|
 | Ubuntu 24.04 | `DEB` | broad-feature target |
 | Fedora 42 | Fedora `RPM` | broad-feature target |
-| Debian 12 | `DEB` | package/runtime baseline; browser and WebAuthn status must be recorded explicitly |
+| Debian 12 | baseline/no-WebKit `DEB` pending | package/runtime baseline; current broad-feature `DEB` is diagnostic only |
 | Rocky 10 | Rocky `RPM` | terminal-first target; uses the no-WebKit package path |
 | Arch, Mint, NixOS | source/package-manager follow-up | early QA target, not a broad support claim yet |
 
@@ -58,9 +58,9 @@ For RPM verification:
 sudo rpm --import https://github.com/Jesssullivan/cmux/raw/main/docs/release/cmux-release-signing-key.asc
 ```
 
-## Verify And Install A DEB
+## Verify And Install An Ubuntu DEB
 
-Use this path for Ubuntu 24.04 and Debian 12.
+Use this path for Ubuntu 24.04.
 
 ```bash
 gpg --verify cmux_<version>_amd64.deb.asc cmux_<version>_amd64.deb
@@ -69,8 +69,9 @@ sudo apt-get install ./cmux_<version>_amd64.deb
 cmux --version
 ```
 
-On Debian 12, record browser and WebAuthn status explicitly. A successful
-package install is baseline proof, not a full-feature claim.
+Debian 12 is tracked as a baseline/no-WebKit target. Until a distinct Debian
+baseline artifact exists, attempts to install the broad-feature Ubuntu-family
+`DEB` on Debian should be recorded as diagnostic results, not support proof.
 
 ## Verify And Install A Fedora RPM
 
