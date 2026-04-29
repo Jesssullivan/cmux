@@ -274,6 +274,10 @@
   # ── Test: Ubuntu 24.04 DEB install ───────────────────────────────
   distro-ubuntu2404 =
     (nvt.ubuntu."24_04" {
+      # The broad-feature DEB pulls in the GTK/WebKit desktop dependency
+      # closure. Ubuntu cloud images are too small for that unpack step unless
+      # the guest root disk is expanded before boot.
+      diskSize = "+8G";
       sharedDirs = {
         pkg = {
           source = "${cmuxDebDir}";
