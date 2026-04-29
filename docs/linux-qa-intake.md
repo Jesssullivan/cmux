@@ -6,6 +6,7 @@ overstating support.
 Use it with:
 
 - `docs/distro-testing-readiness-plan.md`
+- `docs/linux-graphical-qa-machine-plan.md`
 - `docs/linux-validation-checklist.md`
 - `docs/release/linux-install.md`
 - `docs/linear-qa-shard-punchlist.md`
@@ -15,6 +16,12 @@ Use it with:
 QA reports are evidence, not support promises. Every report should preserve the
 current distro tier and the exact artifact under test.
 
+Graphical QA should use physical standard installs or normal user-managed VMs as
+the source of truth for public claims. The existing `honey` KVM/QEMU and NixOS
+desktop VM surfaces are useful private lab infrastructure, but they are not yet
+a distro-specific graphical QA replacement for Ubuntu, Fedora, Debian, Rocky,
+Arch, or Mint installs.
+
 ## Distro Tiers
 
 | Tier | Distros | QA ask |
@@ -23,6 +30,21 @@ current distro tier and the exact artifact under test.
 | Tier B baseline | Debian 12 | package/runtime baseline plus explicit browser and WebAuthn status |
 | Tier C terminal-first | Rocky 10 | terminal, splits, focus, socket/API, and clear browser-unavailable behavior |
 | Community early reports | Arch, Mint, NixOS | compatibility discovery; no broad support claim until repeated evidence exists |
+
+## First Machine Targets
+
+Use the full matrix in `docs/linux-graphical-qa-machine-plan.md` for provisioning
+details. The first physical/user-VM pool should prioritize:
+
+- Ubuntu 24.04 LTS, default GNOME Wayland
+- Fedora 42 Workstation, GNOME Wayland
+- Fedora 42 KDE Plasma Desktop as the first DE-variance target
+- Debian 12 GNOME first, with Xfce optional later
+- Rocky 10.1 Workstation/GNOME for terminal-first proof
+- CachyOS KDE Plasma as the first Arch-family rolling target
+- Omarchy Hyprland only as an exploratory Arch/tiling target
+- Linux Mint Cinnamon as the first Ubuntu-family community target
+- NixOS GNOME/Sway/Hyprland as an internal lab and early Nix report target
 
 ## Cadence
 

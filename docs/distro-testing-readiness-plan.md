@@ -9,6 +9,7 @@ Use it with:
 - `docs/program-status.md`
 - `docs/linux-program-plan.md`
 - `docs/linux-packaging-cd-plan.md`
+- `docs/linux-graphical-qa-machine-plan.md`
 - `docs/linux-parity-matrix.md`
 - `docs/linux-validation-checklist.md`
 - `docs/flakehub-qa-ownership-notes.md`
@@ -108,6 +109,33 @@ What is still missing:
 - broader command coverage on Linux
 - browser automation beyond the current limited socket surface
 - direct automation for WebAuthn, notifications, and lock integration
+
+### 4. Graphical human QA
+
+Current sources:
+
+- `docs/linux-graphical-qa-machine-plan.md`
+- `docs/linux-qa-intake.md`
+- `docs/linux-validation-checklist.md`
+
+Current decision:
+
+- physical standard installs and normal user-managed VMs are the source of truth
+  for public graphical QA
+- `honey` KVM/QEMU remains useful for package proof and private lab work
+- NixOS desktop VM/QCOW surfaces can support internal demos and future visual
+  automation, but they do not yet replace distro-specific graphical testing
+
+Current machine-pool recommendation:
+
+- Ubuntu 24.04 GNOME and Fedora 42 GNOME for Tier A broad-feature proof
+- Fedora 42 KDE Plasma as the first DE-variance target
+- Debian 12 GNOME first, with Xfce optional later
+- Rocky 10.1 GNOME for terminal-first proof
+- CachyOS KDE Plasma as the primary Arch-family rolling target
+- Omarchy Hyprland as exploratory Arch/tiling coverage only
+- Linux Mint Cinnamon as the first Ubuntu-family community target
+- NixOS GNOME/Sway/Hyprland for internal lab and early Nix reports
 
 ## Required Readiness Moves
 
