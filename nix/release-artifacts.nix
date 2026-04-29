@@ -16,6 +16,8 @@
       name = "cmux-0.75.0-1.fc42.x86_64.rpm";
       hash = "sha256-fApOZUcz0zQCur0Oo8XDziUg0pYfT4DRsKQNqMTQurw=";
     };
+    # `debDebian` is intentionally absent from this checked-in manifest until a
+    # published Debian 12 baseline/no-WebKit DEB exists.
     # `rpmRocky` is intentionally absent from the checked-in manifest until a
     # published Rocky 10 terminal-first RPM exists.
   };

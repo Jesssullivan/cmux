@@ -72,13 +72,20 @@ jobs:
             --pattern 'cmux-*.rpm' \
             --dir "$TMPDIR"
 
-          mapfile -t DEB_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux_*.deb' | sort)
+          mapfile -t DEB_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux_*_amd64.deb' ! -name 'cmux_*+deb12_amd64.deb' | sort)
+          mapfile -t DEBIAN_DEB_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux_*+deb12_amd64.deb' | sort)
           mapfile -t FEDORA_RPM_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux-*.fc42.x86_64.rpm' | sort)
           mapfile -t ROCKY_RPM_PATHS < <(find "$TMPDIR" -maxdepth 1 -name 'cmux-*.el10*.x86_64.rpm' | sort)
 
           if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
-            echo "ERROR: expected exactly one DEB asset for $TAG, found ${#DEB_PATHS[@]}"
+            echo "ERROR: expected exactly one Ubuntu amd64 DEB asset for $TAG, found ${#DEB_PATHS[@]}"
             printf '%s\n' "${DEB_PATHS[@]}"
+            exit 1
+          fi
+
+          if [ "${#DEBIAN_DEB_PATHS[@]}" -gt 1 ]; then
+            echo "ERROR: expected at most one Debian baseline amd64 DEB asset for $TAG, found ${#DEBIAN_DEB_PATHS[@]}"
+            printf '%s\n' "${DEBIAN_DEB_PATHS[@]}"
             exit 1
           fi
 
@@ -104,6 +111,10 @@ jobs:
                 name = "${DEB_NAME}";
                 hash = "${DEB_HASH}";
               };
+              debUbuntu = {
+                name = "${DEB_NAME}";
+                hash = "${DEB_HASH}";
+              };
               rpm = {
                 name = "${FEDORA_RPM_NAME}";
                 hash = "${FEDORA_RPM_HASH}";
@@ -113,6 +124,18 @@ jobs:
                 hash = "${FEDORA_RPM_HASH}";
               };
           EOF
+
+          if [ "${#DEBIAN_DEB_PATHS[@]}" -eq 1 ]; then
+            DEBIAN_DEB_PATH="${DEBIAN_DEB_PATHS[0]}"
+            DEBIAN_DEB_NAME="$(basename "$DEBIAN_DEB_PATH")"
+            DEBIAN_DEB_HASH="$(nix hash file --type sha256 --sri "$DEBIAN_DEB_PATH")"
+            cat >> nix/release-artifacts.override.nix <<EOF
+              debDebian = {
+                name = "${DEBIAN_DEB_NAME}";
+                hash = "${DEBIAN_DEB_HASH}";
+              };
+          EOF
+          fi
 
           if [ "${#ROCKY_RPM_PATHS[@]}" -eq 1 ]; then
             ROCKY_RPM_PATH="${ROCKY_RPM_PATHS[0]}"

@@ -25,9 +25,8 @@ As of 2026-04-29:
 - release-gated KVM package validation now executes real `.sandboxed` VM tests
   for `Ubuntu 24.04`, `Fedora 42`, and the dedicated `Rocky 10`
   terminal-first RPM path before upload
-- `Debian 12` remains a baseline/no-WebKit lane; the current broad-feature
-  Ubuntu-family `DEB` is diagnostic there until a separate Debian baseline
-  artifact or backports policy is chosen
+- `Debian 12` now has a staged baseline/no-WebKit `+deb12` artifact path in the
+  release workflow; first release-candidate proof is still pending
 - release run `25087301829` proved the exact signed Fedora 42 RPM and Rocky 10
   terminal-first RPM in KVM
 - release run `25088831284` built and signed all Linux artifacts, re-proved
@@ -51,7 +50,7 @@ As of 2026-04-29:
 |---|---|---|---|---|---|
 | `Ubuntu 24.04` | hosted CI green | yes | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
 | `Fedora 42` | hosted CI green, RPM builds on Fedora 42 | yes; exact-artifact proof recorded in run `25090142397` | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
-| `Debian 12` | hosted CI green with baseline `-Dno-webkit` lane | baseline automation exists; broad-feature release `DEB` is diagnostic until artifact taxonomy is fixed | diagnostic only | still needs one explicit browser/WebAuthn status record | Tier B baseline |
+| `Debian 12` | hosted CI green with baseline `-Dno-webkit` lane | staged dedicated `+deb12` artifact path; first release-candidate proof pending | pending first proof | still needs one explicit browser/WebAuthn status record | Tier B baseline |
 | `Rocky 10` | hosted CI green, constrained build posture is real | yes; exact-artifact terminal-first proof recorded in run `25090142397` | yes, when `rpmRocky` exists | still needs one direct terminal-first report | Tier C constrained |
 | `arm64` Linux artifacts | multi-arch release builds exist | not yet | not yet | none | follow-on after x86_64 proof |
 
@@ -89,9 +88,8 @@ What exists now:
 - `Ubuntu 24.04` `DEB` install validation
 - `Fedora 42` `RPM` install validation
 - `Rocky 10` terminal-first validation through a dedicated `rpmRocky` asset
-- `Debian 12` diagnostic validation of the current `DEB`, with failure treated
-  as evidence for the pending baseline artifact decision rather than a
-  broad-feature release blocker
+- `Debian 12` baseline validation through a dedicated no-WebKit `+deb12` asset
+  once the next release-candidate artifact set is built
 - current checks resolve to `.sandboxed` VM runs rather than driver-only
   derivations
 - release-time validation of the exact x86_64 `DEB` and `RPM` assets before
@@ -99,8 +97,8 @@ What exists now:
 
 What is still missing:
 
-- a separate Debian 12 baseline/no-WebKit package artifact, or an explicit
-  Debian backports policy for the broad-feature `DEB`
+- first release-candidate proof for the dedicated Debian 12 baseline/no-WebKit
+  package artifact
 - arm64 KVM validation
 
 ### 3. Socket and control-plane automation

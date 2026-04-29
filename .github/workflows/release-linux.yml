@@ -224,6 +224,158 @@ jobs:
             cmux-*-linux-${{ matrix.arch.tar }}.tar.gz.asc
           if-no-files-found: error
 
+  # ── Build + package on Debian (baseline/no-WebKit DEB) ──────────
+  build-deb-debian:
+    name: Build DEB package (Debian 12 baseline, ${{ matrix.arch.deb }})
+    runs-on: ${{ matrix.arch.runner }}
+    container: debian:12
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - { deb: amd64, runner: ubuntu-latest }
+          - { deb: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            ca-certificates curl xz-utils file \
+            git build-essential \
+            pkg-config \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libsecret-1-dev libnotify-dev \
+            libwayland-dev wayland-protocols \
+            libfreetype-dev libharfbuzz-dev libfontconfig1-dev \
+            libpng-dev libonig-dev libgl-dev \
+            glslang-tools spirv-cross patchelf
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Strip non-version tags from ghostty
+        run: git -C ghostty tag -l 'xcframework-*' | xargs git -C ghostty tag -d 2>/dev/null || true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#lab-v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building Debian baseline package for $TAG (version $VERSION)"
+
+      - name: Install Zig
+        run: bash ./scripts/install-zig-ci.sh 0.15.2
+
+      - name: Build vendor libraries
+        run: |
+          cd vendor/ctap2 && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-crypto && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-keychain && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+          cd vendor/zig-notify && zig build -Dcpu=baseline -Doptimize=ReleaseFast && cd ../..
+
+      - name: Build libghostty
+        run: |
+          bash scripts/retry-zig-build.sh \
+            --label "libghostty" \
+            --working-directory ghostty \
+            -- zig build -Dcpu=baseline -Dapp-runtime=none -Drenderer=opengl -Doptimize=ReleaseFast
+          bash scripts/ghostty-compat-symlinks.sh
+
+      - name: Build cmux-linux (Debian baseline)
+        run: |
+          cd cmux-linux
+          zig build -Dcpu=baseline -Doptimize=ReleaseFast -Dno-webkit=true -Dversion="${{ steps.version.outputs.version }}"
+
+      - name: Build cmuxd
+        run: |
+          if [ -d cmuxd ]; then
+            cd cmuxd && zig build -Dcpu=baseline -Doptimize=ReleaseFast
+          fi
+
+      - name: Assemble Debian baseline DEB package
+        env:
+          DEB_ARCH: ${{ matrix.arch.deb }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DEB_VERSION="${VERSION}+deb12"
+          PKG="cmux_${DEB_VERSION}_${DEB_ARCH}"
+          mkdir -p "${PKG}/DEBIAN"
+
+          cat > "${PKG}/DEBIAN/control" <<CTRL
+          Package: cmux
+          Version: ${DEB_VERSION}
+          Architecture: ${DEB_ARCH}
+          Maintainer: Jess Sullivan <jess@jesssullivan.dev>
+          Homepage: https://github.com/Jesssullivan/cmux
+          Section: x11
+          Priority: optional
+          Depends: libgtk-4-1 (>= 4.8), libadwaita-1-0 (>= 1.2)
+          Description: Terminal multiplexer with split panes and workspaces
+           cmux is a GTK4 terminal multiplexer built on libghostty.
+           This Debian 12 baseline package is built without WebKitGTK.
+          CTRL
+
+          sed -i 's/^          //' "${PKG}/DEBIAN/control"
+
+          cat > "${PKG}/DEBIAN/postinst" <<'POSTINST'
+          #!/bin/sh
+          set -e
+          gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+          udevadm control --reload-rules 2>/dev/null || true
+          udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
+          POSTINST
+          sed -i 's/^          //' "${PKG}/DEBIAN/postinst"
+          chmod 755 "${PKG}/DEBIAN/postinst"
+
+          install -Dm755 cmux-linux/zig-out/bin/cmux "${PKG}/usr/bin/cmux"
+          install -Dm755 ghostty/zig-out/lib/libghostty.so "${PKG}/usr/lib/cmux/libghostty.so"
+          bash scripts/set-linux-package-rpath.sh "${PKG}/usr/bin/cmux" "/usr/lib/cmux"
+
+          if [ -f cmuxd/zig-out/bin/cmuxd ]; then
+            install -Dm755 cmuxd/zig-out/bin/cmuxd "${PKG}/usr/bin/cmuxd"
+          fi
+
+          install -Dm644 dist/linux/com.jesssullivan.cmux.desktop \
+            "${PKG}/usr/share/applications/com.jesssullivan.cmux.desktop"
+          install -Dm644 dist/linux/com.jesssullivan.cmux.metainfo.xml \
+            "${PKG}/usr/share/metainfo/com.jesssullivan.cmux.metainfo.xml"
+          for size in 16 128 256 512; do
+            install -Dm644 "dist/linux/icons/com.jesssullivan.cmux_${size}x${size}.png" \
+              "${PKG}/usr/share/icons/hicolor/${size}x${size}/apps/com.jesssullivan.cmux.png"
+          done
+
+          install -Dm644 dist/linux/70-u2f.rules "${PKG}/usr/lib/udev/rules.d/70-u2f.rules"
+
+          dpkg-deb --build "${PKG}"
+          echo "Built: ${PKG}.deb ($(du -h "${PKG}.deb" | cut -f1))"
+
+      - name: Sign Debian baseline DEB with GPG
+        env:
+          REQUIRE_LINUX_GPG: "1"
+          LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+        run: |
+          bash scripts/sign-linux-packages.sh
+          bash scripts/assert-linux-package-signatures.sh
+
+      - name: Upload Debian baseline DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-linux-deb-debian-${{ matrix.arch.deb }}
+          path: |
+            cmux_*+deb12_${{ matrix.arch.deb }}.deb
+            cmux_*+deb12_${{ matrix.arch.deb }}.deb.asc
+          if-no-files-found: error
+
   # ── Build + package on Fedora (RPM) ──────────────────────────────
   build-rpm:
     name: Build RPM package (Fedora 42, ${{ matrix.arch.rpm }})
@@ -519,7 +671,7 @@ jobs:
 
   validate-distro-install:
     name: Validate Linux packages in distro VMs
-    needs: [build-deb, build-rpm, build-rpm-rocky]
+    needs: [build-deb, build-deb-debian, build-rpm, build-rpm-rocky]
     runs-on: [self-hosted, linux, kvm, cmux-distro-test]
     environment: distro-tests
     timeout-minutes: 45
@@ -544,13 +696,20 @@ jobs:
           # set down to the amd64/x86_64 packages for distro validation.
           # aarch64 distro tests are tracked separately (TIN-176 follow-up:
           # need an arm64 KVM runner before aarch64 distro tests can run).
-          mapfile -t DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*_amd64.deb' | sort)
+          mapfile -t DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*_amd64.deb' ! -name 'cmux_*+deb12_amd64.deb' | sort)
+          mapfile -t DEBIAN_DEB_PATHS < <(find release-artifacts -type f -name 'cmux_*+deb12_amd64.deb' | sort)
           mapfile -t FEDORA_RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.fc42.x86_64.rpm' | sort)
           mapfile -t ROCKY_RPM_PATHS < <(find release-artifacts -type f -name 'cmux-*.el10*.x86_64.rpm' | sort)
 
           if [ "${#DEB_PATHS[@]}" -ne 1 ]; then
-            echo "ERROR: expected exactly one amd64 DEB artifact, found ${#DEB_PATHS[@]}"
+            echo "ERROR: expected exactly one Ubuntu amd64 DEB artifact, found ${#DEB_PATHS[@]}"
             printf '%s\n' "${DEB_PATHS[@]}"
+            exit 1
+          fi
+
+          if [ "${#DEBIAN_DEB_PATHS[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one Debian baseline amd64 DEB artifact, found ${#DEBIAN_DEB_PATHS[@]}"
+            printf '%s\n' "${DEBIAN_DEB_PATHS[@]}"
             exit 1
           fi
 
@@ -567,9 +726,11 @@ jobs:
           fi
 
           DEB_PATH="$(realpath "${DEB_PATHS[0]}")"
+          DEBIAN_DEB_PATH="$(realpath "${DEBIAN_DEB_PATHS[0]}")"
           FEDORA_RPM_PATH="$(realpath "${FEDORA_RPM_PATHS[0]}")"
           ROCKY_RPM_PATH="$(realpath "${ROCKY_RPM_PATHS[0]}")"
           DEB_NAME="$(basename "$DEB_PATH")"
+          DEBIAN_DEB_NAME="$(basename "$DEBIAN_DEB_PATH")"
           FEDORA_RPM_NAME="$(basename "$FEDORA_RPM_PATH")"
           ROCKY_RPM_NAME="$(basename "$ROCKY_RPM_PATH")"
 
@@ -579,6 +740,14 @@ jobs:
               deb = {
                 name = "${DEB_NAME}";
                 path = ${DEB_PATH};
+              };
+              debUbuntu = {
+                name = "${DEB_NAME}";
+                path = ${DEB_PATH};
+              };
+              debDebian = {
+                name = "${DEBIAN_DEB_NAME}";
+                path = ${DEBIAN_DEB_PATH};
               };
               rpm = {
                 name = "${FEDORA_RPM_NAME}";
@@ -631,8 +800,7 @@ jobs:
       - name: Ubuntu 24.04 package test
         run: bash scripts/run-distro-package-check.sh distro-ubuntu2404
 
-      - name: Debian 12 package test (baseline diagnostic)
-        continue-on-error: true
+      - name: Debian 12 package test
         run: bash scripts/run-distro-package-check.sh distro-debian12
 
       - name: Upload distro validation logs
@@ -649,7 +817,7 @@ jobs:
   # ── Upload to GitHub release ─────────────────────────────────────
   release:
     name: Upload Linux packages to release
-    needs: [build-deb, build-rpm, build-rpm-rocky, validate-distro-install]
+    needs: [build-deb, build-deb-debian, build-rpm, build-rpm-rocky, validate-distro-install]
     runs-on: ubuntu-latest
     permissions:
       contents: write

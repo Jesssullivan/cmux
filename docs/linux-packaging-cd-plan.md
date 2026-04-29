@@ -31,8 +31,12 @@ As of 2026-04-29:
 - release run `25090142397` built and signed all Linux artifacts, passed the
   Fedora 42, Rocky 10, and Ubuntu 24.04 exact-artifact KVM gates, and uploaded
   the Linux package assets to `lab-v0.75.0`
+- the release workflow now stages a separate Debian 12 baseline/no-WebKit
+  `DEB` as `cmux_<version>+deb12_<arch>.deb`; first release proof for that
+  artifact is still pending
 - Linux release automation builds:
-  - `DEB`
+  - Ubuntu-family broad-feature `DEB`
+  - Debian 12 baseline/no-WebKit `DEB`
   - `RPM`
   - generic Linux tarball
 - tagged Linux releases now validate the just-built `DEB`/`RPM` artifacts on
@@ -85,14 +89,11 @@ What it proves today:
 Current limits:
 - runs on trusted push/manual only, not on pull requests
 - still pinned to a checked-in release artifact manifest
-- `Fedora 42` is now covered and upstream image support has landed, but the
-  first green CI evidence still needs to be recorded
-- `Rocky 10` is now wired through a distinct no-WebKit RPM lane, but the
-  checked-in manifest still lacks a published `rpmRocky` asset and the first
-  green CI result still needs to be recorded
+- `Debian 12` has a distinct baseline artifact path in the release workflow,
+  but still needs first release-candidate proof before closing TIN-745
 - `Rocky 9` is still a temporary RPM-path proxy
-- the remaining blocker is artifact truth and Rocky 10 packaging fit, not cache
-  account shape or VM-image availability
+- the remaining blocker is first proof for the new Debian baseline artifact,
+  not cache account shape or VM-image availability
 
 ### 3. Linux release workflows
 
@@ -108,10 +109,11 @@ What they do today:
 - upload macOS assets separately through the fork release workflow
 
 Current limits:
-- Linux release gating currently covers `Ubuntu 24.04`, `Fedora 42`, and
-  `Rocky 10`; `arm64` remains outside the gated VM matrix
-- `Debian 12` is diagnostic in release workflows until a Debian baseline
-  no-WebKit artifact or explicit backports policy exists
+- Linux release gating currently covers `Ubuntu 24.04`, `Fedora 42`,
+  `Rocky 10`, and, after this workflow change, the dedicated Debian 12
+  baseline `DEB`; `arm64` remains outside the gated VM matrix
+- Debian 12 still needs a fresh release-candidate proof before its Linear lane
+  can be marked complete
 
 ### 4. Flatpak
 
@@ -150,9 +152,10 @@ full browser parity:
 Current interpretation:
 - the hosted Debian 12 build lane already proves the source can build
   `-Dno-webkit=true`
-- the current release `DEB` is a broad-feature Ubuntu-family artifact and
-  should not be treated as Debian baseline proof until dependency policy is
-  resolved
+- the release workflow now emits `cmux_<version>+deb12_<arch>.deb` for Debian
+  12 baseline package/runtime proof
+- the broad-feature Ubuntu-family `DEB` should not be treated as Debian
+  baseline proof
 
 ### Constrained artifact
 
@@ -191,12 +194,12 @@ Current read:
   means the same RPM is not a truthful default artifact for Rocky 10
 - the branch now addresses that by producing a separate no-WebKit Rocky 10 RPM
   instead of pretending one RPM covers both distro classes
+- the branch now addresses the Debian 12 tension by producing a separate
+  no-WebKit `+deb12` package instead of treating the Ubuntu broad-feature `DEB`
+  as Debian proof
 - the shipped Linux binary does not currently link `libsecret` or `libnotify`,
   so those should not be declared as package requirements just because helper
   libraries exist elsewhere in the tree
-- this creates a real Debian 12 tension: the truthful broad-feature `DEB` does
-  not currently fit the Debian baseline install lane without either backports or
-  a separate no-WebKit artifact
 
 ### 3. Release tests are pinned to a checked-in artifact manifest
 
