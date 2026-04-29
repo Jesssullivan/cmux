@@ -16,15 +16,21 @@ Use it with:
 
 ## Snapshot
 
-As of 2026-04-25:
+As of 2026-04-29:
 
 - hosted Linux CI is already green on `Ubuntu 24.04`, `Fedora 42`, `Rocky 10`,
   `Debian 12` baseline, and `Arch`
 - tagged Linux releases already build signed multi-arch `DEB`, `RPM`, and
   tarball assets
 - release-gated KVM package validation now executes real `.sandboxed` VM tests
-  for `Ubuntu 24.04`, `Debian 12`, `Fedora 42`, and `Rocky 9` as the current
-  RPM-path proxy
+  for `Ubuntu 24.04`, `Fedora 42`, and the dedicated `Rocky 10`
+  terminal-first RPM path before upload
+- `Debian 12` remains a baseline/no-WebKit lane; the current broad-feature
+  Ubuntu-family `DEB` is diagnostic there until a separate Debian baseline
+  artifact or backports policy is chosen
+- release run `25087301829` proved the exact signed Fedora 42 RPM and Rocky 10
+  terminal-first RPM in KVM; the upload was blocked by the Debian diagnostic
+  mismatch before Ubuntu could run
 - `numtide/nix-vm-test#172` merged on 2026-04-22 with `Fedora 42` and
   `Rocky 10.1` image support, so upstream image availability is no longer the
   blocker
@@ -38,9 +44,9 @@ As of 2026-04-25:
 | Target | Current build proof | Current KVM / QEMU proof | Current release gating | Current direct QA | Target posture |
 |---|---|---|---|---|---|
 | `Ubuntu 24.04` | hosted CI green | yes | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
-| `Fedora 42` | hosted CI green, RPM builds on Fedora 42 | yes; using upstream `nix-vm-test` image support | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
-| `Debian 12` | hosted CI green with baseline `-Dno-webkit` lane | yes | yes | still needs one explicit browser/WebAuthn status record | Tier B baseline |
-| `Rocky 10` | hosted CI green, constrained build posture is real | upstream `Rocky 10.1` image support exists; branch-wired through a dedicated `rpmRocky` asset when the manifest provides it; checked-in manifest still defaults to proxy-only | next tagged release should gate it | still needs one terminal-first proof pass | Tier C constrained |
+| `Fedora 42` | hosted CI green, RPM builds on Fedora 42 | yes; first exact-artifact proof recorded in run `25087301829` | yes | still needs one recorded broad-feature pass | Tier A broad-feature |
+| `Debian 12` | hosted CI green with baseline `-Dno-webkit` lane | baseline automation exists; broad-feature release `DEB` is diagnostic until artifact taxonomy is fixed | diagnostic only | still needs one explicit browser/WebAuthn status record | Tier B baseline |
+| `Rocky 10` | hosted CI green, constrained build posture is real | yes; first exact-artifact terminal-first proof recorded in run `25087301829` | yes, when `rpmRocky` exists | still needs one direct terminal-first report | Tier C constrained |
 | `arm64` Linux artifacts | multi-arch release builds exist | not yet | not yet | none | follow-on after x86_64 proof |
 
 ## Automation Surfaces
@@ -75,11 +81,11 @@ Current sources:
 What exists now:
 
 - `Ubuntu 24.04` `DEB` install validation
-- `Debian 12` `DEB` install validation
 - `Fedora 42` `RPM` install validation
-- `Rocky 9` `RPM` proxy validation
-- branch wiring for `Rocky 10` terminal-first validation through a dedicated
-  `rpmRocky` asset
+- `Rocky 10` terminal-first validation through a dedicated `rpmRocky` asset
+- `Debian 12` diagnostic validation of the current `DEB`, with failure treated
+  as evidence for the pending baseline artifact decision rather than a
+  broad-feature release blocker
 - current checks resolve to `.sandboxed` VM runs rather than driver-only
   derivations
 - release-time validation of the exact x86_64 `DEB` and `RPM` assets before
@@ -87,7 +93,8 @@ What exists now:
 
 What is still missing:
 
-- first green `Rocky 10` VM install proof
+- a separate Debian 12 baseline/no-WebKit package artifact, or an explicit
+  Debian backports policy for the broad-feature `DEB`
 - arm64 KVM validation
 
 ### 3. Socket and control-plane automation
@@ -145,15 +152,18 @@ This is the current release-critical gap.
 
 Required outcome:
 
-1. keep `Ubuntu 24.04` and `Debian 12` green
+1. keep `Ubuntu 24.04` green for the broad-feature `DEB`
 2. keep `Fedora 42` KVM proof green and visible in CI
-3. replace the `Rocky 9` proxy with real `Rocky 10` terminal-first proof
+3. keep real `Rocky 10` terminal-first proof green when `rpmRocky` exists
+4. decide and implement the Debian 12 baseline artifact path
 
 Recommended owned path:
 
 1. keep `Rocky 10` only when the artifact under test matches the constrained
    distro promise
-2. keep the former `Jesssullivan/nix-vm-test` carry reason visible in
+2. treat Debian 12 broad-feature `DEB` results as diagnostic until a baseline
+   artifact exists
+3. keep the former `Jesssullivan/nix-vm-test` carry reason visible in
    `Jesssullivan/cmux` issues, Tinyland Linear, and
    `docs/flakehub-qa-ownership-notes.md` as historical context
 
@@ -297,11 +307,12 @@ Until then:
 
 ## Ordered Next Actions
 
-1. get first green CI evidence for the wired `Fedora 42` QEMU lane
-2. record the first green `Rocky 10` terminal-first run and then retire the
-   `Rocky 9` proxy
-3. record one direct QA pass for `Ubuntu 24.04`, `Fedora 42`, `Debian 12`, and
+1. rerun release-gated proof after the Debian diagnostic posture change so
+   Ubuntu/Fedora/Rocky exact-artifact gates can upload signed assets
+2. record one direct QA pass for `Ubuntu 24.04`, `Fedora 42`, `Debian 12`, and
    `Rocky 10`
+3. decide whether Debian 12 gets a separate no-WebKit `DEB` or a documented
+   backports-based install path
 4. promote Linux socket-test candidates into baseline only after green proof
 5. keep `WebAuthn`, socket parity, and browser claims honest in the matrix
 6. defer `lmux` renaming work unless the revisit triggers become real
