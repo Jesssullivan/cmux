@@ -67,8 +67,9 @@ same QA and ownership decisions are visible on every owned surface.
 
 Current focus:
 
-- keep `#55`, `#187`, and `#209` aligned with the real Fedora 42 and Rocky 10
-  distro-proof state
+- keep `#55` and `#216` aligned with the real distro-proof and socket-coverage
+  state
+- treat `#187` and `#209` as completed first-proof records, not active blockers
 - keep FlakeHub and `nix-vm-test` notes on owned Jesssullivan and Tinyland
   surfaces only
 - keep the `nix-vm-test` upstream exit visible: `numtide/nix-vm-test#172`
@@ -199,25 +200,25 @@ For live ancestry and worktree checks:
 ./scripts/report-fork-health.sh
 ```
 
-## Open Tracker Map
+## Tracker Map
 
-As of 2026-04-25, the public fork tracker is small and focused:
+As of 2026-04-29, the public fork tracker is small and focused:
 
 - `#55` `Epic: Linux Delivery, Distro Proof, and Remaining Parity Gaps`
 - `#76` `RFC: Linux client naming — cmux vs lmux`
-- `#187` `ci(distro): establish Rocky 10 fresh-install proof and retire the Rocky 9 proxy`
 - `#206` `linux: complete WebAuthn bridge handling`
-- `#209` `ci(distro): establish Fedora 42 fresh-install VM proof`
 - `#216` `tests_v2: expand Linux socket-test coverage beyond the current stable baseline`
 - `#201` `feat(cmuxd-remote): add TCP listener mode for Tailnet direct connections`
 
 Interpretation:
 
-- `#55`, `#187`, `#209`, and `#216` are the active Linux execution lane
+- `#55` and `#216` are the active Linux execution lane
 - `#206` is the active WebAuthn/FIDO2 parity lane
 - `#201` is real, but parallel
 - `#76` is intentionally non-blocking unless distro distribution or product
   clarity creates a real rename trigger
+- `#187` and `#209` are closed first-proof records after release run
+  `25090142397`
 - the main note-hygiene risk is cross-repo QA decisions drifting out of sync
 
 ## Current Non-Blockers
@@ -234,13 +235,11 @@ repo hygiene:
 
 ## Next Actions
 
-1. Use the current Linux CI rerun as the proof base for the Debian 12 baseline
-   lane and the Ubuntu/Fedora broad-feature lanes; the current branch matrix is
-   green.
-2. Record the wired `Fedora 42` and `Rocky 10` VM lanes on `#209` and `#187`,
-   and keep their first green runs visible.
-3. Keep Ubuntu/Fedora as the broad-feature proof target and Debian as the
+1. Keep Ubuntu/Fedora/Rocky exact-artifact release gates green after run
+   `25090142397`.
+2. Keep Ubuntu/Fedora as the broad-feature proof target and Debian as the
    explicit baseline target.
+3. Decide the Debian 12 baseline artifact path in TIN-745.
 4. Keep Rocky 10 terminal-first until a real browser/package path exists.
 5. Keep `cmux` as the working product and package name unless the rename
    triggers in `docs/distro-testing-readiness-plan.md` become real.

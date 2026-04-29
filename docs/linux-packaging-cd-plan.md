@@ -28,6 +28,9 @@ As of 2026-04-29:
   Fedora 42 and Rocky 10 in KVM, then failed before upload because the Ubuntu
   24.04 cloud image ran out of disk while unpacking the broad-feature `DEB`
   dependency closure; PR `#278` adds Ubuntu VM disk expansion for that gate
+- release run `25090142397` built and signed all Linux artifacts, passed the
+  Fedora 42, Rocky 10, and Ubuntu 24.04 exact-artifact KVM gates, and uploaded
+  the Linux package assets to `lab-v0.75.0`
 - Linux release automation builds:
   - `DEB`
   - `RPM`
