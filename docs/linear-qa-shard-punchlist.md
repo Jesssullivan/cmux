@@ -8,6 +8,7 @@ work assignments without re-deriving scope from the codebase.
 
 Use it with:
 
+- [linux-graphical-qa-machine-plan.md](/Users/jess/git/cmux/docs/linux-graphical-qa-machine-plan.md:1)
 - [program-review-2026-04-14.md](/Users/jess/git/cmux/docs/program-review-2026-04-14.md:1)
 - [distro-testing-readiness-plan.md](/Users/jess/git/cmux/docs/distro-testing-readiness-plan.md:1)
 - [linux-work-week-2026-04-14.md](/Users/jess/git/cmux/docs/linux-work-week-2026-04-14.md:1)
@@ -300,6 +301,35 @@ Preferred evidence:
 
 These shards are for recruiting careful Linux QA users without overstating
 support. They should produce evidence, not broad support promises.
+
+### QA-MACH-001 Physical/User-VM QA Machine Pool
+
+- Type: QA infrastructure
+- Priority: `P0`
+- Goal: provision a concurrent pool of physical installs or normal user-managed
+  VMs for graphical Linux QA
+- Decision:
+  - public graphical QA truth comes from physical installs or ordinary user VMs
+  - `honey` KVM/QEMU remains the package-proof and private lab lane
+  - NixOS desktop VMs are useful for internal demos, but not a substitute for
+    distro-specific graphical claims
+- First targets:
+  - Ubuntu 24.04 LTS, GNOME Wayland
+  - Fedora 42 Workstation, GNOME Wayland
+  - Fedora 42 KDE Plasma Desktop
+  - Debian 12 GNOME; Xfce optional later
+  - Rocky 10.1 Workstation/GNOME
+  - CachyOS KDE Plasma
+  - Omarchy Hyprland as exploratory only
+  - Linux Mint Cinnamon
+  - NixOS GNOME/Sway/Hyprland for lab and early Nix reports
+- References:
+  - [linux-graphical-qa-machine-plan.md](/Users/jess/git/cmux/docs/linux-graphical-qa-machine-plan.md:1)
+  - [linux-qa-intake.md](/Users/jess/git/cmux/docs/linux-qa-intake.md:1)
+- Exit criteria:
+  - each P0 machine has one current install note, artifact under test, and owner
+  - P1 machines are clearly marked compatibility-discovery only
+  - no public support claim depends only on internal NixOS/QEMU lab proof
 
 ### QA-CAD-001 Linux QA Cadence
 
