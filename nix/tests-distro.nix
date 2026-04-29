@@ -127,7 +127,12 @@
       sharedDirs = {};
     }).sandboxed;
 
-  cmuxDebDir = materializeReleaseAssetDir "cmux-deb" releaseArtifacts.assets.deb;
+  cmuxUbuntuDebDir = materializeReleaseAssetDir "cmux-ubuntu-deb" (releaseArtifacts.assets.debUbuntu or releaseArtifacts.assets.deb);
+  haveDebianDeb = releaseArtifacts.assets ? debDebian;
+  cmuxDebianDebDir =
+    if haveDebianDeb
+    then materializeReleaseAssetDir "cmux-debian-deb" releaseArtifacts.assets.debDebian
+    else cmuxUbuntuDebDir;
 
   cmuxFedoraRpmDir = materializeReleaseAssetDir "cmux-fedora-rpm" (releaseArtifacts.assets.rpmFedora or releaseArtifacts.assets.rpm);
   haveRockyRpm = releaseArtifacts.assets ? rpmRocky;
@@ -252,7 +257,7 @@
     (nvt.debian."12" {
       sharedDirs = {
         pkg = {
-          source = "${cmuxDebDir}";
+          source = "${cmuxDebianDebDir}";
           target = "/mnt/pkg";
         };
       };
@@ -280,7 +285,7 @@
       diskSize = "+8G";
       sharedDirs = {
         pkg = {
-          source = "${cmuxDebDir}";
+          source = "${cmuxUbuntuDebDir}";
           target = "/mnt/pkg";
         };
       };

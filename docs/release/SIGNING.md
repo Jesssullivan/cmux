@@ -33,6 +33,12 @@ build-deb (matrix: amd64 + arm64)
   └─ upload-artifact: *.deb + *.deb.asc
   └─ upload-artifact: *.tar.gz + *.tar.gz.asc
 
+build-deb-debian (matrix: amd64 + arm64)
+  └─ assemble Debian 12 baseline/no-WebKit .deb
+  └─ Sign Debian baseline DEB with GPG ← scripts/sign-linux-packages.sh
+  └─ assert detached signatures        ← scripts/assert-linux-package-signatures.sh
+  └─ upload-artifact: *+deb12_*.deb + *+deb12_*.deb.asc
+
 build-rpm (matrix: amd64 + arm64)
   └─ assemble .rpm
   └─ Sign RPM with GPG              ← scripts/sign-linux-packages.sh

@@ -18,7 +18,7 @@ promise.
 |---|---|---|
 | Ubuntu 24.04 | `DEB` | broad-feature target |
 | Fedora 42 | Fedora `RPM` | broad-feature target |
-| Debian 12 | baseline/no-WebKit `DEB` pending | package/runtime baseline; current broad-feature `DEB` is diagnostic only |
+| Debian 12 | baseline/no-WebKit `DEB` | package/runtime baseline; browser/WebAuthn status remains explicit |
 | Rocky 10 | Rocky `RPM` | terminal-first target; uses the no-WebKit package path |
 | Arch, Mint, NixOS | source/package-manager follow-up | early QA target, not a broad support claim yet |
 
@@ -31,6 +31,8 @@ Expected Linux artifacts:
 
 - `cmux_<version>_amd64.deb`
 - `cmux_<version>_arm64.deb`
+- `cmux_<version>+deb12_amd64.deb`
+- `cmux_<version>+deb12_arm64.deb`
 - `cmux-<version>-1.fc42.x86_64.rpm`
 - `cmux-<version>-1.fc42.aarch64.rpm`
 - `cmux-<version>-1.el10.x86_64.rpm`
@@ -69,9 +71,22 @@ sudo apt-get install ./cmux_<version>_amd64.deb
 cmux --version
 ```
 
-Debian 12 is tracked as a baseline/no-WebKit target. Until a distinct Debian
-baseline artifact exists, attempts to install the broad-feature Ubuntu-family
-`DEB` on Debian should be recorded as diagnostic results, not support proof.
+## Verify And Install A Debian Baseline DEB
+
+Use this path for Debian 12. The `+deb12` package is built without WebKitGTK, so
+browser panels and WebAuthn/browser behavior must be recorded separately from
+package/runtime success.
+
+```bash
+gpg --verify cmux_<version>+deb12_amd64.deb.asc cmux_<version>+deb12_amd64.deb
+sudo apt-get update
+sudo apt-get install ./cmux_<version>+deb12_amd64.deb
+cmux --version
+```
+
+For release tags before the dedicated Debian artifact exists, attempts to
+install the broad-feature Ubuntu-family `DEB` on Debian should be recorded as
+diagnostic results, not support proof.
 
 ## Verify And Install A Fedora RPM
 

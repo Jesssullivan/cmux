@@ -143,18 +143,17 @@ Current `test-distro` coverage includes:
 - `Ubuntu 24.04`
 - `Debian 12`
 - `Fedora 42`
-- `Rocky 9` as the current RPM-path proxy
+- `Rocky 10`
 - real `.sandboxed` VM execution rather than driver-only outputs
 
 Current gap:
 
-- `Fedora 42` is wired into the repo-owned VM lane, but still needs a recorded
-  first green CI result on the self-hosted KVM runner
-- `Rocky 10` has a terminal-first RPM path staged in the active packaging WIP,
-  but still needs first green CI evidence and a published `rpmRocky` asset in
-  the checked-in manifest
-- the VM-image blocker is resolved upstream; remaining work is artifact truth
-  and first green proof
+- `Ubuntu 24.04`, `Fedora 42`, and `Rocky 10` exact-artifact release gates are
+  green after release run `25090142397`
+- `Debian 12` has a staged no-WebKit `+deb12` release artifact path, but still
+  needs first release-candidate proof
+- the VM-image blocker is resolved upstream; remaining work is Debian baseline
+  proof and direct graphical QA
 - this remains a distro-proof and artifact-truth problem, not a FlakeHub
   account or repo ownership problem
 
@@ -239,7 +238,8 @@ repo hygiene:
    `25090142397`.
 2. Keep Ubuntu/Fedora as the broad-feature proof target and Debian as the
    explicit baseline target.
-3. Decide the Debian 12 baseline artifact path in TIN-745.
+3. Prove the staged Debian 12 `+deb12` baseline artifact in a fresh
+   release-candidate run, then close TIN-745.
 4. Keep Rocky 10 terminal-first until a real browser/package path exists.
 5. Keep `cmux` as the working product and package name unless the rename
    triggers in `docs/distro-testing-readiness-plan.md` become real.
