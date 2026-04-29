@@ -101,8 +101,8 @@ Current sources:
 What exists now:
 
 - 123 `tests_v2` test files on disk
-- 18 stable Linux baseline tests
-- 11 gated phase-1 candidate tests running as non-fatal observations
+- 28 stable Linux baseline tests
+- 1 gated phase-1 candidate test running as a non-fatal observation
 
 What is still missing:
 
@@ -181,9 +181,9 @@ Current baseline is intentionally conservative.
 
 Near-term target:
 
-- promote green phase-1 candidates into baseline
+- keep the newly promoted baseline green
 - keep the baseline small enough to trust
-- move Linux socket coverage materially above the current 18-test stable floor
+- move Linux socket coverage materially above the current 28-test stable floor
 
 Follow-on target:
 
