@@ -213,6 +213,7 @@ jobs:
           path: |
             cmux_*_${{ matrix.arch.deb }}.deb
             cmux_*_${{ matrix.arch.deb }}.deb.asc
+          retention-days: 7
           if-no-files-found: error
 
       - name: Upload tarball artifact
@@ -222,6 +223,7 @@ jobs:
           path: |
             cmux-*-linux-${{ matrix.arch.tar }}.tar.gz
             cmux-*-linux-${{ matrix.arch.tar }}.tar.gz.asc
+          retention-days: 7
           if-no-files-found: error
 
   # ── Build + package on Debian (baseline/no-WebKit DEB) ──────────
@@ -374,6 +376,7 @@ jobs:
           path: |
             cmux_*+deb12_${{ matrix.arch.deb }}.deb
             cmux_*+deb12_${{ matrix.arch.deb }}.deb.asc
+          retention-days: 7
           if-no-files-found: error
 
   # ── Build + package on Fedora (RPM) ──────────────────────────────
@@ -520,6 +523,7 @@ jobs:
           path: |
             cmux-*.${{ matrix.arch.rpm }}.rpm
             cmux-*.${{ matrix.arch.rpm }}.rpm.asc
+          retention-days: 7
           if-no-files-found: error
 
   # ── Build + package on Rocky (terminal-first RPM) ────────────────
@@ -667,6 +671,7 @@ jobs:
           path: |
             cmux-*.${{ matrix.arch.rpm }}.rpm
             cmux-*.${{ matrix.arch.rpm }}.rpm.asc
+          retention-days: 7
           if-no-files-found: error
 
   validate-distro-install:

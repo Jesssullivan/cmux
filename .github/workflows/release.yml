@@ -386,6 +386,7 @@ jobs:
             cmux-macos.dmg
             appcast.xml
             remote-daemon-assets/cmuxd-remote-*
+          retention-days: 7
           if-no-files-found: error
 
       - name: Upload release asset

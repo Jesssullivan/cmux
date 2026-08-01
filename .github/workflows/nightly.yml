@@ -557,6 +557,7 @@ jobs:
             appcast.xml
             remote-daemon-assets/cmuxd-remote-*
             appcast-universal.xml
+          retention-days: 7
           if-no-files-found: error
 
       - name: Move nightly tag to built commit

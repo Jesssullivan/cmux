@@ -84,6 +84,7 @@ jobs:
         with:
           name: cmux-qcow2-${{ matrix.variant }}
           path: cmux-demo-*.qcow2
+          retention-days: 7
           if-no-files-found: error
 
   release:
