@@ -164,12 +164,14 @@ jobs:
         with:
           name: cmux-lab-macos
           path: cmux-lab-macos.dmg
+          retention-days: 7
 
       - name: Upload remote daemon artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cmux-lab-remote-daemon
           path: remote-daemon-assets/cmuxd-remote-*
+          retention-days: 7
 
       - name: Cleanup keychain
         if: always()
