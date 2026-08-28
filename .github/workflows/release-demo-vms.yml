@@ -1,0 +1,132 @@
+name: Demo VM Images (Debian/Ubuntu)
+
+# TIN-182: downloadable "try cmux without installing anything" QCOW2 demo
+# images. This workflow is intentionally workflow_dispatch-only (no tag
+# trigger) and targets flake outputs that do not exist yet
+# (demo-qcow2-debian12 / demo-qcow2-ubuntu2404 — see
+# docs/demo-vms-implementation-plan.md for why they aren't buildable from a
+# text-only pass). It will fail closed until those outputs land; it is
+# authored now so wiring the release step is not extra work once they do.
+#
+# Deliberately a separate tag namespace (demo-vms-v*) from release-qcow2.yml
+# (lab-v*, NixOS desktop variants) and the main cmux release (v*).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Demo VM release tag (e.g. demo-vms-v0.1.0)'
+        required: true
+
+concurrency:
+  group: release-demo-vms
+  cancel-in-progress: false
+
+jobs:
+  build-demo-qcow2:
+    name: Build demo QCOW2 (${{ matrix.distro }})
+    runs-on: [self-hosted, linux, kvm, cmux-distro-test]
+    environment: distro-tests
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - distro: debian12
+            flake_output: demo-qcow2-debian12
+            artifact_name: cmux-demo-debian12
+          - distro: ubuntu2404
+            flake_output: demo-qcow2-ubuntu2404
+            artifact_name: cmux-demo-ubuntu2404
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          VERSION="${TAG#demo-vms-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building demo QCOW2 ${{ matrix.distro }} for $TAG (version $VERSION)"
+
+      - name: Configure self-hosted Nix
+        run: bash scripts/configure-self-hosted-nix.sh
+
+      - name: Verify runner Nix daemon
+        run: |
+          nix --version
+          nix store info --store daemon
+
+      - name: Build demo QCOW2 image
+        run: |
+          nix --store daemon build ".#${{ matrix.flake_output }}" \
+            --print-build-logs -L \
+            --option sandbox relaxed
+
+      - name: Compress QCOW2 image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NAME: ${{ matrix.artifact_name }}
+        run: |
+          RAW=$(find result/ -name '*.qcow2' | head -1)
+          if [ -z "$RAW" ]; then
+            RAW="result"
+          fi
+          OUT="${NAME}-${VERSION}.qcow2"
+          qemu-img convert -c -O qcow2 "$RAW" "$OUT"
+          echo "Compressed: $OUT ($(du -h "$OUT" | cut -f1))"
+          qemu-img info "$OUT"
+
+      - name: Upload QCOW2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-demo-qcow2-${{ matrix.distro }}
+          path: cmux-demo-*.qcow2
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Upload demo QCOW2 images to release
+    needs: [build-demo-qcow2]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all demo QCOW2 artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-demo-qcow2.outputs.tag }}
+        run: |
+          ASSETS=()
+          for f in cmux-demo-qcow2-*/*.qcow2; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          echo "Uploading ${#ASSETS[@]} demo QCOW2 images for $TAG:"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          if [ ${#ASSETS[@]} -lt 2 ]; then
+            echo "ERROR: expected at least 2 demo QCOW2 artifacts (Debian 12 + Ubuntu 24.04)"
+            ls -laR cmux-demo-qcow2-*/ || true
+            exit 1
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists, uploading demo QCOW2 images..."
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Creating release $TAG with demo QCOW2 images..."
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "cmux demo VMs $TAG" \
+              --notes "Downloadable Debian 12 / Ubuntu 24.04 QCOW2 demo images with cmux pre-installed. Boot with: qemu-system-x86_64 -m 4G -enable-kvm -hda <image>.qcow2" \
+              "${ASSETS[@]}"
+          fi
